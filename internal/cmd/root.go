@@ -70,36 +70,12 @@ type CLI struct {
 
 // Placeholder command structs (will be implemented in separate files)
 type (
-	ChannelsCmd   struct{}
-	PagesCmd      struct{}
-	MenusCmd      struct{}
-	ProductsCmd   struct{}
-	OrdersCmd     struct{}
-	CustomersCmd  struct{}
-	ThemesCmd     struct{}
-	UploadsCmd    struct{}
-	BlogsCmd      struct{}
-	WebhooksCmd   struct{}
-	TokensCmd     struct{}
 	ConfigCmd     struct{}
-	APICmd        struct{}
 	CompletionCmd struct{}
 )
 
 // Placeholder Run methods
-func (c *ChannelsCmd) Run(ctx context.Context) error   { return errors.New("not implemented") }
-func (c *PagesCmd) Run(ctx context.Context) error      { return errors.New("not implemented") }
-func (c *MenusCmd) Run(ctx context.Context) error      { return errors.New("not implemented") }
-func (c *ProductsCmd) Run(ctx context.Context) error   { return errors.New("not implemented") }
-func (c *OrdersCmd) Run(ctx context.Context) error     { return errors.New("not implemented") }
-func (c *CustomersCmd) Run(ctx context.Context) error  { return errors.New("not implemented") }
-func (c *ThemesCmd) Run(ctx context.Context) error     { return errors.New("not implemented") }
-func (c *UploadsCmd) Run(ctx context.Context) error    { return errors.New("not implemented") }
-func (c *BlogsCmd) Run(ctx context.Context) error      { return errors.New("not implemented") }
-func (c *WebhooksCmd) Run(ctx context.Context) error   { return errors.New("not implemented") }
-func (c *TokensCmd) Run(ctx context.Context) error     { return errors.New("not implemented") }
 func (c *ConfigCmd) Run(ctx context.Context) error     { return errors.New("not implemented") }
-func (c *APICmd) Run(ctx context.Context) error        { return errors.New("not implemented") }
 func (c *CompletionCmd) Run(ctx context.Context) error { return errors.New("not implemented") }
 
 type exitPanic struct{ code int }
