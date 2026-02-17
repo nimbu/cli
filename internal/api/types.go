@@ -1,6 +1,10 @@
 package api
 
-import "time"
+import (
+	"encoding/json"
+	"strings"
+	"time"
+)
 
 // Pagination holds pagination information.
 type Pagination struct {
@@ -51,7 +55,7 @@ type Channel struct {
 	Slug        string    `json:"slug"`
 	Name        string    `json:"name"`
 	Description string    `json:"description,omitempty"`
-	EntryCount  int       `json:"entry_count,omitempty"`
+	EntryCount  *int      `json:"entry_count,omitempty"`
 	CreatedAt   time.Time `json:"created_at,omitempty"`
 	UpdatedAt   time.Time `json:"updated_at,omitempty"`
 }
@@ -88,6 +92,7 @@ type Menu struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
 	Handle    string     `json:"handle,omitempty"`
+	Slug      string     `json:"slug,omitempty"`
 	Items     []MenuItem `json:"items,omitempty"`
 	CreatedAt time.Time  `json:"created_at,omitempty"`
 	UpdatedAt time.Time  `json:"updated_at,omitempty"`
@@ -139,6 +144,92 @@ type Customer struct {
 	Phone     string    `json:"phone,omitempty"`
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+
+// UnmarshalJSON accepts both modern and legacy customer field names.
+func (c *Customer) UnmarshalJSON(data []byte) error {
+	type customerAlias Customer
+	var payload struct {
+		customerAlias
+		FirstNameAlt string `json:"firstname"`
+		LastNameAlt  string `json:"lastname"`
+	}
+
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+
+	*c = Customer(payload.customerAlias)
+	if c.FirstName == "" {
+		c.FirstName = payload.FirstNameAlt
+	}
+	if c.LastName == "" {
+		c.LastName = payload.LastNameAlt
+	}
+
+	return nil
+}
+
+// UnmarshalJSON maps menu slug to Handle fallback.
+func (m *Menu) UnmarshalJSON(data []byte) error {
+	type menuAlias Menu
+	var payload menuAlias
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+
+	*m = Menu(payload)
+	if m.Handle == "" {
+		m.Handle = m.Slug
+	}
+
+	return nil
+}
+
+// UnmarshalJSON normalizes order fields from API responses.
+func (o *Order) UnmarshalJSON(data []byte) error {
+	type orderAlias Order
+	var payload struct {
+		orderAlias
+		State  string `json:"state"`
+		Totals *struct {
+			Total float64 `json:"total"`
+		} `json:"totals"`
+		Customer *struct {
+			ID string `json:"id"`
+		} `json:"customer"`
+	}
+
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+
+	*o = Order(payload.orderAlias)
+	if o.Status == "" {
+		o.Status = payload.State
+	}
+	if o.Total == 0 && payload.Totals != nil {
+		o.Total = payload.Totals.Total
+	}
+	if o.CustomerID == "" && payload.Customer != nil {
+		o.CustomerID = payload.Customer.ID
+	}
+
+	return nil
+}
+
+// UnmarshalJSON trims channel names and keeps missing entry_count as nil.
+func (c *Channel) UnmarshalJSON(data []byte) error {
+	type channelAlias Channel
+	var payload channelAlias
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+
+	*c = Channel(payload)
+	c.Name = strings.TrimSpace(c.Name)
+
+	return nil
 }
 
 // Theme represents a theme.

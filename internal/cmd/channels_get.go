@@ -31,13 +31,28 @@ func (c *ChannelsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get channel: %w", err)
 	}
 
+	countPath := ch.Slug
+	if countPath == "" {
+		countPath = ch.ID
+	}
+	if countPath != "" {
+		if count, err := api.Count(ctx, client, "/channels/"+url.PathEscape(countPath)+"/entries/count"); err == nil {
+			countCopy := count
+			ch.EntryCount = &countCopy
+		}
+	}
+
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, ch)
 	}
 
 	if mode.Plain {
-		return output.Plain(ctx, ch.ID, ch.Slug, ch.Name, ch.EntryCount)
+		entryCount := ""
+		if ch.EntryCount != nil {
+			entryCount = fmt.Sprintf("%d", *ch.EntryCount)
+		}
+		return output.Plain(ctx, ch.ID, ch.Slug, ch.Name, entryCount)
 	}
 
 	fmt.Printf("ID:          %s\n", ch.ID)
@@ -46,7 +61,9 @@ func (c *ChannelsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if ch.Description != "" {
 		fmt.Printf("Description: %s\n", ch.Description)
 	}
-	fmt.Printf("Entries:     %d\n", ch.EntryCount)
+	if ch.EntryCount != nil {
+		fmt.Printf("Entries:     %d\n", *ch.EntryCount)
+	}
 
 	return nil
 }
