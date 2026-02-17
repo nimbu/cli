@@ -68,15 +68,7 @@ type CLI struct {
 	Completion CompletionCmd    `cmd:"" help:"Generate shell completions"`
 }
 
-// Placeholder command structs (will be implemented in separate files)
-type (
-	ConfigCmd     struct{}
-	CompletionCmd struct{}
-)
-
-// Placeholder Run methods
-func (c *ConfigCmd) Run(ctx context.Context) error     { return errors.New("not implemented") }
-func (c *CompletionCmd) Run(ctx context.Context) error { return errors.New("not implemented") }
+// Note: ConfigCmd and CompletionCmd are implemented in their own files (config.go, completion.go)
 
 type exitPanic struct{ code int }
 
