@@ -1,0 +1,80 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: nimbu-cli
+    main: ./cmd/nimbu-cli
+    binary: nimbu-cli
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/nimbu/cli/internal/cmd.version={{ .Tag }}
+      - -X github.com/nimbu/cli/internal/cmd.commit={{ .ShortCommit }}
+      - -X github.com/nimbu/cli/internal/cmd.date={{ .Date }}
+
+  - id: nimbu-cli-darwin
+    main: ./cmd/nimbu-cli
+    binary: nimbu-cli
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/nimbu/cli/internal/cmd.version={{ .Tag }}
+      - -X github.com/nimbu/cli/internal/cmd.commit={{ .ShortCommit }}
+      - -X github.com/nimbu/cli/internal/cmd.date={{ .Date }}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE*
+      - README*
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+brews:
+  - name: nimbu-cli
+    ids:
+      - default
+    repository:
+      owner: nimbu
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    folder: Formula
+    homepage: https://github.com/nimbu/nimbu-go-cli
+    description: CLI for the Nimbu API
+    license: MIT
+    install: |
+      bin.install "nimbu-cli"
+      bin.install_symlink "nimbu-cli" => "nb"
+    test: |
+      system "#{bin}/nimbu-cli", "--version"
