@@ -9,6 +9,11 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
+
+	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/auth"
+	"github.com/nimbu/cli/internal/config"
+	"github.com/nimbu/cli/internal/output"
 )
 
 // Build info (injected via ldflags)
@@ -18,10 +23,10 @@ var (
 	date    = "unknown"
 )
 
-const (
-	colorAuto   = "auto"
-	colorAlways = "always"
-	colorNever  = "never"
+// Context keys for dependency injection.
+type (
+	configKey    struct{}
+	rootFlagsKey struct{}
 )
 
 // RootFlags contains global flags available to all commands.
@@ -64,22 +69,24 @@ type CLI struct {
 }
 
 // Placeholder command structs (will be implemented in separate files)
-type AuthCmd struct{}
-type SitesCmd struct{}
-type ChannelsCmd struct{}
-type PagesCmd struct{}
-type MenusCmd struct{}
-type ProductsCmd struct{}
-type OrdersCmd struct{}
-type CustomersCmd struct{}
-type ThemesCmd struct{}
-type UploadsCmd struct{}
-type BlogsCmd struct{}
-type WebhooksCmd struct{}
-type TokensCmd struct{}
-type ConfigCmd struct{}
-type APICmd struct{}
-type CompletionCmd struct{}
+type (
+	AuthCmd       struct{}
+	SitesCmd      struct{}
+	ChannelsCmd   struct{}
+	PagesCmd      struct{}
+	MenusCmd      struct{}
+	ProductsCmd   struct{}
+	OrdersCmd     struct{}
+	CustomersCmd  struct{}
+	ThemesCmd     struct{}
+	UploadsCmd    struct{}
+	BlogsCmd      struct{}
+	WebhooksCmd   struct{}
+	TokensCmd     struct{}
+	ConfigCmd     struct{}
+	APICmd        struct{}
+	CompletionCmd struct{}
+)
 
 // Placeholder Run methods
 func (c *AuthCmd) Run(ctx context.Context) error       { return errors.New("not implemented") }
@@ -156,10 +163,43 @@ func execute(args []string) (err error) {
 
 	// Create context with values
 	ctx := context.Background()
-	// TODO: Add output mode, site, API client to context
+
+	// Set up output mode
+	outMode, err := output.FromFlags(cli.JSON, cli.Plain)
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		return &ExitError{Code: ExitUsage, Err: err}
+	}
+	ctx = output.WithMode(ctx, outMode)
+
+	// Set up output writer
+	writer := output.DefaultWriter()
+	writer.Mode = outMode
+	writer.Color = cli.Color
+	writer.NoTTY = cli.NoInput
+	ctx = output.WithWriter(ctx, writer)
+
+	// Load config
+	cfg, _ := config.Read() // Ignore error, use defaults
+
+	// Resolve site from flags, config, or project file
+	site := cli.Site
+	if site == "" {
+		site = cfg.DefaultSite
+	}
+	if site == "" {
+		if proj, err := config.ReadProjectConfig(); err == nil {
+			site = proj.Site
+		}
+	}
+
+	// Store values in context
+	ctx = context.WithValue(ctx, rootFlagsKey{}, &cli.RootFlags)
+	ctx = context.WithValue(ctx, configKey{}, &cfg)
 
 	kctx.BindTo(ctx, (*context.Context)(nil))
 	kctx.Bind(&cli.RootFlags)
+	kctx.Bind(site) // Bind resolved site
 
 	if err = kctx.Run(); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
@@ -251,3 +291,93 @@ const (
 	ExitRateLimit  = 7
 	ExitNetwork    = 8
 )
+
+// GetAPIClient creates an API client from context.
+func GetAPIClient(ctx context.Context) (*api.Client, error) {
+	flags := ctx.Value(rootFlagsKey{}).(*RootFlags)
+
+	// Get token from keyring
+	store, err := auth.OpenDefault()
+	if err != nil {
+		return nil, fmt.Errorf("open keyring: %w", err)
+	}
+
+	token, err := store.GetToken()
+	if err != nil {
+		if errors.Is(err, auth.ErrNoToken) {
+			return nil, fmt.Errorf("not logged in; run 'nimbu-cli auth login' first")
+		}
+		return nil, fmt.Errorf("get token: %w", err)
+	}
+
+	client := api.New(flags.APIURL, token)
+	client = client.WithTimeout(flags.Timeout)
+	client = client.WithDebug(flags.Debug)
+
+	// Get resolved site
+	if site, ok := ctx.Value(string("")).(string); ok && site != "" {
+		client = client.WithSite(site)
+	}
+
+	return client, nil
+}
+
+// GetAPIClientWithSite creates an API client with a specific site.
+func GetAPIClientWithSite(ctx context.Context, site string) (*api.Client, error) {
+	client, err := GetAPIClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if site != "" {
+		client = client.WithSite(site)
+	}
+	return client, nil
+}
+
+// RequireSite ensures a site is specified.
+func RequireSite(ctx context.Context, site string) (string, error) {
+	if site != "" {
+		return site, nil
+	}
+
+	flags := ctx.Value(rootFlagsKey{}).(*RootFlags)
+	if flags.Site != "" {
+		return flags.Site, nil
+	}
+
+	cfg := ctx.Value(configKey{}).(*config.Config)
+	if cfg.DefaultSite != "" {
+		return cfg.DefaultSite, nil
+	}
+
+	if proj, err := config.ReadProjectConfig(); err == nil && proj.Site != "" {
+		return proj.Site, nil
+	}
+
+	return "", fmt.Errorf("site required; use --site flag, NIMBU_SITE env, or .nimbu.json")
+}
+
+// MapAPIError maps API errors to exit codes.
+func MapAPIError(err error) *ExitError {
+	if err == nil {
+		return nil
+	}
+
+	var apiErr *api.Error
+	if errors.As(err, &apiErr) {
+		switch {
+		case apiErr.IsUnauthorized():
+			return &ExitError{Code: ExitAuth, Err: err}
+		case apiErr.IsForbidden():
+			return &ExitError{Code: ExitAuthz, Err: err}
+		case apiErr.IsNotFound():
+			return &ExitError{Code: ExitNotFound, Err: err}
+		case apiErr.IsValidation():
+			return &ExitError{Code: ExitValidation, Err: err}
+		case apiErr.IsRateLimit():
+			return &ExitError{Code: ExitRateLimit, Err: err}
+		}
+	}
+
+	return &ExitError{Code: ExitGeneral, Err: err}
+}

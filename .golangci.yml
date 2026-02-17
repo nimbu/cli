@@ -10,7 +10,6 @@ linters:
     - staticcheck
     - unused
     - errcheck
-    - gosimple
     - ineffassign
 
 formatters:
