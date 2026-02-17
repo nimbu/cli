@@ -186,6 +186,7 @@ func newParser() (*kong.Kong, *CLI, error) {
 		kong.Name("nimbu-cli"),
 		kong.Description("CLI for the Nimbu API - AI-agent first, human-friendly second"),
 		kong.UsageOnError(),
+		kong.Help(helpPrinter()),
 		kong.Vars(vars),
 		kong.Writers(os.Stdout, os.Stderr),
 		kong.Exit(func(code int) { panic(exitPanic{code: code}) }),
