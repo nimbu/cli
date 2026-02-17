@@ -1,0 +1,35 @@
+# Binaries
+/nimbu-cli
+/nb
+/bin/
+/dist/
+
+# Dev tools
+/.tools/
+
+# Temp/spec files (internal)
+/tmp/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage.out
+coverage.html
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.prof
