@@ -31,7 +31,7 @@ func (c *ThemeFilesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	path := fmt.Sprintf("/themes/%s/files/%s", c.Theme, url.PathEscape(c.Path))
+	path := fmt.Sprintf("/themes/%s/files/%s", url.PathEscape(c.Theme), url.PathEscape(c.Path))
 	resp, err := client.RawRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return fmt.Errorf("get theme file: %w", err)

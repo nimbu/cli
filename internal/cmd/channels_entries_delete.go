@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/output"
 )
@@ -15,12 +16,12 @@ type ChannelEntriesDeleteCmd struct {
 
 // Run executes the delete command.
 func (c *ChannelEntriesDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("write operations disabled in readonly mode")
+	if err := requireWrite(flags, "delete entry"); err != nil {
+		return err
 	}
 
-	if !flags.Force {
-		return fmt.Errorf("delete requires --force flag")
+	if err := requireForce(flags, "entry "+c.Entry); err != nil {
+		return err
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -33,7 +34,7 @@ func (c *ChannelEntriesDeleteCmd) Run(ctx context.Context, flags *RootFlags) err
 		return err
 	}
 
-	path := "/channels/" + c.Channel + "/entries/" + c.Entry
+	path := "/channels/" + url.PathEscape(c.Channel) + "/entries/" + url.PathEscape(c.Entry)
 	if err := client.Delete(ctx, path, nil); err != nil {
 		return fmt.Errorf("delete entry: %w", err)
 	}
@@ -44,7 +45,7 @@ func (c *ChannelEntriesDeleteCmd) Run(ctx context.Context, flags *RootFlags) err
 	}
 
 	if mode.Plain {
-		return output.Plain(ctx, "deleted", c.Entry)
+		return output.Plain(ctx, c.Entry, "deleted")
 	}
 
 	fmt.Printf("Deleted entry %s\n", c.Entry)

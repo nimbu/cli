@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -26,7 +27,8 @@ func (c *ThemesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var theme api.Theme
-	if err := client.Get(ctx, "/themes/"+c.Theme, &theme); err != nil {
+	path := "/themes/" + url.PathEscape(c.Theme)
+	if err := client.Get(ctx, path, &theme); err != nil {
 		return fmt.Errorf("get theme: %w", err)
 	}
 

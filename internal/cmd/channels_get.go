@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -26,7 +27,7 @@ func (c *ChannelsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var ch api.Channel
-	if err := client.Get(ctx, "/channels/"+c.Channel, &ch); err != nil {
+	if err := client.Get(ctx, "/channels/"+url.PathEscape(c.Channel), &ch); err != nil {
 		return fmt.Errorf("get channel: %w", err)
 	}
 

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -26,7 +27,8 @@ func (c *OrdersGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var o api.Order
-	if err := client.Get(ctx, "/orders/"+c.Order, &o); err != nil {
+	path := "/orders/" + url.PathEscape(c.Order)
+	if err := client.Get(ctx, path, &o); err != nil {
 		return fmt.Errorf("get order: %w", err)
 	}
 

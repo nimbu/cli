@@ -2,10 +2,7 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -13,13 +10,14 @@ import (
 
 // ProductsCreateCmd creates a product.
 type ProductsCreateCmd struct {
-	File string `help:"Read product JSON from file (use - for stdin)" type:"existingfile"`
+	File        string   `help:"Read product JSON from file (use - for stdin)"`
+	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Wine, price:=19.9)"`
 }
 
 // Run executes the create command.
 func (c *ProductsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("cannot create product in readonly mode")
+	if err := requireWrite(flags, "create product"); err != nil {
+		return err
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -32,27 +30,9 @@ func (c *ProductsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	// Read input
-	var input io.Reader
-	if c.File == "-" || c.File == "" {
-		input = os.Stdin
-	} else {
-		f, err := os.Open(c.File)
-		if err != nil {
-			return fmt.Errorf("open file: %w", err)
-		}
-		defer func() { _ = f.Close() }()
-		input = f
-	}
-
-	data, err := io.ReadAll(input)
+	body, err := readJSONBodyInput(c.File, c.Assignments)
 	if err != nil {
-		return fmt.Errorf("read input: %w", err)
-	}
-
-	var body map[string]any
-	if err := json.Unmarshal(data, &body); err != nil {
-		return fmt.Errorf("parse JSON: %w", err)
+		return err
 	}
 
 	var p api.Product

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -26,7 +27,8 @@ func (c *UploadsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var upload api.Upload
-	if err := client.Get(ctx, "/uploads/"+c.ID, &upload); err != nil {
+	path := "/uploads/" + url.PathEscape(c.ID)
+	if err := client.Get(ctx, path, &upload); err != nil {
 		return fmt.Errorf("get upload: %w", err)
 	}
 

@@ -38,7 +38,10 @@ func PlainRows(ctx context.Context, rows [][]any) error {
 // PlainFromStruct extracts specified fields from a struct and writes as TSV.
 func PlainFromStruct(ctx context.Context, v any, fields []string) error {
 	w := WriterFromContext(ctx)
-	values := extractFields(v, fields)
+	values, err := extractFields(v, fields)
+	if err != nil {
+		return err
+	}
 	return WritePlain(w.Out, values...)
 }
 
@@ -51,8 +54,15 @@ func PlainFromSlice(ctx context.Context, slice any, fields []string) error {
 		return fmt.Errorf("expected slice, got %T", slice)
 	}
 
+	if err := validateFieldsForSliceType(rv.Type(), fields); err != nil {
+		return err
+	}
+
 	for i := 0; i < rv.Len(); i++ {
-		values := extractFields(rv.Index(i).Interface(), fields)
+		values, err := extractFields(rv.Index(i).Interface(), fields)
+		if err != nil {
+			return err
+		}
 		if err := WritePlain(w.Out, values...); err != nil {
 			return err
 		}
@@ -61,14 +71,64 @@ func PlainFromSlice(ctx context.Context, slice any, fields []string) error {
 	return nil
 }
 
-func extractFields(v any, fields []string) []any {
+func validateFieldsForSliceType(rt reflect.Type, fields []string) error {
+	if rt.Kind() != reflect.Slice {
+		return nil
+	}
+
+	elem := rt.Elem()
+	if elem.Kind() == reflect.Ptr {
+		elem = elem.Elem()
+	}
+
+	if elem.Kind() != reflect.Struct {
+		return nil
+	}
+
+	return validateFieldNames(elem, fields)
+}
+
+func validateFieldNames(rt reflect.Type, fields []string) error {
+	for _, fieldName := range fields {
+		found := false
+		for i := 0; i < rt.NumField(); i++ {
+			sf := rt.Field(i)
+
+			jsonTag := sf.Tag.Get("json")
+			if jsonTag != "" {
+				jsonName := strings.Split(jsonTag, ",")[0]
+				if jsonName == fieldName {
+					found = true
+					break
+				}
+			}
+
+			if strings.EqualFold(sf.Name, fieldName) {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return fmt.Errorf("unknown field %q", fieldName)
+		}
+	}
+
+	return nil
+}
+
+func extractFields(v any, fields []string) ([]any, error) {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() == reflect.Ptr {
 		rv = rv.Elem()
 	}
 
 	if rv.Kind() != reflect.Struct {
-		return []any{fmt.Sprint(v)}
+		return []any{fmt.Sprint(v)}, nil
+	}
+
+	if err := validateFieldNames(rv.Type(), fields); err != nil {
+		return nil, err
 	}
 
 	rt := rv.Type()
@@ -99,9 +159,9 @@ func extractFields(v any, fields []string) []any {
 		}
 
 		if !found {
-			values = append(values, "")
+			return nil, fmt.Errorf("unknown field %q", fieldName)
 		}
 	}
 
-	return values
+	return values, nil
 }

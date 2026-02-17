@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -26,7 +27,8 @@ func (c *WebhooksGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var webhook api.Webhook
-	if err := client.Get(ctx, "/webhooks/"+c.ID, &webhook); err != nil {
+	path := "/webhooks/" + url.PathEscape(c.ID)
+	if err := client.Get(ctx, path, &webhook); err != nil {
 		return fmt.Errorf("get webhook: %w", err)
 	}
 

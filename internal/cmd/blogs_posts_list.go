@@ -3,12 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
 )
 
-// BlogPostsListCmd lists blog posts.
+// BlogPostsListCmd lists blog articles.
 type BlogPostsListCmd struct {
 	Blog    string `arg:"" help:"Blog ID or handle"`
 	All     bool   `help:"Fetch all pages"`
@@ -28,18 +29,23 @@ func (c *BlogPostsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	path := "/blogs/" + c.Blog + "/posts"
+	path := "/blogs/" + url.PathEscape(c.Blog) + "/articles"
+	opts, err := listRequestOptions(flags)
+	if err != nil {
+		return fmt.Errorf("list articles: %w", err)
+	}
+
 	var posts []api.BlogPost
 
 	if c.All {
-		posts, err = api.List[api.BlogPost](ctx, client, path)
+		posts, err = api.List[api.BlogPost](ctx, client, path, opts...)
 		if err != nil {
-			return fmt.Errorf("list posts: %w", err)
+			return fmt.Errorf("list articles: %w", err)
 		}
 	} else {
-		paged, err := api.ListPage[api.BlogPost](ctx, client, path, c.Page, c.PerPage)
+		paged, err := api.ListPage[api.BlogPost](ctx, client, path, c.Page, c.PerPage, opts...)
 		if err != nil {
-			return fmt.Errorf("list posts: %w", err)
+			return fmt.Errorf("list articles: %w", err)
 		}
 		posts = paged.Data
 	}
@@ -49,16 +55,14 @@ func (c *BlogPostsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, posts)
 	}
 
+	plainFields := []string{"id", "slug", "title"}
+	tableFields := []string{"id", "slug", "title", "published"}
+	tableHeaders := []string{"ID", "SLUG", "TITLE", "PUBLISHED"}
+
 	if mode.Plain {
-		for _, p := range posts {
-			if err := output.Plain(ctx, p.ID, p.Slug, p.Title); err != nil {
-				return err
-			}
-		}
-		return nil
+		return output.PlainFromSlice(ctx, posts, listOutputFields(flags, plainFields))
 	}
 
-	fields := []string{"id", "slug", "title", "published"}
-	headers := []string{"ID", "SLUG", "TITLE", "PUBLISHED"}
+	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
 	return output.WriteTable(ctx, posts, fields, headers)
 }

@@ -7,4 +7,5 @@ type MenusCmd struct {
 	Create MenusCreateCmd `cmd:"" help:"Create menu from JSON"`
 	Update MenusUpdateCmd `cmd:"" help:"Update menu"`
 	Delete MenusDeleteCmd `cmd:"" help:"Delete menu"`
+	Count  MenusCountCmd  `cmd:"" help:"Count menus"`
 }

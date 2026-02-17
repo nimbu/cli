@@ -2,10 +2,8 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"os"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -13,14 +11,15 @@ import (
 
 // PagesUpdateCmd updates a page.
 type PagesUpdateCmd struct {
-	Page string `arg:"" help:"Page ID or slug"`
-	File string `help:"JSON file path (default: stdin)" type:"existingfile"`
+	Page        string   `arg:"" help:"Page ID or slug"`
+	File        string   `help:"Read page JSON from file (use - for stdin)"`
+	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. title=About, published:=true)"`
 }
 
 // Run executes the update command.
 func (c *PagesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("write operations disabled in readonly mode")
+	if err := requireWrite(flags, "update page"); err != nil {
+		return err
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -33,28 +32,14 @@ func (c *PagesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var input io.Reader = os.Stdin
-	if c.File != "" {
-		f, err := os.Open(c.File)
-		if err != nil {
-			return fmt.Errorf("open file: %w", err)
-		}
-		defer func() { _ = f.Close() }()
-		input = f
-	}
-
-	data, err := io.ReadAll(input)
+	body, err := readJSONBodyInput(c.File, c.Assignments)
 	if err != nil {
-		return fmt.Errorf("read input: %w", err)
-	}
-
-	var body map[string]any
-	if err := json.Unmarshal(data, &body); err != nil {
-		return fmt.Errorf("parse JSON: %w", err)
+		return err
 	}
 
 	var page api.Page
-	if err := client.Put(ctx, "/pages/"+c.Page, body, &page); err != nil {
+	path := "/pages/" + url.PathEscape(c.Page)
+	if err := client.Put(ctx, path, body, &page); err != nil {
 		return fmt.Errorf("update page: %w", err)
 	}
 

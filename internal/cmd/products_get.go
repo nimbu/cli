@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -26,7 +27,8 @@ func (c *ProductsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var p api.Product
-	if err := client.Get(ctx, "/products/"+c.Product, &p); err != nil {
+	path := "/products/" + url.PathEscape(c.Product)
+	if err := client.Get(ctx, path, &p); err != nil {
 		return fmt.Errorf("get product: %w", err)
 	}
 

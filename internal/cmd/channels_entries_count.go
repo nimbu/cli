@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -11,7 +12,6 @@ import (
 // ChannelEntriesCountCmd counts channel entries.
 type ChannelEntriesCountCmd struct {
 	Channel string `arg:"" help:"Channel ID or slug"`
-	Locale  string `help:"Filter by locale"`
 }
 
 // Run executes the count command.
@@ -26,10 +26,10 @@ func (c *ChannelEntriesCountCmd) Run(ctx context.Context, flags *RootFlags) erro
 		return err
 	}
 
-	path := "/channels/" + c.Channel + "/entries/count"
+	path := "/channels/" + url.PathEscape(c.Channel) + "/entries/count"
 	var opts []api.RequestOption
-	if c.Locale != "" {
-		opts = append(opts, api.WithLocale(c.Locale))
+	if flags.Locale != "" {
+		opts = append(opts, api.WithLocale(flags.Locale))
 	}
 
 	count, err := api.Count(ctx, client, path, opts...)

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/output"
 )
@@ -14,12 +15,12 @@ type WebhooksDeleteCmd struct {
 
 // Run executes the delete command.
 func (c *WebhooksDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("cannot delete webhook in readonly mode")
+	if err := requireWrite(flags, "delete webhook"); err != nil {
+		return err
 	}
 
-	if !flags.Force {
-		return fmt.Errorf("use --force to confirm deletion")
+	if err := requireForce(flags, "webhook "+c.ID); err != nil {
+		return err
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -32,7 +33,8 @@ func (c *WebhooksDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	if err := client.Delete(ctx, "/webhooks/"+c.ID, nil); err != nil {
+	path := "/webhooks/" + url.PathEscape(c.ID)
+	if err := client.Delete(ctx, path, nil); err != nil {
 		return fmt.Errorf("delete webhook: %w", err)
 	}
 

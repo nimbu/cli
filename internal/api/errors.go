@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -71,7 +72,7 @@ func parseError(statusCode int, body []byte) *Error {
 	var errResp struct {
 		Error   string            `json:"error"`
 		Message string            `json:"message"`
-		Code    string            `json:"code"`
+		RawCode json.RawMessage   `json:"code"`
 		Errors  []ValidationError `json:"errors"`
 		Details map[string]any    `json:"details"`
 	}
@@ -82,7 +83,7 @@ func parseError(statusCode int, body []byte) *Error {
 		} else if errResp.Message != "" {
 			apiErr.Message = errResp.Message
 		}
-		apiErr.Code = errResp.Code
+		apiErr.Code = parseErrorCode(errResp.RawCode)
 		apiErr.Errors = errResp.Errors
 		apiErr.Details = errResp.Details
 	}
@@ -114,6 +115,24 @@ func parseError(statusCode int, body []byte) *Error {
 	}
 
 	return apiErr
+}
+
+func parseErrorCode(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+
+	var code string
+	if err := json.Unmarshal(raw, &code); err == nil {
+		return code
+	}
+
+	var codeInt int
+	if err := json.Unmarshal(raw, &codeInt); err == nil {
+		return strconv.Itoa(codeInt)
+	}
+
+	return ""
 }
 
 // Common error checks

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/output"
 )
@@ -14,12 +15,12 @@ type UploadsDeleteCmd struct {
 
 // Run executes the delete command.
 func (c *UploadsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("write operations disabled in readonly mode")
+	if err := requireWrite(flags, "delete upload"); err != nil {
+		return err
 	}
 
-	if !flags.Force {
-		return fmt.Errorf("delete requires --force flag")
+	if err := requireForce(flags, "upload "+c.ID); err != nil {
+		return err
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -32,7 +33,8 @@ func (c *UploadsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	if err := client.Delete(ctx, "/uploads/"+c.ID, nil); err != nil {
+	path := "/uploads/" + url.PathEscape(c.ID)
+	if err := client.Delete(ctx, path, nil); err != nil {
 		return fmt.Errorf("delete upload: %w", err)
 	}
 
@@ -42,7 +44,7 @@ func (c *UploadsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if mode.Plain {
-		return output.Plain(ctx, "deleted", c.ID)
+		return output.Plain(ctx, c.ID, "deleted")
 	}
 
 	fmt.Printf("Deleted: %s\n", c.ID)

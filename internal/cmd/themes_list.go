@@ -9,7 +9,11 @@ import (
 )
 
 // ThemesListCmd lists themes.
-type ThemesListCmd struct{}
+type ThemesListCmd struct {
+	All     bool `help:"Fetch all pages"`
+	Page    int  `help:"Page number" default:"1"`
+	PerPage int  `help:"Items per page" default:"25"`
+}
 
 // Run executes the list command.
 func (c *ThemesListCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -23,9 +27,24 @@ func (c *ThemesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	themes, err := api.List[api.Theme](ctx, client, "/themes")
+	opts, err := listRequestOptions(flags)
 	if err != nil {
 		return fmt.Errorf("list themes: %w", err)
+	}
+
+	var themes []api.Theme
+
+	if c.All {
+		themes, err = api.List[api.Theme](ctx, client, "/themes", opts...)
+		if err != nil {
+			return fmt.Errorf("list themes: %w", err)
+		}
+	} else {
+		paged, err := api.ListPage[api.Theme](ctx, client, "/themes", c.Page, c.PerPage, opts...)
+		if err != nil {
+			return fmt.Errorf("list themes: %w", err)
+		}
+		themes = paged.Data
 	}
 
 	mode := output.FromContext(ctx)
@@ -33,16 +52,14 @@ func (c *ThemesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, themes)
 	}
 
+	plainFields := []string{"id", "name", "active"}
+	tableFields := []string{"id", "name", "active"}
+	tableHeaders := []string{"ID", "NAME", "ACTIVE"}
+
 	if mode.Plain {
-		for _, t := range themes {
-			if err := output.Plain(ctx, t.ID, t.Name, t.Active); err != nil {
-				return err
-			}
-		}
-		return nil
+		return output.PlainFromSlice(ctx, themes, listOutputFields(flags, plainFields))
 	}
 
-	fields := []string{"id", "name", "active"}
-	headers := []string{"ID", "NAME", "ACTIVE"}
+	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
 	return output.WriteTable(ctx, themes, fields, headers)
 }

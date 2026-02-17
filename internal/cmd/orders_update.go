@@ -2,10 +2,9 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"os"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -13,15 +12,16 @@ import (
 
 // OrdersUpdateCmd updates an order.
 type OrdersUpdateCmd struct {
-	Order  string `arg:"" help:"Order ID or number"`
-	Status string `help:"Set order status"`
-	File   string `help:"Read order JSON from file (use - for stdin)" type:"existingfile"`
+	Order       string   `arg:"" help:"Order ID or number"`
+	Status      string   `help:"Set order status"`
+	File        string   `help:"Read order JSON from file (use - for stdin)"`
+	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. status=paid, note=Done)"`
 }
 
 // Run executes the update command.
 func (c *OrdersUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("cannot update order in readonly mode")
+	if err := requireWrite(flags, "update order"); err != nil {
+		return err
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -34,37 +34,25 @@ func (c *OrdersUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var body map[string]any
+	body, err := readJSONBodyInput(c.File, c.Assignments)
+	if err != nil {
+		if c.Status == "" || !errors.Is(err, errNoJSONInput) {
+			return err
+		}
+		body = map[string]any{}
+	}
 
-	// If --status flag is used, create simple body
 	if c.Status != "" {
-		body = map[string]any{"status": c.Status}
-	} else {
-		// Read from file or stdin
-		var input io.Reader
-		if c.File == "-" || c.File == "" {
-			input = os.Stdin
-		} else {
-			f, err := os.Open(c.File)
-			if err != nil {
-				return fmt.Errorf("open file: %w", err)
-			}
-			defer func() { _ = f.Close() }()
-			input = f
+		statusBody, mergeErr := mergeJSONBodies(body, map[string]any{"status": c.Status})
+		if mergeErr != nil {
+			return fmt.Errorf("merge --status with request body: %w", mergeErr)
 		}
-
-		data, err := io.ReadAll(input)
-		if err != nil {
-			return fmt.Errorf("read input: %w", err)
-		}
-
-		if err := json.Unmarshal(data, &body); err != nil {
-			return fmt.Errorf("parse JSON: %w", err)
-		}
+		body = statusBody
 	}
 
 	var o api.Order
-	if err := client.Patch(ctx, "/orders/"+c.Order, body, &o); err != nil {
+	path := "/orders/" + url.PathEscape(c.Order)
+	if err := client.Put(ctx, path, body, &o); err != nil {
 		return fmt.Errorf("update order: %w", err)
 	}
 

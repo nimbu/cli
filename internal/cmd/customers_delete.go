@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/output"
 )
@@ -14,12 +15,12 @@ type CustomersDeleteCmd struct {
 
 // Run executes the delete command.
 func (c *CustomersDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("cannot delete customer in readonly mode")
+	if err := requireWrite(flags, "delete customer"); err != nil {
+		return err
 	}
 
-	if !flags.Force {
-		return fmt.Errorf("use --force to confirm deletion of customer %s", c.Customer)
+	if err := requireForce(flags, "customer "+c.Customer); err != nil {
+		return err
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -32,7 +33,8 @@ func (c *CustomersDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	if err := client.Delete(ctx, "/customers/"+c.Customer, nil); err != nil {
+	path := "/customers/" + url.PathEscape(c.Customer)
+	if err := client.Delete(ctx, path, nil); err != nil {
 		return fmt.Errorf("delete customer: %w", err)
 	}
 

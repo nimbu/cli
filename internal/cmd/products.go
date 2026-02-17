@@ -7,4 +7,5 @@ type ProductsCmd struct {
 	Create ProductsCreateCmd `cmd:"" help:"Create a product"`
 	Update ProductsUpdateCmd `cmd:"" help:"Update a product"`
 	Delete ProductsDeleteCmd `cmd:"" help:"Delete a product"`
+	Count  ProductsCountCmd  `cmd:"" help:"Count products"`
 }

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -14,7 +15,6 @@ type ChannelEntriesListCmd struct {
 	All     bool   `help:"Fetch all pages"`
 	Page    int    `help:"Page number" default:"1"`
 	PerPage int    `help:"Items per page" default:"25"`
-	Locale  string `help:"Filter by locale"`
 }
 
 // Run executes the list command.
@@ -29,10 +29,10 @@ func (c *ChannelEntriesListCmd) Run(ctx context.Context, flags *RootFlags) error
 		return err
 	}
 
-	path := "/channels/" + c.Channel + "/entries"
-	var opts []api.RequestOption
-	if c.Locale != "" {
-		opts = append(opts, api.WithLocale(c.Locale))
+	path := "/channels/" + url.PathEscape(c.Channel) + "/entries"
+	opts, err := listRequestOptions(flags)
+	if err != nil {
+		return fmt.Errorf("list entries: %w", err)
 	}
 
 	var entries []api.Entry
@@ -55,16 +55,14 @@ func (c *ChannelEntriesListCmd) Run(ctx context.Context, flags *RootFlags) error
 		return output.JSON(ctx, entries)
 	}
 
+	plainFields := []string{"id", "slug", "title"}
+	tableFields := []string{"id", "slug", "title", "published"}
+	tableHeaders := []string{"ID", "SLUG", "TITLE", "PUBLISHED"}
+
 	if mode.Plain {
-		for _, e := range entries {
-			if err := output.Plain(ctx, e.ID, e.Slug, e.Title); err != nil {
-				return err
-			}
-		}
-		return nil
+		return output.PlainFromSlice(ctx, entries, listOutputFields(flags, plainFields))
 	}
 
-	fields := []string{"id", "slug", "title", "published"}
-	headers := []string{"ID", "SLUG", "TITLE", "PUBLISHED"}
+	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
 	return output.WriteTable(ctx, entries, fields, headers)
 }

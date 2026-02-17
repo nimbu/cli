@@ -3,12 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
 )
 
-// BlogPostsGetCmd gets a blog post.
+// BlogPostsGetCmd gets a blog article.
 type BlogPostsGetCmd struct {
 	Blog string `arg:"" help:"Blog ID or handle"`
 	Post string `arg:"" help:"Post ID or slug"`
@@ -26,10 +27,10 @@ func (c *BlogPostsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	path := "/blogs/" + c.Blog + "/posts/" + c.Post
+	path := "/blogs/" + url.PathEscape(c.Blog) + "/articles/" + url.PathEscape(c.Post)
 	var post api.BlogPost
 	if err := client.Get(ctx, path, &post); err != nil {
-		return fmt.Errorf("get post: %w", err)
+		return fmt.Errorf("get article: %w", err)
 	}
 
 	mode := output.FromContext(ctx)

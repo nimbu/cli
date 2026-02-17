@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/output"
 )
@@ -14,12 +15,12 @@ type TokensRevokeCmd struct {
 
 // Run executes the revoke command.
 func (c *TokensRevokeCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("cannot revoke token in readonly mode")
+	if err := requireWrite(flags, "revoke token"); err != nil {
+		return err
 	}
 
-	if !flags.Force {
-		return fmt.Errorf("use --force to confirm token revocation")
+	if err := requireForce(flags, "token "+c.ID); err != nil {
+		return err
 	}
 
 	client, err := GetAPIClient(ctx)
@@ -27,7 +28,8 @@ func (c *TokensRevokeCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	if err := client.Delete(ctx, "/tokens/"+c.ID, nil); err != nil {
+	path := "/tokens/" + url.PathEscape(c.ID)
+	if err := client.Delete(ctx, path, nil); err != nil {
 		return fmt.Errorf("revoke token: %w", err)
 	}
 

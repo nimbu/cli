@@ -38,48 +38,77 @@ func writeBashCompletion(_ *kong.Kong) error {
 
 _nimbu_cli_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
-    local commands="auth sites channels pages menus products orders customers themes uploads blogs webhooks tokens config api completion"
+    local commands="auth sites channels pages menus products collections coupons orders customers accounts notifications roles redirects functions jobs apps themes uploads blogs webhooks tokens translations config api completion"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=($(compgen -W "${commands}" -- "${cur}"))
         return
     fi
 
-    case "${COMP_WORDS[1]}" in
-        auth)
-            COMPREPLY=($(compgen -W "login logout status whoami token keyring" -- "${cur}"))
-            ;;
-        sites)
-            COMPREPLY=($(compgen -W "list get current" -- "${cur}"))
-            ;;
-        channels|pages|menus|products|customers)
-            COMPREPLY=($(compgen -W "list get create update delete" -- "${cur}"))
-            ;;
-        orders)
-            COMPREPLY=($(compgen -W "list get update count" -- "${cur}"))
-            ;;
-        themes)
-            COMPREPLY=($(compgen -W "list get files" -- "${cur}"))
-            ;;
-        uploads)
-            COMPREPLY=($(compgen -W "list get create delete" -- "${cur}"))
-            ;;
-        blogs)
-            COMPREPLY=($(compgen -W "list get posts" -- "${cur}"))
-            ;;
-        webhooks)
-            COMPREPLY=($(compgen -W "list get create update delete" -- "${cur}"))
-            ;;
-        tokens)
-            COMPREPLY=($(compgen -W "list create revoke" -- "${cur}"))
-            ;;
-        config)
-            COMPREPLY=($(compgen -W "list get set unset path" -- "${cur}"))
-            ;;
-        completion)
-            COMPREPLY=($(compgen -W "bash zsh fish" -- "${cur}"))
-            ;;
-    esac
+    if [[ ${COMP_CWORD} -eq 2 ]]; then
+        case "${COMP_WORDS[1]}" in
+            auth)
+                COMPREPLY=($(compgen -W "login logout status whoami token keyring" -- "${cur}"))
+                ;;
+            sites)
+                COMPREPLY=($(compgen -W "list get current count settings" -- "${cur}"))
+                ;;
+            channels)
+                COMPREPLY=($(compgen -W "list get entries fields" -- "${cur}"))
+                ;;
+            pages|menus|products|customers|collections|coupons|notifications|translations)
+                COMPREPLY=($(compgen -W "list get create update delete count" -- "${cur}"))
+                ;;
+            orders)
+                COMPREPLY=($(compgen -W "list get update count" -- "${cur}"))
+                ;;
+            accounts)
+                COMPREPLY=($(compgen -W "list count" -- "${cur}"))
+                ;;
+            roles|redirects)
+                COMPREPLY=($(compgen -W "list get create update delete" -- "${cur}"))
+                ;;
+            functions|jobs)
+                COMPREPLY=($(compgen -W "run" -- "${cur}"))
+                ;;
+            apps)
+                COMPREPLY=($(compgen -W "list get code" -- "${cur}"))
+                ;;
+            themes)
+                COMPREPLY=($(compgen -W "list get layouts templates snippets assets files" -- "${cur}"))
+                ;;
+            uploads)
+                COMPREPLY=($(compgen -W "list get create delete" -- "${cur}"))
+                ;;
+            blogs)
+                COMPREPLY=($(compgen -W "list get create update delete count posts articles" -- "${cur}"))
+                ;;
+            webhooks)
+                COMPREPLY=($(compgen -W "list get create update delete count" -- "${cur}"))
+                ;;
+            tokens)
+                COMPREPLY=($(compgen -W "list get create revoke" -- "${cur}"))
+                ;;
+            config)
+                COMPREPLY=($(compgen -W "list get set unset path" -- "${cur}"))
+                ;;
+            completion)
+                COMPREPLY=($(compgen -W "bash zsh fish" -- "${cur}"))
+                ;;
+        esac
+    elif [[ ${COMP_WORDS[1]} == "themes" ]]; then
+        case "${COMP_WORDS[2]}" in
+            layouts|templates|snippets|assets|files)
+                COMPREPLY=($(compgen -W "list get create delete" -- "${cur}"))
+                ;;
+        esac
+    elif [[ ${COMP_WORDS[1]} == "apps" && ${COMP_WORDS[2]} == "code" ]]; then
+        COMPREPLY=($(compgen -W "list create" -- "${cur}"))
+    elif [[ ${COMP_WORDS[1]} == "blogs" && (${COMP_WORDS[2]} == "posts" || ${COMP_WORDS[2]} == "articles") ]]; then
+        COMPREPLY=($(compgen -W "list get create update delete count" -- "${cur}"))
+    elif [[ ${COMP_WORDS[1]} == "channels" && ${COMP_WORDS[2]} == "entries" ]]; then
+        COMPREPLY=($(compgen -W "list get create update delete count" -- "${cur}"))
+    fi
 }
 
 complete -F _nimbu_cli_completions nimbu-cli
@@ -103,13 +132,23 @@ _nimbu_cli() {
         'pages:Manage pages'
         'menus:Manage navigation menus'
         'products:Manage products'
+        'collections:Manage collections'
+        'coupons:Manage coupons'
         'orders:Manage orders'
         'customers:Manage customers'
+        'accounts:Manage accounts'
+        'notifications:Manage notifications'
+        'roles:Manage roles'
+        'redirects:Manage redirects'
+        'functions:Execute cloud functions'
+        'jobs:Execute cloud jobs'
+        'apps:Manage OAuth apps'
         'themes:Manage themes'
         'uploads:Manage uploads'
         'blogs:Manage blogs'
         'webhooks:Manage webhooks'
         'tokens:Manage API tokens'
+        'translations:Manage translations'
         'config:Manage configuration'
         'api:Raw API access'
         'completion:Generate shell completions'
@@ -148,8 +187,32 @@ _nimbu_cli() {
                 'list:List channels'
                 'get:Get channel details'
                 'entries:Manage channel entries'
+                'fields:List channel fields'
             )
             _describe -t channels-commands 'channels command' channels_commands
+            ;;
+        themes)
+            local -a themes_commands
+            themes_commands=(
+                'list:List themes'
+                'get:Get theme details'
+                'layouts:Manage layouts'
+                'templates:Manage templates'
+                'snippets:Manage snippets'
+                'assets:Manage assets'
+                'files:Manage theme files'
+            )
+            _describe -t themes-commands 'themes command' themes_commands
+            ;;
+        layouts|templates|snippets|assets)
+            local -a theme_section_commands
+            theme_section_commands=(
+                'list:List section items'
+                'get:Get section item'
+                'create:Create or update section item'
+                'delete:Delete section item'
+            )
+            _describe -t theme-section-commands 'theme section command' theme_section_commands
             ;;
         config)
             local -a config_commands
@@ -161,6 +224,15 @@ _nimbu_cli() {
                 'path:Print config file path'
             )
             _describe -t config-commands 'config command' config_commands
+            ;;
+        apps)
+            local -a apps_commands
+            apps_commands=(
+                'list:List apps'
+                'get:Get app details'
+                'code:Manage app code files'
+            )
+            _describe -t apps-commands 'apps command' apps_commands
             ;;
         completion)
             local -a completion_commands
@@ -187,13 +259,23 @@ complete -c nimbu-cli -n "__fish_use_subcommand" -a "channels" -d "Manage channe
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "pages" -d "Manage pages"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "menus" -d "Manage navigation menus"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "products" -d "Manage products"
+complete -c nimbu-cli -n "__fish_use_subcommand" -a "collections" -d "Manage collections"
+complete -c nimbu-cli -n "__fish_use_subcommand" -a "coupons" -d "Manage coupons"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "orders" -d "Manage orders"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "customers" -d "Manage customers"
+complete -c nimbu-cli -n "__fish_use_subcommand" -a "accounts" -d "Manage accounts"
+complete -c nimbu-cli -n "__fish_use_subcommand" -a "notifications" -d "Manage notifications"
+complete -c nimbu-cli -n "__fish_use_subcommand" -a "roles" -d "Manage roles"
+complete -c nimbu-cli -n "__fish_use_subcommand" -a "redirects" -d "Manage redirects"
+complete -c nimbu-cli -n "__fish_use_subcommand" -a "functions" -d "Execute cloud functions"
+complete -c nimbu-cli -n "__fish_use_subcommand" -a "jobs" -d "Execute cloud jobs"
+complete -c nimbu-cli -n "__fish_use_subcommand" -a "apps" -d "Manage OAuth apps"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "themes" -d "Manage themes"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "uploads" -d "Manage uploads"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "blogs" -d "Manage blogs"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "webhooks" -d "Manage webhooks"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "tokens" -d "Manage API tokens"
+complete -c nimbu-cli -n "__fish_use_subcommand" -a "translations" -d "Manage translations"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "config" -d "Manage configuration"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "api" -d "Raw API access"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "completion" -d "Generate shell completions"
@@ -205,6 +287,22 @@ complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "status" -d "Show
 complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "whoami" -d "Show current user"
 complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "token" -d "Print access token"
 complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "keyring" -d "Manage keyring"
+
+# Themes subcommands
+complete -c nimbu-cli -n "__fish_seen_subcommand_from themes" -a "list get layouts templates snippets assets files" -d "Theme commands"
+complete -c nimbu-cli -n "__fish_seen_subcommand_from channels" -a "list get fields entries" -d "Channel commands"
+complete -c nimbu-cli -n "__fish_seen_subcommand_from blogs" -a "list get create update delete count posts articles" -d "Blog commands"
+complete -c nimbu-cli -n "__fish_seen_subcommand_from apps" -a "list get code" -d "App commands"
+complete -c nimbu-cli -n "__fish_seen_subcommand_from functions" -a "run" -d "Run function"
+complete -c nimbu-cli -n "__fish_seen_subcommand_from jobs" -a "run" -d "Run job"
+
+# Theme section subcommands
+complete -c nimbu-cli -n "__fish_seen_subcommand_from layouts" -a "list get create delete" -d "Manage layouts"
+complete -c nimbu-cli -n "__fish_seen_subcommand_from templates" -a "list get create delete" -d "Manage templates"
+complete -c nimbu-cli -n "__fish_seen_subcommand_from snippets" -a "list get create delete" -d "Manage snippets"
+complete -c nimbu-cli -n "__fish_seen_subcommand_from assets" -a "list get create delete" -d "Manage assets"
+complete -c nimbu-cli -n "__fish_seen_subcommand_from files" -a "list get create delete" -d "Manage theme files"
+complete -c nimbu-cli -n "__fish_seen_subcommand_from code" -a "list create" -d "Manage app code files"
 
 # Config subcommands
 complete -c nimbu-cli -n "__fish_seen_subcommand_from config" -a "list" -d "List all config values"

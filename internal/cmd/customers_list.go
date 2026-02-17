@@ -9,7 +9,11 @@ import (
 )
 
 // CustomersListCmd lists customers.
-type CustomersListCmd struct{}
+type CustomersListCmd struct {
+	All     bool `help:"Fetch all pages"`
+	Page    int  `help:"Page number" default:"1"`
+	PerPage int  `help:"Items per page" default:"25"`
+}
 
 // Run executes the list command.
 func (c *CustomersListCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -23,9 +27,24 @@ func (c *CustomersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	customers, err := api.List[api.Customer](ctx, client, "/customers")
+	opts, err := listRequestOptions(flags)
 	if err != nil {
 		return fmt.Errorf("list customers: %w", err)
+	}
+
+	var customers []api.Customer
+
+	if c.All {
+		customers, err = api.List[api.Customer](ctx, client, "/customers", opts...)
+		if err != nil {
+			return fmt.Errorf("list customers: %w", err)
+		}
+	} else {
+		paged, err := api.ListPage[api.Customer](ctx, client, "/customers", c.Page, c.PerPage, opts...)
+		if err != nil {
+			return fmt.Errorf("list customers: %w", err)
+		}
+		customers = paged.Data
 	}
 
 	mode := output.FromContext(ctx)
@@ -33,17 +52,14 @@ func (c *CustomersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, customers)
 	}
 
+	plainFields := []string{"id", "email", "first_name", "last_name"}
+	tableFields := []string{"id", "email", "first_name", "last_name"}
+	tableHeaders := []string{"ID", "EMAIL", "FIRST NAME", "LAST NAME"}
+
 	if mode.Plain {
-		for _, cust := range customers {
-			if err := output.Plain(ctx, cust.ID, cust.Email, cust.FirstName, cust.LastName); err != nil {
-				return err
-			}
-		}
-		return nil
+		return output.PlainFromSlice(ctx, customers, listOutputFields(flags, plainFields))
 	}
 
-	// Human-readable table
-	fields := []string{"id", "email", "first_name", "last_name"}
-	headers := []string{"ID", "EMAIL", "FIRST NAME", "LAST NAME"}
+	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
 	return output.WriteTable(ctx, customers, fields, headers)
 }

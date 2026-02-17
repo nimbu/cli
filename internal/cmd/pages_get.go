@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -10,8 +11,7 @@ import (
 
 // PagesGetCmd gets page details.
 type PagesGetCmd struct {
-	Page   string `arg:"" help:"Page ID or slug"`
-	Locale string `help:"Locale to fetch"`
+	Page string `arg:"" help:"Page ID or slug"`
 }
 
 // Run executes the get command.
@@ -27,12 +27,13 @@ func (c *PagesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var opts []api.RequestOption
-	if c.Locale != "" {
-		opts = append(opts, api.WithLocale(c.Locale))
+	if flags.Locale != "" {
+		opts = append(opts, api.WithLocale(flags.Locale))
 	}
 
 	var page api.Page
-	if err := client.Get(ctx, "/pages/"+c.Page, &page, opts...); err != nil {
+	path := "/pages/" + url.PathEscape(c.Page)
+	if err := client.Get(ctx, path, &page, opts...); err != nil {
 		return fmt.Errorf("get page: %w", err)
 	}
 

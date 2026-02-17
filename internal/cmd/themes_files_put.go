@@ -22,8 +22,8 @@ type ThemeFilesPutCmd struct {
 
 // Run executes the put command.
 func (c *ThemeFilesPutCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("write operations disabled in readonly mode")
+	if err := requireWrite(flags, "update theme file"); err != nil {
+		return err
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -66,7 +66,7 @@ func (c *ThemeFilesPutCmd) Run(ctx context.Context, flags *RootFlags) error {
 		"content": base64.StdEncoding.EncodeToString(content),
 	}
 
-	path := fmt.Sprintf("/themes/%s/files/%s", c.Theme, url.PathEscape(c.Path))
+	path := fmt.Sprintf("/themes/%s/files/%s", url.PathEscape(c.Theme), url.PathEscape(c.Path))
 	var result api.ThemeFile
 	if err := client.Put(ctx, path, body, &result); err != nil {
 		return fmt.Errorf("put theme file: %w", err)

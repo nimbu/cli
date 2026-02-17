@@ -9,7 +9,11 @@ import (
 )
 
 // MenusListCmd lists menus.
-type MenusListCmd struct{}
+type MenusListCmd struct {
+	All     bool `help:"Fetch all pages"`
+	Page    int  `help:"Page number" default:"1"`
+	PerPage int  `help:"Items per page" default:"25"`
+}
 
 // Run executes the list command.
 func (c *MenusListCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -23,9 +27,24 @@ func (c *MenusListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	menus, err := api.List[api.Menu](ctx, client, "/menus")
+	opts, err := listRequestOptions(flags)
 	if err != nil {
 		return fmt.Errorf("list menus: %w", err)
+	}
+
+	var menus []api.Menu
+
+	if c.All {
+		menus, err = api.List[api.Menu](ctx, client, "/menus", opts...)
+		if err != nil {
+			return fmt.Errorf("list menus: %w", err)
+		}
+	} else {
+		paged, err := api.ListPage[api.Menu](ctx, client, "/menus", c.Page, c.PerPage, opts...)
+		if err != nil {
+			return fmt.Errorf("list menus: %w", err)
+		}
+		menus = paged.Data
 	}
 
 	mode := output.FromContext(ctx)
@@ -33,16 +52,14 @@ func (c *MenusListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, menus)
 	}
 
+	plainFields := []string{"id", "handle", "name"}
+	tableFields := []string{"id", "handle", "name"}
+	tableHeaders := []string{"ID", "HANDLE", "NAME"}
+
 	if mode.Plain {
-		for _, m := range menus {
-			if err := output.Plain(ctx, m.ID, m.Handle, m.Name); err != nil {
-				return err
-			}
-		}
-		return nil
+		return output.PlainFromSlice(ctx, menus, listOutputFields(flags, plainFields))
 	}
 
-	fields := []string{"id", "handle", "name"}
-	headers := []string{"ID", "HANDLE", "NAME"}
+	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
 	return output.WriteTable(ctx, menus, fields, headers)
 }

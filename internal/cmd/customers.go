@@ -7,4 +7,5 @@ type CustomersCmd struct {
 	Create CustomersCreateCmd `cmd:"" help:"Create a customer"`
 	Update CustomersUpdateCmd `cmd:"" help:"Update a customer"`
 	Delete CustomersDeleteCmd `cmd:"" help:"Delete a customer"`
+	Count  CustomersCountCmd  `cmd:"" help:"Count customers"`
 }

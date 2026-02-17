@@ -9,7 +9,11 @@ import (
 )
 
 // BlogsListCmd lists blogs.
-type BlogsListCmd struct{}
+type BlogsListCmd struct {
+	All     bool `help:"Fetch all pages"`
+	Page    int  `help:"Page number" default:"1"`
+	PerPage int  `help:"Items per page" default:"25"`
+}
 
 // Run executes the list command.
 func (c *BlogsListCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -23,9 +27,24 @@ func (c *BlogsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	blogs, err := api.List[api.Blog](ctx, client, "/blogs")
+	opts, err := listRequestOptions(flags)
 	if err != nil {
 		return fmt.Errorf("list blogs: %w", err)
+	}
+
+	var blogs []api.Blog
+
+	if c.All {
+		blogs, err = api.List[api.Blog](ctx, client, "/blogs", opts...)
+		if err != nil {
+			return fmt.Errorf("list blogs: %w", err)
+		}
+	} else {
+		paged, err := api.ListPage[api.Blog](ctx, client, "/blogs", c.Page, c.PerPage, opts...)
+		if err != nil {
+			return fmt.Errorf("list blogs: %w", err)
+		}
+		blogs = paged.Data
 	}
 
 	mode := output.FromContext(ctx)
@@ -33,16 +52,14 @@ func (c *BlogsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, blogs)
 	}
 
+	plainFields := []string{"id", "handle", "name"}
+	tableFields := []string{"id", "handle", "name"}
+	tableHeaders := []string{"ID", "HANDLE", "NAME"}
+
 	if mode.Plain {
-		for _, b := range blogs {
-			if err := output.Plain(ctx, b.ID, b.Handle, b.Name); err != nil {
-				return err
-			}
-		}
-		return nil
+		return output.PlainFromSlice(ctx, blogs, listOutputFields(flags, plainFields))
 	}
 
-	fields := []string{"id", "handle", "name"}
-	headers := []string{"ID", "HANDLE", "NAME"}
+	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
 	return output.WriteTable(ctx, blogs, fields, headers)
 }

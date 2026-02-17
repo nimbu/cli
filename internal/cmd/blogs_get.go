@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -26,7 +27,8 @@ func (c *BlogsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var blog api.Blog
-	if err := client.Get(ctx, "/blogs/"+c.Blog, &blog); err != nil {
+	path := "/blogs/" + url.PathEscape(c.Blog)
+	if err := client.Get(ctx, path, &blog); err != nil {
 		return fmt.Errorf("get blog: %w", err)
 	}
 

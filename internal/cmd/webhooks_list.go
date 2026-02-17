@@ -9,7 +9,11 @@ import (
 )
 
 // WebhooksListCmd lists webhooks.
-type WebhooksListCmd struct{}
+type WebhooksListCmd struct {
+	All     bool `help:"Fetch all pages"`
+	Page    int  `help:"Page number" default:"1"`
+	PerPage int  `help:"Items per page" default:"25"`
+}
 
 // Run executes the list command.
 func (c *WebhooksListCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -23,9 +27,24 @@ func (c *WebhooksListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	webhooks, err := api.List[api.Webhook](ctx, client, "/webhooks")
+	opts, err := listRequestOptions(flags)
 	if err != nil {
 		return fmt.Errorf("list webhooks: %w", err)
+	}
+
+	var webhooks []api.Webhook
+
+	if c.All {
+		webhooks, err = api.List[api.Webhook](ctx, client, "/webhooks", opts...)
+		if err != nil {
+			return fmt.Errorf("list webhooks: %w", err)
+		}
+	} else {
+		paged, err := api.ListPage[api.Webhook](ctx, client, "/webhooks", c.Page, c.PerPage, opts...)
+		if err != nil {
+			return fmt.Errorf("list webhooks: %w", err)
+		}
+		webhooks = paged.Data
 	}
 
 	mode := output.FromContext(ctx)
@@ -33,16 +52,14 @@ func (c *WebhooksListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, webhooks)
 	}
 
+	plainFields := []string{"id", "url", "active"}
+	tableFields := []string{"id", "url", "active"}
+	tableHeaders := []string{"ID", "URL", "ACTIVE"}
+
 	if mode.Plain {
-		for _, w := range webhooks {
-			if err := output.Plain(ctx, w.ID, w.URL, w.Active); err != nil {
-				return err
-			}
-		}
-		return nil
+		return output.PlainFromSlice(ctx, webhooks, listOutputFields(flags, plainFields))
 	}
 
-	fields := []string{"id", "url", "active"}
-	headers := []string{"ID", "URL", "ACTIVE"}
+	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
 	return output.WriteTable(ctx, webhooks, fields, headers)
 }

@@ -9,7 +9,11 @@ import (
 )
 
 // ProductsListCmd lists products.
-type ProductsListCmd struct{}
+type ProductsListCmd struct {
+	All     bool `help:"Fetch all pages"`
+	Page    int  `help:"Page number" default:"1"`
+	PerPage int  `help:"Items per page" default:"25"`
+}
 
 // Run executes the list command.
 func (c *ProductsListCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -23,9 +27,24 @@ func (c *ProductsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	products, err := api.List[api.Product](ctx, client, "/products")
+	opts, err := listRequestOptions(flags)
 	if err != nil {
 		return fmt.Errorf("list products: %w", err)
+	}
+
+	var products []api.Product
+
+	if c.All {
+		products, err = api.List[api.Product](ctx, client, "/products", opts...)
+		if err != nil {
+			return fmt.Errorf("list products: %w", err)
+		}
+	} else {
+		paged, err := api.ListPage[api.Product](ctx, client, "/products", c.Page, c.PerPage, opts...)
+		if err != nil {
+			return fmt.Errorf("list products: %w", err)
+		}
+		products = paged.Data
 	}
 
 	mode := output.FromContext(ctx)
@@ -33,17 +52,14 @@ func (c *ProductsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, products)
 	}
 
+	plainFields := []string{"id", "slug", "name", "sku", "price"}
+	tableFields := []string{"id", "slug", "name", "sku", "price", "published"}
+	tableHeaders := []string{"ID", "SLUG", "NAME", "SKU", "PRICE", "PUBLISHED"}
+
 	if mode.Plain {
-		for _, p := range products {
-			if err := output.Plain(ctx, p.ID, p.Slug, p.Name, p.SKU, p.Price); err != nil {
-				return err
-			}
-		}
-		return nil
+		return output.PlainFromSlice(ctx, products, listOutputFields(flags, plainFields))
 	}
 
-	// Human-readable table
-	fields := []string{"id", "slug", "name", "sku", "price", "published"}
-	headers := []string{"ID", "SLUG", "NAME", "SKU", "PRICE", "PUBLISHED"}
+	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
 	return output.WriteTable(ctx, products, fields, headers)
 }

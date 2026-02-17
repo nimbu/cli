@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -26,7 +27,8 @@ func (c *MenusGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var menu api.Menu
-	if err := client.Get(ctx, "/menus/"+c.Menu, &menu); err != nil {
+	path := "/menus/" + url.PathEscape(c.Menu)
+	if err := client.Get(ctx, path, &menu); err != nil {
 		return fmt.Errorf("get menu: %w", err)
 	}
 

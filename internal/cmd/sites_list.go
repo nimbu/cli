@@ -9,7 +9,11 @@ import (
 )
 
 // SitesListCmd lists accessible sites.
-type SitesListCmd struct{}
+type SitesListCmd struct {
+	All     bool `help:"Fetch all pages"`
+	Page    int  `help:"Page number" default:"1"`
+	PerPage int  `help:"Items per page" default:"25"`
+}
 
 // Run executes the list command.
 func (c *SitesListCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -18,9 +22,24 @@ func (c *SitesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	sites, err := api.List[api.Site](ctx, client, "/sites")
+	opts, err := listRequestOptions(flags)
 	if err != nil {
 		return fmt.Errorf("list sites: %w", err)
+	}
+
+	var sites []api.Site
+
+	if c.All {
+		sites, err = api.List[api.Site](ctx, client, "/sites", opts...)
+		if err != nil {
+			return fmt.Errorf("list sites: %w", err)
+		}
+	} else {
+		paged, err := api.ListPage[api.Site](ctx, client, "/sites", c.Page, c.PerPage, opts...)
+		if err != nil {
+			return fmt.Errorf("list sites: %w", err)
+		}
+		sites = paged.Data
 	}
 
 	mode := output.FromContext(ctx)
@@ -28,17 +47,14 @@ func (c *SitesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, sites)
 	}
 
+	plainFields := []string{"id", "subdomain", "name"}
+	tableFields := []string{"id", "subdomain", "name"}
+	tableHeaders := []string{"ID", "SUBDOMAIN", "NAME"}
+
 	if mode.Plain {
-		for _, s := range sites {
-			if err := output.Plain(ctx, s.ID, s.Subdomain, s.Name); err != nil {
-				return err
-			}
-		}
-		return nil
+		return output.PlainFromSlice(ctx, sites, listOutputFields(flags, plainFields))
 	}
 
-	// Human-readable table
-	fields := []string{"id", "subdomain", "name"}
-	headers := []string{"ID", "SUBDOMAIN", "NAME"}
+	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
 	return output.WriteTable(ctx, sites, fields, headers)
 }

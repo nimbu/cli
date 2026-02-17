@@ -57,6 +57,10 @@ func WriteTable(ctx context.Context, slice any, fields []string, headers []strin
 		return fmt.Errorf("expected slice, got %T", slice)
 	}
 
+	if err := validateFieldsForSliceType(rv.Type(), fields); err != nil {
+		return err
+	}
+
 	if len(headers) == 0 {
 		headers = fields
 	}
@@ -64,7 +68,10 @@ func WriteTable(ctx context.Context, slice any, fields []string, headers []strin
 	t := NewTable(w.Out, headers...)
 
 	for i := 0; i < rv.Len(); i++ {
-		values := extractFields(rv.Index(i).Interface(), fields)
+		values, err := extractFields(rv.Index(i).Interface(), fields)
+		if err != nil {
+			return err
+		}
 		t.Row(values...)
 	}
 

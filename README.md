@@ -8,7 +8,7 @@ Fast, AI-agent friendly CLI for the [Nimbu](https://nimbu.io) API.
 - **Secure credentials** - OS keychain storage (macOS Keychain, Linux Secret Service)
 - **JSON-first output** - `--json` and `--plain` (TSV) modes for scripting
 - **Agent-friendly** - Command allowlists, readonly mode, deterministic output
-- **Shell completions** - Bash, Zsh, Fish, PowerShell
+- **Shell completions** - Bash, Zsh, Fish
 
 ## Installation
 
@@ -43,6 +43,44 @@ nimbu-cli channels list --site my-site
 nimbu-cli channels entries list blog --site my-site --json | jq '.[]'
 ```
 
+## Inline Payload Syntax
+
+Most `create` and `update` commands accept inline assignments in addition to `--file` JSON payloads.
+
+Operators:
+
+- `key=value` - string value
+- `key:=json` - typed JSON value (number, bool, object, array, null)
+- `key=@file.txt` - read raw file content as string
+- `key:=@file.json` - read and parse JSON from file
+
+Use dot paths for nesting:
+
+```bash
+nimbu-cli products update product-123 name="Wine Box" price:=29.9 seo.title="Gift box"
+```
+
+`--file` and inline assignments are mutually exclusive.
+
+```bash
+# File payload
+nimbu-cli pages update about --file payload.json
+
+# Inline payload
+nimbu-cli pages update about title="About us" published:=true
+```
+
+### Translations shorthand
+
+`translations create` and `translations update` support locale shorthand: top-level locale keys are mapped to `values.<locale>`.
+
+```bash
+nimbu-cli translations update activate.label.lastname nl=Achternaam
+nimbu-cli translations update activate.label.lastname values.fr=Nom
+```
+
+Locales are validated with a strict-lite BCP47 pattern (`nl`, `fr`, `nl-BE`, `zh-Hant`, ...).
+
 ## Commands
 
 ```
@@ -52,8 +90,17 @@ nimbu-cli channels   Manage channels and entries
 nimbu-cli pages      Manage pages
 nimbu-cli menus      Manage navigation menus
 nimbu-cli products   Manage products
+nimbu-cli collections Manage collections
+nimbu-cli coupons    Manage coupons
 nimbu-cli orders     Manage orders
 nimbu-cli customers  Manage customers
+nimbu-cli accounts   Manage accounts
+nimbu-cli notifications Manage notifications
+nimbu-cli roles      Manage roles
+nimbu-cli redirects  Manage redirects
+nimbu-cli functions  Execute cloud functions
+nimbu-cli jobs       Execute cloud jobs
+nimbu-cli apps       Manage OAuth apps
 nimbu-cli themes     Manage themes
 nimbu-cli uploads    Manage uploads
 nimbu-cli blogs      Manage blogs

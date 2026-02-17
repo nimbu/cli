@@ -13,6 +13,15 @@ type AuthLogoutCmd struct{}
 
 // Run executes the logout command.
 func (c *AuthLogoutCmd) Run(ctx context.Context) error {
+	client, err := GetAPIClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := client.Post(ctx, "/auth/logout", nil, nil); err != nil {
+		return fmt.Errorf("logout request failed: %w", err)
+	}
+
 	store, err := auth.OpenDefault()
 	if err != nil {
 		return fmt.Errorf("open keyring: %w", err)

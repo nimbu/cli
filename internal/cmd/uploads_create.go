@@ -17,14 +17,15 @@ import (
 
 // UploadsCreateCmd uploads a file.
 type UploadsCreateCmd struct {
-	File string `arg:"" help:"Path to file to upload"`
-	Name string `help:"Override filename" short:"n"`
+	File        string   `arg:"" help:"Path to file to upload"`
+	Name        string   `help:"Override filename" short:"n"`
+	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=custom.jpg)"`
 }
 
 // Run executes the create command.
 func (c *UploadsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("write operations disabled in readonly mode")
+	if err := requireWrite(flags, "upload file"); err != nil {
+		return err
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -44,8 +45,35 @@ func (c *UploadsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	defer func() { _ = f.Close() }()
 
+	meta := map[string]any{}
+	if c.Name != "" {
+		meta["name"] = c.Name
+	}
+	if len(c.Assignments) > 0 {
+		inlineBody, err := parseInlineAssignments(c.Assignments)
+		if err != nil {
+			return err
+		}
+		meta, err = mergeJSONBodies(inlineBody, meta)
+		if err != nil {
+			return fmt.Errorf("merge inline assignments: %w", err)
+		}
+		for key := range meta {
+			if key != "name" {
+				return fmt.Errorf("uploads create only supports name=<value> inline assignment")
+			}
+		}
+	}
+
 	// Determine filename
-	filename := c.Name
+	filename := ""
+	if rawName, exists := meta["name"]; exists {
+		name, ok := rawName.(string)
+		if !ok {
+			return fmt.Errorf("uploads create requires name to be a string")
+		}
+		filename = name
+	}
 	if filename == "" {
 		filename = filepath.Base(c.File)
 	}

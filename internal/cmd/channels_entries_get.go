@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -12,7 +13,6 @@ import (
 type ChannelEntriesGetCmd struct {
 	Channel string `arg:"" help:"Channel ID or slug"`
 	Entry   string `arg:"" help:"Entry ID or slug"`
-	Locale  string `help:"Locale to fetch"`
 }
 
 // Run executes the get command.
@@ -27,10 +27,10 @@ func (c *ChannelEntriesGetCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 
-	path := "/channels/" + c.Channel + "/entries/" + c.Entry
+	path := "/channels/" + url.PathEscape(c.Channel) + "/entries/" + url.PathEscape(c.Entry)
 	var opts []api.RequestOption
-	if c.Locale != "" {
-		opts = append(opts, api.WithLocale(c.Locale))
+	if flags.Locale != "" {
+		opts = append(opts, api.WithLocale(flags.Locale))
 	}
 
 	var entry api.Entry

@@ -34,6 +34,11 @@ type RootFlags struct {
 	Site           string        `help:"Site ID or subdomain" env:"NIMBU_SITE"`
 	APIURL         string        `help:"API base URL" default:"https://api.nimbu.io" env:"NIMBU_API_URL"`
 	Timeout        time.Duration `help:"Request timeout" default:"30s" env:"NIMBU_TIMEOUT"`
+	Fields         string        `help:"Comma-separated fields to return"`
+	Locale         string        `help:"Filter by locale"`
+	Include        string        `help:"Include related resources"`
+	Sort           string        `help:"Sort by field, e.g. field or field:desc"`
+	Filters        []string      `help:"Filter by key=value, repeatable"`
 	Color          string        `help:"Color output: auto|always|never" default:"${color}" env:"NIMBU_COLOR"`
 	JSON           bool          `help:"Output JSON to stdout" default:"${json}" env:"NIMBU_JSON"`
 	Plain          bool          `help:"Output stable TSV to stdout" default:"${plain}" env:"NIMBU_PLAIN"`
@@ -49,23 +54,33 @@ type RootFlags struct {
 type CLI struct {
 	RootFlags `embed:""`
 
-	Version    kong.VersionFlag `help:"Print version and exit"`
-	Auth       AuthCmd          `cmd:"" help:"Authentication and credentials"`
-	Sites      SitesCmd         `cmd:"" help:"Manage sites"`
-	Channels   ChannelsCmd      `cmd:"" help:"Manage channels and entries"`
-	Pages      PagesCmd         `cmd:"" help:"Manage pages"`
-	Menus      MenusCmd         `cmd:"" help:"Manage navigation menus"`
-	Products   ProductsCmd      `cmd:"" help:"Manage products"`
-	Orders     OrdersCmd        `cmd:"" help:"Manage orders"`
-	Customers  CustomersCmd     `cmd:"" help:"Manage customers"`
-	Themes     ThemesCmd        `cmd:"" help:"Manage themes"`
-	Uploads    UploadsCmd       `cmd:"" help:"Manage uploads"`
-	Blogs      BlogsCmd         `cmd:"" help:"Manage blogs"`
-	Webhooks   WebhooksCmd      `cmd:"" help:"Manage webhooks"`
-	Tokens     TokensCmd        `cmd:"" help:"Manage API tokens"`
-	Config     ConfigCmd        `cmd:"" help:"Manage configuration"`
-	API        APICmd           `cmd:"" help:"Raw API access"`
-	Completion CompletionCmd    `cmd:"" help:"Generate shell completions"`
+	Version       kong.VersionFlag `help:"Print version and exit"`
+	Auth          AuthCmd          `cmd:"" help:"Authentication and credentials"`
+	Sites         SitesCmd         `cmd:"" help:"Manage sites"`
+	Channels      ChannelsCmd      `cmd:"" help:"Manage channels and entries"`
+	Pages         PagesCmd         `cmd:"" help:"Manage pages"`
+	Menus         MenusCmd         `cmd:"" help:"Manage navigation menus"`
+	Products      ProductsCmd      `cmd:"" help:"Manage products"`
+	Collections   CollectionsCmd   `cmd:"" help:"Manage collections"`
+	Coupons       CouponsCmd       `cmd:"" help:"Manage coupons"`
+	Orders        OrdersCmd        `cmd:"" help:"Manage orders"`
+	Customers     CustomersCmd     `cmd:"" help:"Manage customers"`
+	Accounts      AccountsCmd      `cmd:"" help:"Manage accounts"`
+	Notifications NotificationsCmd `cmd:"" help:"Manage notifications"`
+	Roles         RolesCmd         `cmd:"" help:"Manage roles"`
+	Redirects     RedirectsCmd     `cmd:"" help:"Manage redirects"`
+	Functions     FunctionsCmd     `cmd:"" help:"Execute cloud functions"`
+	Jobs          JobsCmd          `cmd:"" help:"Execute cloud jobs"`
+	Apps          AppsCmd          `cmd:"" help:"Manage OAuth apps"`
+	Themes        ThemesCmd        `cmd:"" help:"Manage themes"`
+	Uploads       UploadsCmd       `cmd:"" help:"Manage uploads"`
+	Blogs         BlogsCmd         `cmd:"" help:"Manage blogs"`
+	Webhooks      WebhooksCmd      `cmd:"" help:"Manage webhooks"`
+	Tokens        TokensCmd        `cmd:"" help:"Manage API tokens"`
+	Translations  TranslationsCmd  `cmd:"" help:"Manage translations"`
+	Config        ConfigCmd        `cmd:"" help:"Manage configuration"`
+	API           APICmd           `cmd:"" help:"Raw API access"`
+	Completion    CompletionCmd    `cmd:"" help:"Generate shell completions"`
 }
 
 // Note: ConfigCmd and CompletionCmd are implemented in their own files (config.go, completion.go)
@@ -87,6 +102,11 @@ func Execute(args []string) int {
 }
 
 func execute(args []string) (err error) {
+	// Show help when no args provided
+	if len(args) == 0 {
+		args = []string{"--help"}
+	}
+
 	parser, cli, err := newParser()
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
@@ -187,6 +207,7 @@ func newParser() (*kong.Kong, *CLI, error) {
 		kong.Description("CLI for the Nimbu API - AI-agent first, human-friendly second"),
 		kong.UsageOnError(),
 		kong.Help(helpPrinter()),
+		kong.ConfigureHelp(helpOptions()),
 		kong.Vars(vars),
 		kong.Writers(os.Stdout, os.Stderr),
 		kong.Exit(func(code int) { panic(exitPanic{code: code}) }),

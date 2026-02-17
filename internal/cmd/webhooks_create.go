@@ -2,10 +2,8 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"os"
+	"strings"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -13,15 +11,16 @@ import (
 
 // WebhooksCreateCmd creates a webhook.
 type WebhooksCreateCmd struct {
-	File   string `help:"Read webhook data from file" short:"f" type:"existingfile"`
-	URL    string `help:"Webhook URL"`
-	Events string `help:"Comma-separated event types"`
+	File        string   `help:"Read webhook data from file (use - for stdin)" short:"f"`
+	URL         string   `help:"Webhook URL"`
+	Events      string   `help:"Comma-separated event types"`
+	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. url=https://example.com, events:=[\"order.created\"])"`
 }
 
 // Run executes the create command.
 func (c *WebhooksCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("cannot create webhook in readonly mode")
+	if err := requireWrite(flags, "create webhook"); err != nil {
+		return err
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -34,30 +33,41 @@ func (c *WebhooksCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	// Read webhook data
+	flagData := map[string]any{}
+	if c.URL != "" {
+		flagData["url"] = c.URL
+	}
+	if c.Events != "" {
+		events := make([]string, 0)
+		for _, raw := range strings.Split(c.Events, ",") {
+			event := strings.TrimSpace(raw)
+			if event != "" {
+				events = append(events, event)
+			}
+		}
+		flagData["events"] = events
+	}
+
 	var data map[string]any
-	if c.File != "" {
-		f, err := os.Open(c.File)
+	switch {
+	case c.File != "" || len(c.Assignments) > 0:
+		data, err = readJSONBodyInput(c.File, c.Assignments)
 		if err != nil {
-			return fmt.Errorf("open file: %w", err)
+			return err
 		}
-		defer func() { _ = f.Close() }()
-		if err := json.NewDecoder(f).Decode(&data); err != nil {
-			return fmt.Errorf("decode file: %w", err)
-		}
-	} else if c.URL != "" {
-		data = map[string]any{"url": c.URL}
-		if c.Events != "" {
-			data["events"] = c.Events
-		}
-	} else {
-		// Read from stdin
-		input, err := io.ReadAll(os.Stdin)
+	case len(flagData) > 0:
+		data = map[string]any{}
+	default:
+		data, err = readJSONBodyInput("", nil)
 		if err != nil {
-			return fmt.Errorf("read stdin: %w", err)
+			return err
 		}
-		if err := json.Unmarshal(input, &data); err != nil {
-			return fmt.Errorf("decode stdin: %w", err)
+	}
+
+	if len(flagData) > 0 {
+		data, err = mergeJSONBodies(data, flagData)
+		if err != nil {
+			return fmt.Errorf("merge webhook flags with request body: %w", err)
 		}
 	}
 

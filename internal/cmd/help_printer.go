@@ -10,6 +10,13 @@ import (
 	"github.com/muesli/termenv"
 )
 
+// helpOptions returns Kong help configuration options.
+func helpOptions() kong.HelpOptions {
+	return kong.HelpOptions{
+		NoExpandSubcommands: true,
+	}
+}
+
 // Color palette (matches gogcli/frontappcli).
 const (
 	colorUsage   = "#60a5fa" // blue - Usage heading
@@ -31,11 +38,31 @@ func helpPrinter() kong.HelpPrinter {
 		}
 		ctx.Stdout = origWriter
 
+		raw := appendRootInlinePayloadFooter(buf.String())
+
 		// Colorize and write
-		output := colorizeHelp(buf.String())
+		output := colorizeHelp(raw)
 		_, err := io.WriteString(origWriter, output)
 		return err
 	}
+}
+
+func appendRootInlinePayloadFooter(text string) string {
+	if !strings.HasPrefix(text, "Usage: nimbu-cli <command> [flags]") {
+		return text
+	}
+	if !strings.Contains(text, "\nCommands:\n") {
+		return text
+	}
+	if strings.Contains(text, "Create/Update supports inline payloads using:") {
+		return text
+	}
+
+	footer := "\nCreate/Update supports inline payloads using: key=value, key:=json, key=@file.txt or key:=@file.json\n"
+	if strings.HasSuffix(text, "\n") {
+		return text + footer
+	}
+	return text + "\n" + footer
 }
 
 // helpColorMode determines color mode from CLI args and environment.
@@ -112,6 +139,10 @@ func colorizeHelp(text string) string {
 	inCommands := false
 
 	for i, line := range lines {
+		if line == "" {
+			inCommands = false
+		}
+
 		// Usage: line
 		if strings.HasPrefix(line, "Usage:") {
 			lines[i] = heading("Usage:") + strings.TrimPrefix(line, "Usage:")
@@ -125,11 +156,6 @@ func colorizeHelp(text string) string {
 				inCommands = true
 			}
 			continue
-		}
-
-		// Empty line resets command section
-		if line == "" {
-			inCommands = false
 		}
 
 		// Command lines (2-space indent, command name)

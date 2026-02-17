@@ -2,10 +2,8 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"os"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -13,14 +11,15 @@ import (
 
 // WebhooksUpdateCmd updates a webhook.
 type WebhooksUpdateCmd struct {
-	ID   string `arg:"" help:"Webhook ID"`
-	File string `help:"Read webhook data from file" short:"f" type:"existingfile"`
+	ID          string   `arg:"" help:"Webhook ID"`
+	File        string   `help:"Read webhook data from file (use - for stdin)" short:"f"`
+	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. url=https://example.com, active:=true)"`
 }
 
 // Run executes the update command.
 func (c *WebhooksUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("cannot update webhook in readonly mode")
+	if err := requireWrite(flags, "update webhook"); err != nil {
+		return err
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -33,30 +32,14 @@ func (c *WebhooksUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	// Read webhook data
-	var data map[string]any
-	if c.File != "" {
-		f, err := os.Open(c.File)
-		if err != nil {
-			return fmt.Errorf("open file: %w", err)
-		}
-		defer func() { _ = f.Close() }()
-		if err := json.NewDecoder(f).Decode(&data); err != nil {
-			return fmt.Errorf("decode file: %w", err)
-		}
-	} else {
-		// Read from stdin
-		input, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return fmt.Errorf("read stdin: %w", err)
-		}
-		if err := json.Unmarshal(input, &data); err != nil {
-			return fmt.Errorf("decode stdin: %w", err)
-		}
+	data, err := readJSONBodyInput(c.File, c.Assignments)
+	if err != nil {
+		return err
 	}
 
 	var webhook api.Webhook
-	if err := client.Put(ctx, "/webhooks/"+c.ID, data, &webhook); err != nil {
+	path := "/webhooks/" + url.PathEscape(c.ID)
+	if err := client.Put(ctx, path, data, &webhook); err != nil {
 		return fmt.Errorf("update webhook: %w", err)
 	}
 

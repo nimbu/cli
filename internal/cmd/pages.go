@@ -7,4 +7,5 @@ type PagesCmd struct {
 	Create PagesCreateCmd `cmd:"" help:"Create page from JSON"`
 	Update PagesUpdateCmd `cmd:"" help:"Update page"`
 	Delete PagesDeleteCmd `cmd:"" help:"Delete page"`
+	Count  PagesCountCmd  `cmd:"" help:"Count pages"`
 }

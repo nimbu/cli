@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/output"
 )
@@ -14,12 +15,12 @@ type PagesDeleteCmd struct {
 
 // Run executes the delete command.
 func (c *PagesDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("write operations disabled in readonly mode")
+	if err := requireWrite(flags, "delete page"); err != nil {
+		return err
 	}
 
-	if !flags.Force {
-		return fmt.Errorf("delete requires --force flag")
+	if err := requireForce(flags, "page "+c.Page); err != nil {
+		return err
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -32,7 +33,8 @@ func (c *PagesDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	if err := client.Delete(ctx, "/pages/"+c.Page, nil); err != nil {
+	path := "/pages/" + url.PathEscape(c.Page)
+	if err := client.Delete(ctx, path, nil); err != nil {
 		return fmt.Errorf("delete page: %w", err)
 	}
 
@@ -42,7 +44,7 @@ func (c *PagesDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if mode.Plain {
-		return output.Plain(ctx, "deleted", c.Page)
+		return output.Plain(ctx, c.Page, "deleted")
 	}
 
 	fmt.Printf("Deleted page %s\n", c.Page)

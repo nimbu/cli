@@ -16,12 +16,12 @@ type ThemeFilesDeleteCmd struct {
 
 // Run executes the delete command.
 func (c *ThemeFilesDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("write operations disabled in readonly mode")
+	if err := requireWrite(flags, "delete theme file"); err != nil {
+		return err
 	}
 
-	if !flags.Force {
-		return fmt.Errorf("delete requires --force flag")
+	if err := requireForce(flags, "theme file "+c.Path); err != nil {
+		return err
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -34,7 +34,7 @@ func (c *ThemeFilesDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	path := fmt.Sprintf("/themes/%s/files/%s", c.Theme, url.PathEscape(c.Path))
+	path := fmt.Sprintf("/themes/%s/files/%s", url.PathEscape(c.Theme), url.PathEscape(c.Path))
 	if err := client.Delete(ctx, path, nil); err != nil {
 		return fmt.Errorf("delete theme file: %w", err)
 	}
@@ -45,7 +45,7 @@ func (c *ThemeFilesDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if mode.Plain {
-		return output.Plain(ctx, "deleted", c.Path)
+		return output.Plain(ctx, c.Path, "deleted")
 	}
 
 	fmt.Printf("Deleted: %s\n", c.Path)

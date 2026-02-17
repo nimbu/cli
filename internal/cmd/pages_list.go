@@ -10,10 +10,9 @@ import (
 
 // PagesListCmd lists pages.
 type PagesListCmd struct {
-	All     bool   `help:"Fetch all pages"`
-	Page    int    `help:"Page number" default:"1"`
-	PerPage int    `help:"Items per page" default:"25"`
-	Locale  string `help:"Filter by locale"`
+	All     bool `help:"Fetch all pages"`
+	Page    int  `help:"Page number" default:"1"`
+	PerPage int  `help:"Items per page" default:"25"`
 }
 
 // Run executes the list command.
@@ -28,9 +27,9 @@ func (c *PagesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var opts []api.RequestOption
-	if c.Locale != "" {
-		opts = append(opts, api.WithLocale(c.Locale))
+	opts, err := listRequestOptions(flags)
+	if err != nil {
+		return fmt.Errorf("list pages: %w", err)
 	}
 
 	var pages []api.Page
@@ -53,16 +52,14 @@ func (c *PagesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, pages)
 	}
 
+	plainFields := []string{"id", "slug", "title"}
+	tableFields := []string{"id", "slug", "title", "template", "published"}
+	tableHeaders := []string{"ID", "SLUG", "TITLE", "TEMPLATE", "PUBLISHED"}
+
 	if mode.Plain {
-		for _, p := range pages {
-			if err := output.Plain(ctx, p.ID, p.Slug, p.Title); err != nil {
-				return err
-			}
-		}
-		return nil
+		return output.PlainFromSlice(ctx, pages, listOutputFields(flags, plainFields))
 	}
 
-	fields := []string{"id", "slug", "title", "template", "published"}
-	headers := []string{"ID", "SLUG", "TITLE", "TEMPLATE", "PUBLISHED"}
+	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
 	return output.WriteTable(ctx, pages, fields, headers)
 }

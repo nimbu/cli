@@ -33,8 +33,10 @@ func (c *APICmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	// Check readonly for write methods
-	if flags.Readonly && method != http.MethodGet {
-		return fmt.Errorf("cannot use %s in readonly mode", method)
+	if method != http.MethodGet {
+		if err := requireWrite(flags, fmt.Sprintf("use %s", method)); err != nil {
+			return err
+		}
 	}
 
 	// Site is optional for API command - use global --site if set

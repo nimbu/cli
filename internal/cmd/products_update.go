@@ -2,10 +2,8 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"os"
+	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -13,14 +11,15 @@ import (
 
 // ProductsUpdateCmd updates a product.
 type ProductsUpdateCmd struct {
-	Product string `arg:"" help:"Product ID or slug"`
-	File    string `help:"Read product JSON from file (use - for stdin)" type:"existingfile"`
+	Product     string   `arg:"" help:"Product ID or slug"`
+	File        string   `help:"Read product JSON from file (use - for stdin)"`
+	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Wine, price:=19.9)"`
 }
 
 // Run executes the update command.
 func (c *ProductsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("cannot update product in readonly mode")
+	if err := requireWrite(flags, "update product"); err != nil {
+		return err
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -33,31 +32,14 @@ func (c *ProductsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	// Read input
-	var input io.Reader
-	if c.File == "-" || c.File == "" {
-		input = os.Stdin
-	} else {
-		f, err := os.Open(c.File)
-		if err != nil {
-			return fmt.Errorf("open file: %w", err)
-		}
-		defer func() { _ = f.Close() }()
-		input = f
-	}
-
-	data, err := io.ReadAll(input)
+	body, err := readJSONBodyInput(c.File, c.Assignments)
 	if err != nil {
-		return fmt.Errorf("read input: %w", err)
-	}
-
-	var body map[string]any
-	if err := json.Unmarshal(data, &body); err != nil {
-		return fmt.Errorf("parse JSON: %w", err)
+		return err
 	}
 
 	var p api.Product
-	if err := client.Patch(ctx, "/products/"+c.Product, body, &p); err != nil {
+	path := "/products/" + url.PathEscape(c.Product)
+	if err := client.Put(ctx, path, body, &p); err != nil {
 		return fmt.Errorf("update product: %w", err)
 	}
 
