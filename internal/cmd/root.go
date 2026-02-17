@@ -70,8 +70,6 @@ type CLI struct {
 
 // Placeholder command structs (will be implemented in separate files)
 type (
-	AuthCmd       struct{}
-	SitesCmd      struct{}
 	ChannelsCmd   struct{}
 	PagesCmd      struct{}
 	MenusCmd      struct{}
@@ -89,8 +87,6 @@ type (
 )
 
 // Placeholder Run methods
-func (c *AuthCmd) Run(ctx context.Context) error       { return errors.New("not implemented") }
-func (c *SitesCmd) Run(ctx context.Context) error      { return errors.New("not implemented") }
 func (c *ChannelsCmd) Run(ctx context.Context) error   { return errors.New("not implemented") }
 func (c *PagesCmd) Run(ctx context.Context) error      { return errors.New("not implemented") }
 func (c *MenusCmd) Run(ctx context.Context) error      { return errors.New("not implemented") }
