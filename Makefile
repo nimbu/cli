@@ -50,9 +50,9 @@ install: build
 
 tools:
 	@mkdir -p $(TOOLS_DIR)
-	@GOBIN=$(TOOLS_DIR) go install mvdan.cc/gofumpt@v0.7.0
-	@GOBIN=$(TOOLS_DIR) go install golang.org/x/tools/cmd/goimports@v0.28.0
-	@GOBIN=$(TOOLS_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6
+	@GOTOOLCHAIN=go1.24.0 GOBIN=$(TOOLS_DIR) go install mvdan.cc/gofumpt@v0.7.0
+	@GOTOOLCHAIN=go1.24.0 GOBIN=$(TOOLS_DIR) go install golang.org/x/tools/cmd/goimports@v0.28.0
+	@GOTOOLCHAIN=go1.24.0 GOBIN=$(TOOLS_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6
 
 fmt: tools
 	@$(GOIMPORTS) -local github.com/nimbu/cli -w .

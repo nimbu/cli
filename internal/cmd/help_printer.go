@@ -23,6 +23,7 @@ const (
 	colorSection = "#a78bfa" // purple - Flags, Commands, Arguments
 	colorCommand = "#38bdf8" // cyan - command names
 	colorDim     = "#9ca3af" // gray - brackets, flags
+	colorDesc    = "#f8fafc" // near-white - command descriptions
 )
 
 // helpPrinter returns a custom HelpPrinter that colorizes output.
@@ -39,6 +40,7 @@ func helpPrinter() kong.HelpPrinter {
 		ctx.Stdout = origWriter
 
 		raw := appendRootInlinePayloadFooter(buf.String())
+		raw = compactCommandsSection(raw)
 
 		// Colorize and write
 		output := colorizeHelp(raw)
@@ -63,6 +65,78 @@ func appendRootInlinePayloadFooter(text string) string {
 		return text + footer
 	}
 	return text + "\n" + footer
+}
+
+func compactCommandsSection(text string) string {
+	type commandRow struct {
+		cmd  string
+		desc string
+	}
+
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines))
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		if line != "Commands:" {
+			out = append(out, line)
+			continue
+		}
+
+		out = append(out, line)
+		i++
+
+		rows := make([]commandRow, 0)
+		for i < len(lines) {
+			if lines[i] == "" {
+				i++
+				continue
+			}
+
+			if !strings.HasPrefix(lines[i], "  ") || strings.HasPrefix(lines[i], "    ") {
+				break
+			}
+
+			cmd := strings.TrimSpace(lines[i])
+			descParts := make([]string, 0, 1)
+			for i+1 < len(lines) && strings.HasPrefix(lines[i+1], "    ") {
+				descPart := strings.TrimSpace(lines[i+1])
+				if descPart != "" {
+					descParts = append(descParts, descPart)
+				}
+				i++
+			}
+
+			rows = append(rows, commandRow{cmd: cmd, desc: strings.Join(descParts, " ")})
+			i++
+		}
+
+		maxCmdLen := 0
+		for _, row := range rows {
+			if len(row.cmd) > maxCmdLen {
+				maxCmdLen = len(row.cmd)
+			}
+		}
+
+		for _, row := range rows {
+			if row.desc == "" {
+				out = append(out, "  "+row.cmd)
+				continue
+			}
+			leaderLen := maxCmdLen - len(row.cmd) + 2
+			if leaderLen < 2 {
+				leaderLen = 2
+			}
+			leader := strings.Repeat("·", leaderLen)
+			out = append(out, "  "+row.cmd+" "+leader+" "+row.desc)
+		}
+		if i < len(lines) && lines[i] != "" {
+			out = append(out, "")
+		}
+		i--
+	}
+
+	return strings.Join(out, "\n")
 }
 
 // helpColorMode determines color mode from CLI args and environment.
@@ -131,6 +205,9 @@ func colorizeHelp(text string) string {
 	cmdStyle := func(s string) string {
 		return out.String(s).Foreground(out.Color(colorCommand)).Bold().String()
 	}
+	descStyle := func(s string) string {
+		return out.String(s).Foreground(out.Color(colorDesc)).String()
+	}
 	dim := func(s string) string {
 		return out.String(s).Foreground(out.Color(colorDim)).String()
 	}
@@ -162,6 +239,24 @@ func colorizeHelp(text string) string {
 		if inCommands && strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") {
 			trimmed := strings.TrimPrefix(line, "  ")
 			if trimmed != "" {
+				if idx := strings.Index(trimmed, " ·"); idx > 0 {
+					cmdPart := styleCmdPart(trimmed[:idx], cmdStyle, dim)
+					rest := strings.TrimSpace(trimmed[idx+1:])
+					leader := rest
+					desc := ""
+					if sp := strings.Index(rest, " "); sp > 0 {
+						leader = rest[:sp]
+						desc = strings.TrimSpace(rest[sp+1:])
+					}
+
+					if desc != "" {
+						lines[i] = "  " + cmdPart + " " + dim(leader) + " " + descStyle(desc)
+					} else {
+						lines[i] = "  " + cmdPart + " " + dim(leader)
+					}
+					continue
+				}
+
 				// Split command from description
 				parts := strings.SplitN(trimmed, "  ", 2)
 				cmdPart := parts[0]
@@ -170,7 +265,21 @@ func colorizeHelp(text string) string {
 				cmdPart = styleCmdPart(cmdPart, cmdStyle, dim)
 
 				if len(parts) > 1 {
-					lines[i] = "  " + cmdPart + "  " + parts[1]
+					rest := strings.TrimSpace(parts[1])
+					leader := ""
+					desc := ""
+					if sp := strings.Index(rest, " "); sp > 0 {
+						leader = rest[:sp]
+						desc = strings.TrimSpace(rest[sp+1:])
+					} else {
+						desc = rest
+					}
+
+					if leader != "" {
+						lines[i] = "  " + cmdPart + "  " + dim(leader) + " " + descStyle(desc)
+					} else {
+						lines[i] = "  " + cmdPart + "  " + descStyle(desc)
+					}
 				} else {
 					lines[i] = "  " + cmdPart
 				}

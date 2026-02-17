@@ -103,3 +103,18 @@ func TestAppendRootInlinePayloadFooter(t *testing.T) {
 		t.Fatal("footer should not be appended twice")
 	}
 }
+
+func TestCompactCommandsSection(t *testing.T) {
+	input := "Usage: nimbu-cli <command> [flags]\n\nCommands:\n  auth <command> [flags]\n    Authentication and credentials\n\n  sites <command> [flags]\n    Manage sites\n\nRun \"nimbu-cli <command> --help\" for more information on a command.\n"
+	out := compactCommandsSection(input)
+
+	if strings.Contains(out, "\n    Authentication and credentials") {
+		t.Fatalf("description should be collapsed to single line, got: %q", out)
+	}
+	if !strings.Contains(out, "auth <command> [flags]") || !strings.Contains(out, "· Authentication and credentials") {
+		t.Fatalf("auth row not compacted: %q", out)
+	}
+	if !strings.Contains(out, "sites <command> [flags]") || !strings.Contains(out, "· Manage sites") {
+		t.Fatalf("sites row not compacted: %q", out)
+	}
+}
