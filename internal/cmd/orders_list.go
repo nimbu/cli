@@ -28,6 +28,9 @@ func (c *OrdersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	if err := requireScopes(ctx, client, []string{"read_orders"}, "Example: nimbu-cli auth scopes"); err != nil {
+		return err
+	}
 
 	opts, err := listRequestOptions(flags)
 	if err != nil {
@@ -38,18 +41,22 @@ func (c *OrdersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var orders []api.Order
+	var meta listFooterMeta
 
 	if c.All {
 		orders, err = api.List[api.Order](ctx, client, "/orders", opts...)
 		if err != nil {
 			return fmt.Errorf("list orders: %w", err)
 		}
+		meta = allListFooterMeta(len(orders))
 	} else {
 		paged, err := api.ListPage[api.Order](ctx, client, "/orders", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list orders: %w", err)
 		}
 		orders = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(orders))
+		meta.probeTotal(ctx, client, "/orders/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
@@ -68,7 +75,10 @@ func (c *OrdersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, displayOrders, fields, headers)
+	if err := output.WriteTable(ctx, displayOrders, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "orders", meta)
 }
 
 func buildOrderListRows(orders []api.Order) []api.Order {

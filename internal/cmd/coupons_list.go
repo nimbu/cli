@@ -33,17 +33,21 @@ func (c *CouponsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var coupons []api.Coupon
+	var meta listFooterMeta
 	if c.All {
 		coupons, err = api.List[api.Coupon](ctx, client, "/coupons", opts...)
 		if err != nil {
 			return fmt.Errorf("list coupons: %w", err)
 		}
+		meta = allListFooterMeta(len(coupons))
 	} else {
 		paged, err := api.ListPage[api.Coupon](ctx, client, "/coupons", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list coupons: %w", err)
 		}
 		coupons = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(coupons))
+		meta.probeTotal(ctx, client, "/coupons/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
@@ -60,5 +64,8 @@ func (c *CouponsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, coupons, fields, headers)
+	if err := output.WriteTable(ctx, coupons, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "coupons", meta)
 }

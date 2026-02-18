@@ -26,6 +26,9 @@ func (c *MenusListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	if err := requireScopes(ctx, client, []string{"read_content"}, "Example: nimbu-cli auth scopes"); err != nil {
+		return err
+	}
 
 	opts, err := listRequestOptions(flags)
 	if err != nil {
@@ -33,18 +36,22 @@ func (c *MenusListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var menus []api.Menu
+	var meta listFooterMeta
 
 	if c.All {
 		menus, err = api.List[api.Menu](ctx, client, "/menus", opts...)
 		if err != nil {
 			return fmt.Errorf("list menus: %w", err)
 		}
+		meta = allListFooterMeta(len(menus))
 	} else {
 		paged, err := api.ListPage[api.Menu](ctx, client, "/menus", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list menus: %w", err)
 		}
 		menus = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(menus))
+		meta.probeTotal(ctx, client, "/menus/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
@@ -61,5 +68,8 @@ func (c *MenusListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, menus, fields, headers)
+	if err := output.WriteTable(ctx, menus, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "menus", meta)
 }

@@ -33,17 +33,21 @@ func (c *CollectionsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var collections []api.Collection
+	var meta listFooterMeta
 	if c.All {
 		collections, err = api.List[api.Collection](ctx, client, "/collections", opts...)
 		if err != nil {
 			return fmt.Errorf("list collections: %w", err)
 		}
+		meta = allListFooterMeta(len(collections))
 	} else {
 		paged, err := api.ListPage[api.Collection](ctx, client, "/collections", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list collections: %w", err)
 		}
 		collections = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(collections))
+		meta.probeTotal(ctx, client, "/collections/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
@@ -60,5 +64,8 @@ func (c *CollectionsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, collections, fields, headers)
+	if err := output.WriteTable(ctx, collections, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "collections", meta)
 }

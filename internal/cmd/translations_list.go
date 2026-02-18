@@ -38,13 +38,19 @@ func (c *TranslationsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var translations []api.Translation
+	var meta listFooterMeta
 	if c.All {
 		translations, err = api.List[api.Translation](ctx, client, "/translations", opts...)
+		if err == nil {
+			meta = allListFooterMeta(len(translations))
+		}
 	} else {
 		var paged *api.PagedResponse[api.Translation]
 		paged, err = api.ListPage[api.Translation](ctx, client, "/translations", c.Page, c.PerPage, opts...)
 		if err == nil {
 			translations = paged.Data
+			meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(translations))
+			meta.probeTotal(ctx, client, "/translations/count", opts)
 		}
 	}
 	if err != nil {
@@ -56,7 +62,9 @@ func (c *TranslationsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, translations)
 	}
 
+	rawCount := len(translations)
 	translations = expandTranslationsListRows(translations, flags.Locale)
+	meta.Returned = rawCount
 
 	plainFields := []string{"key", "locale", "value"}
 	tableFields := []string{"key", "locale", "value"}
@@ -67,7 +75,10 @@ func (c *TranslationsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, translations, fields, headers)
+	if err := output.WriteTable(ctx, translations, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "translation keys", meta)
 }
 
 func expandTranslationsListRows(translations []api.Translation, localeFilter string) []api.Translation {

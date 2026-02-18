@@ -1,0 +1,40 @@
+## api_not_found
+{
+  "code": "resource.not_found",
+  "message": "not found",
+  "exit_code": 5,
+  "http_status": 404,
+  "retryable": false
+}
+
+## api_rate_limited
+{
+  "code": "rate_limit.exceeded",
+  "message": "rate limited",
+  "hint": "retry later; honor Retry-After when present",
+  "exit_code": 7,
+  "http_status": 429,
+  "retryable": true
+}
+
+## scope_missing
+{
+  "code": "auth.scope_missing",
+  "message": "missing required scope(s): [read_products]. Example: nimbu-cli auth scopes",
+  "hint": "create or use a token including the listed scopes",
+  "exit_code": 4,
+  "retryable": false,
+  "details": {
+    "required_scopes": [
+      "read_products"
+    ]
+  }
+}
+
+## validation_local
+{
+  "code": "cli.validation.failed",
+  "message": "site required",
+  "exit_code": 6,
+  "retryable": false
+}

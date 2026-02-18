@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
 )
 
@@ -84,16 +85,7 @@ func (c *APICmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	// Check for error status
 	if resp.StatusCode >= 400 {
-		// Try to parse as JSON error
-		var errResp map[string]any
-		if err := json.Unmarshal(respBody, &errResp); err == nil {
-			mode := output.FromContext(ctx)
-			if mode.JSON {
-				errResp["status_code"] = resp.StatusCode
-				return output.JSON(ctx, errResp)
-			}
-		}
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+		return decodeRawAPIError(resp.StatusCode, respBody)
 	}
 
 	// Output response
@@ -112,4 +104,38 @@ func (c *APICmd) Run(ctx context.Context, flags *RootFlags) error {
 	// Plain or non-JSON response
 	fmt.Println(string(respBody))
 	return nil
+}
+
+func decodeRawAPIError(statusCode int, body []byte) error {
+	var payload struct {
+		Message string                `json:"message"`
+		Error   string                `json:"error"`
+		Code    string                `json:"code"`
+		Errors  []api.ValidationError `json:"errors"`
+		Details map[string]any        `json:"details"`
+	}
+
+	msg := strings.TrimSpace(string(body))
+	if err := json.Unmarshal(body, &payload); err == nil {
+		if payload.Message != "" {
+			msg = payload.Message
+		} else if payload.Error != "" {
+			msg = payload.Error
+		}
+		if payload.Code == "" && statusCode == http.StatusNotFound {
+			payload.Code = "object_not_found"
+		}
+		return &api.Error{
+			StatusCode: statusCode,
+			Code:       payload.Code,
+			Message:    msg,
+			Details:    payload.Details,
+			Errors:     payload.Errors,
+		}
+	}
+
+	if msg == "" {
+		msg = fmt.Sprintf("HTTP %d", statusCode)
+	}
+	return &api.Error{StatusCode: statusCode, Message: msg}
 }

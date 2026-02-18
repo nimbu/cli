@@ -28,18 +28,22 @@ func (c *SitesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var sites []api.Site
+	var meta listFooterMeta
 
 	if c.All {
 		sites, err = api.List[api.Site](ctx, client, "/sites", opts...)
 		if err != nil {
 			return fmt.Errorf("list sites: %w", err)
 		}
+		meta = allListFooterMeta(len(sites))
 	} else {
 		paged, err := api.ListPage[api.Site](ctx, client, "/sites", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list sites: %w", err)
 		}
 		sites = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(sites))
+		meta.probeTotal(ctx, client, "/sites/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
@@ -56,5 +60,8 @@ func (c *SitesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, sites, fields, headers)
+	if err := output.WriteTable(ctx, sites, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "sites", meta)
 }

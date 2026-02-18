@@ -8,10 +8,11 @@ import (
 
 // Pagination holds pagination information.
 type Pagination struct {
-	Page       int `json:"page"`
-	PerPage    int `json:"per_page"`
-	Total      int `json:"total"`
-	TotalPages int `json:"total_pages"`
+	Page       int  `json:"page"`
+	PerPage    int  `json:"per_page"`
+	Total      int  `json:"total"`
+	TotalPages int  `json:"total_pages"`
+	TotalKnown bool `json:"-"`
 }
 
 // User represents the current user.

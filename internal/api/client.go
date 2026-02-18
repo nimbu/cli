@@ -130,6 +130,9 @@ func (c *Client) buildRequest(ctx context.Context, method, path string, body any
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 
+	meta := operationMetaFromOptions(method, reqOpts)
+	req = req.WithContext(withOperationMeta(req.Context(), meta))
+
 	// Set headers
 	req.Header.Set("Accept", "application/json")
 	if body != nil {

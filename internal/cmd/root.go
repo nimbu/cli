@@ -185,8 +185,7 @@ func execute(args []string) (err error) {
 	kctx.Bind(site) // Bind resolved site
 
 	if err = kctx.Run(); err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
-		return err
+		return emitCommandError(ctx, err)
 	}
 	return nil
 }
@@ -290,7 +289,7 @@ func GetAPIClient(ctx context.Context) (*api.Client, error) {
 	token, err := store.GetToken()
 	if err != nil {
 		if errors.Is(err, auth.ErrNoToken) {
-			return nil, fmt.Errorf("not logged in; run 'nimbu-cli auth login' first")
+			return nil, fmt.Errorf("%w: run 'nimbu-cli auth login' first", auth.ErrNoToken)
 		}
 		return nil, fmt.Errorf("get token: %w", err)
 	}

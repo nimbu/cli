@@ -33,17 +33,21 @@ func (c *NotificationsListCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 
 	var notifications []api.Notification
+	var meta listFooterMeta
 	if c.All {
 		notifications, err = api.List[api.Notification](ctx, client, "/notifications", opts...)
 		if err != nil {
 			return fmt.Errorf("list notifications: %w", err)
 		}
+		meta = allListFooterMeta(len(notifications))
 	} else {
 		paged, err := api.ListPage[api.Notification](ctx, client, "/notifications", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list notifications: %w", err)
 		}
 		notifications = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(notifications))
+		meta.probeTotal(ctx, client, "/notifications/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
@@ -60,5 +64,8 @@ func (c *NotificationsListCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 
 	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, notifications, fields, headers)
+	if err := output.WriteTable(ctx, notifications, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "notifications", meta)
 }

@@ -26,6 +26,9 @@ func (c *UploadsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	if err := requireScopes(ctx, client, []string{"read_content"}, "Example: nimbu-cli auth scopes"); err != nil {
+		return err
+	}
 
 	opts, err := listRequestOptions(flags)
 	if err != nil {
@@ -33,18 +36,22 @@ func (c *UploadsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var uploads []api.Upload
+	var meta listFooterMeta
 
 	if c.All {
 		uploads, err = api.List[api.Upload](ctx, client, "/uploads", opts...)
 		if err != nil {
 			return fmt.Errorf("list uploads: %w", err)
 		}
+		meta = allListFooterMeta(len(uploads))
 	} else {
 		paged, err := api.ListPage[api.Upload](ctx, client, "/uploads", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list uploads: %w", err)
 		}
 		uploads = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(uploads))
+		meta.probeTotal(ctx, client, "/uploads/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
@@ -61,5 +68,8 @@ func (c *UploadsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, uploads, fields, headers)
+	if err := output.WriteTable(ctx, uploads, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "uploads", meta)
 }

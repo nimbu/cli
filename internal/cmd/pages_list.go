@@ -26,6 +26,9 @@ func (c *PagesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	if err := requireScopes(ctx, client, []string{"read_content"}, "Example: nimbu-cli auth scopes"); err != nil {
+		return err
+	}
 
 	opts, err := listRequestOptions(flags)
 	if err != nil {
@@ -33,18 +36,22 @@ func (c *PagesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var pages []api.Page
+	var meta listFooterMeta
 
 	if c.All {
 		pages, err = api.List[api.Page](ctx, client, "/pages", opts...)
 		if err != nil {
 			return fmt.Errorf("list pages: %w", err)
 		}
+		meta = allListFooterMeta(len(pages))
 	} else {
 		paged, err := api.ListPage[api.Page](ctx, client, "/pages", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list pages: %w", err)
 		}
 		pages = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(pages))
+		meta.probeTotal(ctx, client, "/pages/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
@@ -61,5 +68,8 @@ func (c *PagesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, pages, fields, headers)
+	if err := output.WriteTable(ctx, pages, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "pages", meta)
 }

@@ -30,6 +30,9 @@ func (c *ChannelsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	if err := requireScopes(ctx, client, []string{"read_channels"}, "Example: nimbu-cli auth scopes"); err != nil {
+		return err
+	}
 
 	opts, err := listRequestOptions(flags)
 	if err != nil {
@@ -37,18 +40,21 @@ func (c *ChannelsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var channels []api.Channel
+	var meta listFooterMeta
 
 	if c.All {
 		channels, err = api.List[api.Channel](ctx, client, "/channels", opts...)
 		if err != nil {
 			return fmt.Errorf("list channels: %w", err)
 		}
+		meta = allListFooterMeta(len(channels))
 	} else {
 		paged, err := api.ListPage[api.Channel](ctx, client, "/channels", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list channels: %w", err)
 		}
 		channels = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(channels))
 	}
 
 	if c.WithEntryCount && !c.NoEntryCount {
@@ -69,7 +75,10 @@ func (c *ChannelsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, channels, fields, headers)
+	if err := output.WriteTable(ctx, channels, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "channels", meta)
 }
 
 func fetchChannelEntryCounts(ctx context.Context, client *api.Client, channels []api.Channel) {

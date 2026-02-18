@@ -36,18 +36,22 @@ func (c *BlogPostsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var posts []api.BlogPost
+	var meta listFooterMeta
 
 	if c.All {
 		posts, err = api.List[api.BlogPost](ctx, client, path, opts...)
 		if err != nil {
 			return fmt.Errorf("list articles: %w", err)
 		}
+		meta = allListFooterMeta(len(posts))
 	} else {
 		paged, err := api.ListPage[api.BlogPost](ctx, client, path, c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list articles: %w", err)
 		}
 		posts = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(posts))
+		meta.probeTotal(ctx, client, "/blogs/"+url.PathEscape(c.Blog)+"/articles/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
@@ -64,5 +68,8 @@ func (c *BlogPostsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, posts, fields, headers)
+	if err := output.WriteTable(ctx, posts, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "articles", meta)
 }

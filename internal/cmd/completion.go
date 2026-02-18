@@ -48,7 +48,7 @@ _nimbu_cli_completions() {
     if [[ ${COMP_CWORD} -eq 2 ]]; then
         case "${COMP_WORDS[1]}" in
             auth)
-                COMPREPLY=($(compgen -W "login logout status whoami token keyring" -- "${cur}"))
+                COMPREPLY=($(compgen -W "login logout status whoami scopes token keyring" -- "${cur}"))
                 ;;
             sites)
                 COMPREPLY=($(compgen -W "list get current count settings" -- "${cur}"))
@@ -163,6 +163,7 @@ _nimbu_cli() {
                 'logout:Log out and remove stored credentials'
                 'status:Show authentication status'
                 'whoami:Show current authenticated user'
+                'scopes:Show active token scopes'
                 'token:Print access token for scripts'
                 'keyring:Manage keyring backend'
             )
@@ -280,6 +281,7 @@ complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "login" -d "Log i
 complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "logout" -d "Log out"
 complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "status" -d "Show authentication status"
 complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "whoami" -d "Show current user"
+complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "scopes" -d "Show active token scopes"
 complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "token" -d "Print access token"
 complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "keyring" -d "Manage keyring"
 

@@ -117,6 +117,7 @@ func parsePagination(header http.Header, page, perPage, count int) Pagination {
 	if total := header.Get("X-Total-Count"); total != "" {
 		if n, err := strconv.Atoi(total); err == nil {
 			p.Total = n
+			p.TotalKnown = true
 		}
 	}
 

@@ -6,9 +6,11 @@ import "fmt"
 type RequestOption func(*requestOptions)
 
 type requestOptions struct {
-	Site    string
-	Query   map[string]string
-	Headers map[string]string
+	Site           string
+	Query          map[string]string
+	Headers        map[string]string
+	OperationClass OperationClass
+	Idempotent     *bool
 }
 
 // WithSite sets the site for this request.
