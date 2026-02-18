@@ -52,9 +52,9 @@ func (c *UploadsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, uploads)
 	}
 
-	plainFields := []string{"id", "name", "url", "size"}
-	tableFields := []string{"id", "name", "size", "mime_type"}
-	tableHeaders := []string{"ID", "NAME", "SIZE", "MIME TYPE"}
+	plainFields := []string{"id", "name", "url", "created_at"}
+	tableFields := []string{"id", "name", "url", "created_at"}
+	tableHeaders := []string{"ID", "NAME", "URL", "CREATED"}
 
 	if mode.Plain {
 		return output.PlainFromSlice(ctx, uploads, listOutputFields(flags, plainFields))

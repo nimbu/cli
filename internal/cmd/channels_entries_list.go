@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -55,14 +56,49 @@ func (c *ChannelEntriesListCmd) Run(ctx context.Context, flags *RootFlags) error
 		return output.JSON(ctx, entries)
 	}
 
+	displayEntries := buildChannelEntryListRows(entries)
+
 	plainFields := []string{"id", "slug", "title"}
 	tableFields := []string{"id", "slug", "title", "published"}
 	tableHeaders := []string{"ID", "SLUG", "TITLE", "PUBLISHED"}
 
 	if mode.Plain {
-		return output.PlainFromSlice(ctx, entries, listOutputFields(flags, plainFields))
+		return output.PlainFromSlice(ctx, displayEntries, listOutputFields(flags, plainFields))
 	}
 
 	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, entries, fields, headers)
+	return output.WriteTable(ctx, displayEntries, fields, headers)
+}
+
+func buildChannelEntryListRows(entries []api.Entry) []api.Entry {
+	rows := make([]api.Entry, len(entries))
+	for i := range entries {
+		entry := entries[i]
+		entry.Title = entryDisplayTitle(entry)
+		rows[i] = entry
+	}
+	return rows
+}
+
+func entryDisplayTitle(entry api.Entry) string {
+	if strings.TrimSpace(entry.Title) != "" {
+		return entry.Title
+	}
+
+	if entry.Fields != nil {
+		if raw, ok := entry.Fields["title"]; ok {
+			if title, ok := raw.(string); ok {
+				title = strings.TrimSpace(title)
+				if title != "" {
+					return title
+				}
+			}
+		}
+	}
+
+	if strings.TrimSpace(entry.Slug) != "" {
+		return entry.Slug
+	}
+
+	return entry.ID
 }

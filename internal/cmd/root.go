@@ -76,7 +76,6 @@ type CLI struct {
 	Uploads       UploadsCmd       `cmd:"" help:"Manage uploads"`
 	Blogs         BlogsCmd         `cmd:"" help:"Manage blogs"`
 	Webhooks      WebhooksCmd      `cmd:"" help:"Manage webhooks"`
-	Tokens        TokensCmd        `cmd:"" help:"Manage API tokens"`
 	Translations  TranslationsCmd  `cmd:"" help:"Manage translations"`
 	Config        ConfigCmd        `cmd:"" help:"Manage configuration"`
 	API           APICmd           `cmd:"" help:"Raw API access"`

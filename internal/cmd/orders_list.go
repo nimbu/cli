@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -56,14 +57,39 @@ func (c *OrdersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, orders)
 	}
 
+	displayOrders := buildOrderListRows(orders)
+
 	plainFields := []string{"id", "number", "status", "total", "currency"}
 	tableFields := []string{"id", "number", "status", "total", "currency", "customer_id"}
 	tableHeaders := []string{"ID", "NUMBER", "STATUS", "TOTAL", "CURRENCY", "CUSTOMER"}
 
 	if mode.Plain {
-		return output.PlainFromSlice(ctx, orders, listOutputFields(flags, plainFields))
+		return output.PlainFromSlice(ctx, displayOrders, listOutputFields(flags, plainFields))
 	}
 
 	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, orders, fields, headers)
+	return output.WriteTable(ctx, displayOrders, fields, headers)
+}
+
+func buildOrderListRows(orders []api.Order) []api.Order {
+	rows := make([]api.Order, len(orders))
+	for i := range orders {
+		order := orders[i]
+		order.Number = orderDisplayNumber(order)
+		rows[i] = order
+	}
+	return rows
+}
+
+func orderDisplayNumber(order api.Order) string {
+	if strings.TrimSpace(order.Number) != "" {
+		return order.Number
+	}
+	if len(order.ID) >= 8 {
+		return order.ID[:8]
+	}
+	if strings.TrimSpace(order.ID) != "" {
+		return order.ID
+	}
+	return "-"
 }

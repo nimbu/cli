@@ -105,7 +105,6 @@ nimbu-cli themes     Manage themes
 nimbu-cli uploads    Manage uploads
 nimbu-cli blogs      Manage blogs
 nimbu-cli webhooks   Manage webhooks
-nimbu-cli tokens     Manage API tokens
 nimbu-cli config     Manage configuration
 nimbu-cli api        Raw API access
 nimbu-cli completion Generate shell completions

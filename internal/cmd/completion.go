@@ -38,7 +38,7 @@ func writeBashCompletion(_ *kong.Kong) error {
 
 _nimbu_cli_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
-    local commands="auth sites channels pages menus products collections coupons orders customers accounts notifications roles redirects functions jobs apps themes uploads blogs webhooks tokens translations config api completion"
+    local commands="auth sites channels pages menus products collections coupons orders customers accounts notifications roles redirects functions jobs apps themes uploads blogs webhooks translations config api completion"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=($(compgen -W "${commands}" -- "${cur}"))
@@ -85,9 +85,6 @@ _nimbu_cli_completions() {
                 ;;
             webhooks)
                 COMPREPLY=($(compgen -W "list get create update delete count" -- "${cur}"))
-                ;;
-            tokens)
-                COMPREPLY=($(compgen -W "list get create revoke" -- "${cur}"))
                 ;;
             config)
                 COMPREPLY=($(compgen -W "list get set unset path" -- "${cur}"))
@@ -147,7 +144,6 @@ _nimbu_cli() {
         'uploads:Manage uploads'
         'blogs:Manage blogs'
         'webhooks:Manage webhooks'
-        'tokens:Manage API tokens'
         'translations:Manage translations'
         'config:Manage configuration'
         'api:Raw API access'
@@ -274,7 +270,6 @@ complete -c nimbu-cli -n "__fish_use_subcommand" -a "themes" -d "Manage themes"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "uploads" -d "Manage uploads"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "blogs" -d "Manage blogs"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "webhooks" -d "Manage webhooks"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "tokens" -d "Manage API tokens"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "translations" -d "Manage translations"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "config" -d "Manage configuration"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "api" -d "Raw API access"
