@@ -145,7 +145,7 @@ func openKeyring() (keyring.Keyring, error) {
 
 	cfg := keyring.Config{
 		ServiceName:              config.AppName,
-		KeychainTrustApplication: false, // Support Homebrew upgrades
+		KeychainTrustApplication: true,
 		AllowedBackends:          backends,
 		FileDir:                  dataDir,
 		FilePasswordFunc:         fileKeyringPasswordFunc(),
