@@ -40,7 +40,7 @@ func (k Kind) DisplayRoot() string {
 
 // Resource represents one managed local or remote theme file.
 type Resource struct {
-	Kind       Kind   `json:"kind"`
+	Kind        Kind   `json:"kind"`
 	DisplayPath string `json:"path"`
 	LocalPath   string `json:"local_path,omitempty"`
 	RemoteName  string `json:"remote_name"`
@@ -49,7 +49,7 @@ type Resource struct {
 
 // Action records one upload or delete operation.
 type Action struct {
-	Kind       Kind   `json:"kind"`
+	Kind        Kind   `json:"kind"`
 	DisplayPath string `json:"path"`
 	LocalPath   string `json:"local_path,omitempty"`
 	RemoteName  string `json:"remote_name"`
@@ -75,10 +75,10 @@ type BuildConfig struct {
 
 // RootSpec maps a local root onto a remote theme resource kind.
 type RootSpec struct {
-	AbsPath     string
-	Kind        Kind
-	LocalPath   string
-	RemoteBase  string
+	AbsPath    string
+	Kind       Kind
+	LocalPath  string
+	RemoteBase string
 }
 
 // Config is the resolved theme sync configuration.

@@ -120,7 +120,7 @@ func ClassifyProjectPath(cfg Config, relPath string) (Resource, bool, error) {
 
 		absPath := filepath.Join(cfg.ProjectRoot, filepath.FromSlash(normalized))
 		resource := Resource{
-			AbsPath:      absPath,
+			AbsPath:     absPath,
 			DisplayPath: DisplayPath(root.Kind, remoteName),
 			Kind:        root.Kind,
 			LocalPath:   normalized,
