@@ -2,8 +2,11 @@ package cmd
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"mime"
 	"net/url"
+	"path"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -15,7 +18,7 @@ type ThemeAssetsCreateCmd struct {
 	Name        string   `arg:"" help:"Asset name or path"`
 	File        string   `help:"Read asset content from file" short:"f"`
 	ContentType string   `help:"Asset content type"`
-	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. content_type=text/css)"`
+	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. source.content_type=text/css)"`
 }
 
 // Run executes the create command.
@@ -39,12 +42,21 @@ func (c *ThemeAssetsCreateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return fmt.Errorf("read asset content: %w", err)
 	}
 
-	body := map[string]any{
-		"name":       c.Name,
-		"plain_text": string(content),
+	source := map[string]any{
+		"__type":     "File",
+		"attachment": base64.StdEncoding.EncodeToString(content),
+		"filename":   path.Base(c.Name),
 	}
-	if c.ContentType != "" {
-		body["content_type"] = c.ContentType
+	contentType := c.ContentType
+	if contentType == "" {
+		contentType = mime.TypeByExtension(path.Ext(c.Name))
+	}
+	if contentType != "" {
+		source["content_type"] = contentType
+	}
+	body := map[string]any{
+		"name":   c.Name,
+		"source": source,
 	}
 	if len(c.Assignments) > 0 {
 		inlineBody, err := parseInlineAssignments(c.Assignments)

@@ -142,19 +142,13 @@ func basicAuthHeader(email, password string) string {
 }
 
 func (c *AuthLoginCmd) storeToken(ctx context.Context, token, email string) error {
-	store, err := auth.OpenDefault()
+	store, err := openAuthStore()
 	if err != nil {
 		return fmt.Errorf("open keyring: %w", err)
 	}
 
-	if err := store.SetToken(token); err != nil {
-		return fmt.Errorf("store token: %w", err)
-	}
-
-	if email != "" {
-		if err := store.SetEmail(email); err != nil {
-			return fmt.Errorf("store email: %w", err)
-		}
+	if err := store.SetCredential(auth.Credential{Token: token, Email: email}); err != nil {
+		return fmt.Errorf("store credential: %w", err)
 	}
 
 	return nil

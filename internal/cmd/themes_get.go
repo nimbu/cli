@@ -9,6 +9,10 @@ import (
 	"github.com/nimbu/cli/internal/output"
 )
 
+type themeGetBundle struct {
+	Theme api.Theme `json:"theme"`
+}
+
 // ThemesGetCmd gets theme details.
 type ThemesGetCmd struct {
 	Theme string `arg:"" help:"Theme ID"`
@@ -26,11 +30,12 @@ func (c *ThemesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var theme api.Theme
+	var bundle themeGetBundle
 	path := "/themes/" + url.PathEscape(c.Theme)
-	if err := client.Get(ctx, path, &theme); err != nil {
+	if err := client.Get(ctx, path, &bundle); err != nil {
 		return fmt.Errorf("get theme: %w", err)
 	}
+	theme := bundle.Theme
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {

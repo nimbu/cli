@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nimbu/cli/internal/auth"
 	"github.com/nimbu/cli/internal/output"
 )
 
@@ -22,18 +21,8 @@ func (c *AuthLogoutCmd) Run(ctx context.Context) error {
 		return fmt.Errorf("logout request failed: %w", err)
 	}
 
-	store, err := auth.OpenDefault()
-	if err != nil {
-		return fmt.Errorf("open keyring: %w", err)
-	}
-
-	ks, ok := store.(*auth.KeyringStore)
-	if !ok {
-		return fmt.Errorf("unexpected store type")
-	}
-
-	if err := ks.DeleteCredential(); err != nil {
-		return fmt.Errorf("delete credentials: %w", err)
+	if err := DeleteStoredCredentials(ctx); err != nil {
+		return err
 	}
 
 	mode := output.FromContext(ctx)

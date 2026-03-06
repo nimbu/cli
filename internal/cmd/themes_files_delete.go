@@ -3,9 +3,9 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"net/url"
 
 	"github.com/nimbu/cli/internal/output"
+	"github.com/nimbu/cli/internal/themesync"
 )
 
 // ThemeFilesDeleteCmd deletes a theme file.
@@ -34,20 +34,28 @@ func (c *ThemeFilesDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	path := fmt.Sprintf("/themes/%s/files/%s", url.PathEscape(c.Theme), url.PathEscape(c.Path))
-	if err := client.Delete(ctx, path, nil); err != nil {
+	kind, remoteName := themesync.ParseCLIPath(c.Path)
+	if remoteName == "" || remoteName == "." {
+		return fmt.Errorf("invalid theme file path: %s", c.Path)
+	}
+	resource := themesync.Resource{
+		DisplayPath: themesync.DisplayPath(kind, remoteName),
+		Kind:        kind,
+		RemoteName:  remoteName,
+	}
+	if err := themesync.Delete(ctx, client, c.Theme, resource); err != nil {
 		return fmt.Errorf("delete theme file: %w", err)
 	}
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload(fmt.Sprintf("deleted %s", c.Path)))
+		return output.JSON(ctx, output.SuccessPayload(fmt.Sprintf("deleted %s", resource.DisplayPath)))
 	}
 
 	if mode.Plain {
-		return output.Plain(ctx, c.Path, "deleted")
+		return output.Plain(ctx, resource.DisplayPath, "deleted")
 	}
 
-	fmt.Printf("Deleted: %s\n", c.Path)
+	fmt.Printf("Deleted: %s\n", resource.DisplayPath)
 	return nil
 }

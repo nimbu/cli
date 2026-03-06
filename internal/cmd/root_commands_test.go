@@ -19,6 +19,7 @@ func TestCLIHasNewTopLevelCommands(t *testing.T) {
 		"Functions",
 		"Jobs",
 		"Apps",
+		"Server",
 	}
 
 	for _, field := range required {
@@ -45,6 +46,9 @@ func TestReadmeMentionsNewTopLevelCommands(t *testing.T) {
 		"nimbu-cli functions",
 		"nimbu-cli jobs",
 		"nimbu-cli apps",
+		"nimbu-cli server",
+		"nimbu-cli themes push",
+		"nimbu-cli themes sync",
 	}
 
 	for _, needle := range required {

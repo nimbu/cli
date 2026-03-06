@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"path"
+	pathpkg "path"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
+	"github.com/nimbu/cli/internal/themesync"
 )
 
 // ThemeFilesListCmd lists theme files.
@@ -90,10 +91,10 @@ func fetchThemeFileListRows(ctx context.Context, client *api.Client, theme strin
 	}
 
 	rows := make([]themeFileListItem, 0, len(assets)+len(layouts)+len(templates)+len(snippets))
-	rows = append(rows, themeResourcesToFiles(assets, "asset")...)
-	rows = append(rows, themeResourcesToFiles(layouts, "layout")...)
-	rows = append(rows, themeResourcesToFiles(templates, "template")...)
-	rows = append(rows, themeResourcesToFiles(snippets, "snippet")...)
+	rows = append(rows, themeResourcesToFiles(assets, themesync.KindAsset)...)
+	rows = append(rows, themeResourcesToFiles(layouts, themesync.KindLayout)...)
+	rows = append(rows, themeResourcesToFiles(templates, themesync.KindTemplate)...)
+	rows = append(rows, themeResourcesToFiles(snippets, themesync.KindSnippet)...)
 
 	sort.SliceStable(rows, func(i, j int) bool {
 		if rows[i].Path == rows[j].Path {
@@ -105,34 +106,35 @@ func fetchThemeFileListRows(ctx context.Context, client *api.Client, theme strin
 	return rows, nil
 }
 
-func themeResourcesToFiles(resources []api.ThemeResource, kind string) []themeFileListItem {
+func themeResourcesToFiles(resources []api.ThemeResource, kind themesync.Kind) []themeFileListItem {
 	rows := make([]themeFileListItem, 0, len(resources))
 	for _, resource := range resources {
 		rows = append(rows, themeFileListItem{
-			Path:      themeResourcePath(resource),
-			Type:      kind,
+			Path:      themeResourcePath(kind, resource),
+			Type:      string(kind),
 			UpdatedAt: resource.UpdatedAt,
 		})
 	}
 	return rows
 }
 
-func themeResourcePath(resource api.ThemeResource) string {
-	p := strings.TrimSpace(resource.Path)
-	if p != "" {
-		return p
+func themeResourcePath(kind themesync.Kind, resource api.ThemeResource) string {
+	if kind == themesync.KindAsset {
+		p := strings.Trim(strings.TrimSpace(resource.Path), "/")
+		if p != "" {
+			return p
+		}
 	}
 
 	folder := strings.Trim(strings.TrimSpace(resource.Folder), "/")
 	name := strings.TrimSpace(resource.Name)
-
-	if folder != "" && name != "" {
-		return path.Join(folder, name)
-	}
 	if name != "" {
-		return name
+		if folder != "" {
+			return themesync.DisplayPath(kind, pathpkg.Join(folder, name))
+		}
+		return themesync.DisplayPath(kind, name)
 	}
-	return resource.ID
+	return themesync.DisplayPath(kind, resource.ID)
 }
 
 func paginateThemeFileListRows(rows []themeFileListItem, page, perPage int) []themeFileListItem {

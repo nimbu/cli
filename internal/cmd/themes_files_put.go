@@ -2,14 +2,10 @@ package cmd
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
-	"io"
-	"net/url"
-	"os"
 
-	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
+	"github.com/nimbu/cli/internal/themesync"
 )
 
 // ThemeFilesPutCmd uploads/updates a theme file.
@@ -36,51 +32,32 @@ func (c *ThemeFilesPutCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var content []byte
-
-	// Read from file or use provided content
-	switch {
-	case c.File != "":
-		f, err := os.Open(c.File)
-		if err != nil {
-			return fmt.Errorf("open file: %w", err)
-		}
-		defer func() { _ = f.Close() }()
-		content, err = io.ReadAll(f)
-		if err != nil {
-			return fmt.Errorf("read file: %w", err)
-		}
-	case c.Content != "":
-		content = []byte(c.Content)
-	default:
-		// Read from stdin
-		content, err = io.ReadAll(os.Stdin)
-		if err != nil {
-			return fmt.Errorf("read stdin: %w", err)
-		}
+	kind, remoteName := themesync.ParseCLIPath(c.Path)
+	if remoteName == "" || remoteName == "." {
+		return fmt.Errorf("invalid theme file path: %s", c.Path)
 	}
-
-	// Build request body
-	body := map[string]any{
-		"path":    c.Path,
-		"content": base64.StdEncoding.EncodeToString(content),
+	content, err := readThemeContent(c.File, c.Content)
+	if err != nil {
+		return fmt.Errorf("read theme file content: %w", err)
 	}
-
-	path := fmt.Sprintf("/themes/%s/files/%s", url.PathEscape(c.Theme), url.PathEscape(c.Path))
-	var result api.ThemeFile
-	if err := client.Put(ctx, path, body, &result); err != nil {
+	resource := themesync.Resource{
+		DisplayPath: themesync.DisplayPath(kind, remoteName),
+		Kind:        kind,
+		RemoteName:  remoteName,
+	}
+	if err := themesync.UpsertBytes(ctx, client, c.Theme, resource, content, flags != nil && flags.Force); err != nil {
 		return fmt.Errorf("put theme file: %w", err)
 	}
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
-		return output.JSON(ctx, result)
+		return output.JSON(ctx, resource)
 	}
 
 	if mode.Plain {
-		return output.Plain(ctx, result.Path)
+		return output.Plain(ctx, resource.DisplayPath)
 	}
 
-	fmt.Printf("Uploaded: %s\n", result.Path)
+	fmt.Printf("Uploaded: %s\n", resource.DisplayPath)
 	return nil
 }

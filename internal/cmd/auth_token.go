@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nimbu/cli/internal/auth"
 	"github.com/nimbu/cli/internal/output"
 )
 
@@ -13,14 +12,9 @@ type AuthTokenCmd struct{}
 
 // Run executes the token command.
 func (c *AuthTokenCmd) Run(ctx context.Context) error {
-	store, err := auth.OpenDefault()
+	token, err := ResolveAuthToken(ctx)
 	if err != nil {
-		return fmt.Errorf("open keyring: %w", err)
-	}
-
-	token, err := store.GetToken()
-	if err != nil {
-		return fmt.Errorf("get token: %w", err)
+		return err
 	}
 
 	mode := output.FromContext(ctx)

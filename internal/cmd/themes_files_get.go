@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"os"
 
 	"github.com/nimbu/cli/internal/output"
+	"github.com/nimbu/cli/internal/themesync"
 )
 
 // ThemeFilesGetCmd gets/downloads a theme file.
@@ -31,22 +29,15 @@ func (c *ThemeFilesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	path := fmt.Sprintf("/themes/%s/files/%s", url.PathEscape(c.Theme), url.PathEscape(c.Path))
-	resp, err := client.RawRequest(ctx, http.MethodGet, path, nil)
+	kind, remoteName := themesync.ParseCLIPath(c.Path)
+	if remoteName == "" || remoteName == "." {
+		return fmt.Errorf("invalid theme file path: %s", c.Path)
+	}
+	content, err := themesync.ReadContent(ctx, client, c.Theme, kind, remoteName)
 	if err != nil {
 		return fmt.Errorf("get theme file: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("get theme file: HTTP %d: %s", resp.StatusCode, string(body))
-	}
-
-	content, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
-	}
+	displayPath := themesync.DisplayPath(kind, remoteName)
 
 	// Write to file if output path specified
 	if c.Output != "" {
@@ -69,7 +60,7 @@ func (c *ThemeFilesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, map[string]any{
-			"path":    c.Path,
+			"path":    displayPath,
 			"content": base64.StdEncoding.EncodeToString(content),
 		})
 	}

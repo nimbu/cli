@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/themesync"
 )
 
 func TestEntryDisplayTitle(t *testing.T) {
@@ -58,16 +59,16 @@ func TestOrderDisplayNumber(t *testing.T) {
 }
 
 func TestThemeResourcePath(t *testing.T) {
-	if got := themeResourcePath(api.ThemeResource{Path: "/css/app.css", Name: "ignored"}); got != "/css/app.css" {
+	if got := themeResourcePath(themesync.KindAsset, api.ThemeResource{Path: "/css/app.css", Name: "ignored"}); got != "css/app.css" {
 		t.Fatalf("expected path, got %q", got)
 	}
-	if got := themeResourcePath(api.ThemeResource{Folder: "snippets", Name: "header.liquid"}); got != "snippets/header.liquid" {
-		t.Fatalf("expected folder/name path, got %q", got)
+	if got := themeResourcePath(themesync.KindSnippet, api.ThemeResource{Name: "header.liquid"}); got != "snippets/header.liquid" {
+		t.Fatalf("expected snippet path, got %q", got)
 	}
-	if got := themeResourcePath(api.ThemeResource{Name: "layout.liquid"}); got != "layout.liquid" {
-		t.Fatalf("expected name, got %q", got)
+	if got := themeResourcePath(themesync.KindLayout, api.ThemeResource{Name: "layout.liquid"}); got != "layouts/layout.liquid" {
+		t.Fatalf("expected layout path, got %q", got)
 	}
-	if got := themeResourcePath(api.ThemeResource{ID: "abc"}); got != "abc" {
+	if got := themeResourcePath(themesync.KindTemplate, api.ThemeResource{ID: "abc"}); got != "templates/abc" {
 		t.Fatalf("expected id fallback, got %q", got)
 	}
 }

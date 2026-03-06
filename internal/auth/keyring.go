@@ -17,6 +17,9 @@ import (
 
 // Store provides credential storage operations.
 type Store interface {
+	SetCredential(cred Credential) error
+	GetCredential() (Credential, error)
+	DeleteCredential() error
 	SetToken(token string) error
 	GetToken() (string, error)
 	DeleteToken() error
@@ -258,6 +261,11 @@ func (s *KeyringStore) DeleteEmail() error {
 
 // SetCredential stores a full credential (token + email + metadata).
 func (s *KeyringStore) SetCredential(cred Credential) error {
+	cred.Token = strings.TrimSpace(cred.Token)
+	cred.Email = strings.ToLower(strings.TrimSpace(cred.Email))
+	if cred.Token == "" {
+		return fmt.Errorf("store credential: token required")
+	}
 	if cred.CreatedAt.IsZero() {
 		cred.CreatedAt = time.Now().UTC()
 	}
@@ -282,23 +290,12 @@ func (s *KeyringStore) GetCredential() (Credential, error) {
 	item, err := s.ring.Get(credentialKey)
 	if err != nil {
 		if errors.Is(err, keyring.ErrKeyNotFound) {
-			// Fall back to separate token/email
-			token, tokenErr := s.GetToken()
-			if tokenErr != nil {
-				return Credential{}, ErrNoToken
-			}
-			email, _ := s.GetEmail()
-			return Credential{Token: token, Email: email}, nil
+			return s.readLegacyCredential()
 		}
 		return Credential{}, fmt.Errorf("read credential: %w", err)
 	}
 
-	var cred Credential
-	if err := json.Unmarshal(item.Data, &cred); err != nil {
-		return Credential{}, fmt.Errorf("decode credential: %w", err)
-	}
-
-	return cred, nil
+	return decodeCredential(item.Data)
 }
 
 // DeleteCredential removes all stored credentials.
@@ -322,4 +319,41 @@ func (s *KeyringStore) Keys() ([]string, error) {
 func (s *KeyringStore) HasToken() bool {
 	_, err := s.GetToken()
 	return err == nil
+}
+
+func decodeCredential(data []byte) (Credential, error) {
+	var cred Credential
+	if err := json.Unmarshal(data, &cred); err != nil {
+		return Credential{}, fmt.Errorf("decode credential: %w", err)
+	}
+	cred.Token = strings.TrimSpace(cred.Token)
+	cred.Email = strings.ToLower(strings.TrimSpace(cred.Email))
+	if cred.Token == "" {
+		return Credential{}, ErrNoToken
+	}
+	return cred, nil
+}
+
+func (s *KeyringStore) readLegacyCredential() (Credential, error) {
+	token, err := s.GetToken()
+	if err != nil {
+		return Credential{}, err
+	}
+
+	email, err := s.GetEmail()
+	if err != nil && !errors.Is(err, ErrNoEmail) {
+		return Credential{}, err
+	}
+
+	cred := Credential{
+		Token: strings.TrimSpace(token),
+		Email: strings.ToLower(strings.TrimSpace(email)),
+	}
+	if cred.Token == "" {
+		return Credential{}, ErrNoToken
+	}
+
+	_ = s.SetCredential(cred)
+
+	return cred, nil
 }

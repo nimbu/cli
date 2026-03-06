@@ -33,3 +33,4 @@ coverage.html
 *.dylib
 *.test
 *.prof
+/themes

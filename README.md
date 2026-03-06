@@ -41,6 +41,9 @@ nimbu-cli channels list --site my-site
 
 # JSON output for scripting
 nimbu-cli channels entries list blog --site my-site --json | jq '.[]'
+
+# Start local simulator proxy + project dev server
+nimbu-cli server
 ```
 
 ## Inline Payload Syntax
@@ -105,6 +108,7 @@ nimbu-cli themes     Manage themes
 nimbu-cli uploads    Manage uploads
 nimbu-cli blogs      Manage blogs
 nimbu-cli webhooks   Manage webhooks
+nimbu-cli server     Run local simulator proxy with child dev server
 nimbu-cli config     Manage configuration
 nimbu-cli api        Raw API access
 nimbu-cli completion Generate shell completions
@@ -139,13 +143,108 @@ NIMBU_ENABLE_COMMANDS # Command allowlist (comma-separated)
 
 ### Project File
 
-`.nimbu.json` in your project directory:
+`nimbu.yml` in your project directory:
 
-```json
-{
-  "site": "my-site",
-  "theme": "default"
-}
+```yaml
+site: my-site
+theme: default
+dev:
+  proxy:
+    host: 127.0.0.1
+    port: 4568
+    template_root: .
+    watch: true
+    watch_scan_interval: 3s
+    max_body_mb: 64
+  server:
+    command: pnpm
+    args:
+      - vite
+      - --port
+      - "5173"
+    cwd: .
+    ready_url: http://127.0.0.1:5173
+    env:
+      VITE_NIMBU_PROXY_URL: http://127.0.0.1:4568
+  routes:
+    exclude:
+      - /@vite/*
+      - /assets/*
+      - /ws
+    include:
+      - POST /.well-known/*
+sync:
+  build:
+    command: pnpm
+    args:
+      - build
+  roots:
+    assets:
+      - images
+      - fonts
+      - javascripts
+      - stylesheets
+    layouts:
+      - layouts
+    templates:
+      - templates
+    snippets:
+      - snippets
+  generated:
+    - javascripts/**
+    - stylesheets/**
+    - snippets/webpack_*.liquid
+```
+
+### Local Server Command
+
+`nimbu-cli server` starts:
+
+1. Nimbu simulator proxy (default `http://127.0.0.1:4568`)
+2. Child dev server command from `nimbu.yml`
+
+Runtime notes:
+
+- Child stdout/stderr is passed through unchanged.
+- Proxy request lines are on by default: `2026-03-04T13:06:32.802Z GET / (200)`
+- Use `--quiet-requests` to hide request lines.
+- Child should proxy simulator requests to `NIMBU_PROXY_URL`.
+
+Override example:
+
+```bash
+nimbu-cli server --cmd pnpm --arg vite --arg --port --arg 5173 --ready-url http://127.0.0.1:5173
+```
+
+### Theme Push/Sync Commands
+
+`nimbu-cli themes push` uploads managed local theme resources without deleting remote
+files.
+
+`nimbu-cli themes sync` uploads managed local theme resources and can also delete
+managed remote resources that no longer exist locally.
+
+Supported managed resource kinds:
+
+- `layouts/**`
+- `templates/**`
+- `snippets/**`
+- asset roots such as `images/**`, `fonts/**`, `javascripts/**`, `stylesheets/**`
+
+Notes:
+
+- `code/**` and `content/**` are intentionally excluded from builtin theme sync.
+- `--build` runs `sync.build` from `nimbu.yml` before collecting files.
+- `--all` uploads the full managed file set.
+- `--prune` is only available on `themes sync` and deletes managed remote extras.
+
+Examples:
+
+```bash
+nimbu-cli themes push --build
+nimbu-cli themes push --all --theme storefront
+nimbu-cli themes sync --build
+nimbu-cli themes sync --all --prune --dry-run
 ```
 
 ## Development

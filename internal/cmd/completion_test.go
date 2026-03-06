@@ -47,6 +47,8 @@ func TestCompletionsIncludeNewTopLevelCommands(t *testing.T) {
 		"jobs",
 		"apps",
 		"translations",
+		"push",
+		"sync",
 	}
 
 	bash := captureStdout(t, func() error { return writeBashCompletion(nil) })

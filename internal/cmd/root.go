@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -77,6 +78,7 @@ type CLI struct {
 	Blogs         BlogsCmd         `cmd:"" help:"Manage blogs"`
 	Webhooks      WebhooksCmd      `cmd:"" help:"Manage webhooks"`
 	Translations  TranslationsCmd  `cmd:"" help:"Manage translations"`
+	Server        ServerCmd        `cmd:"" help:"Run local simulator proxy with child dev server"`
 	Config        ConfigCmd        `cmd:"" help:"Manage configuration"`
 	API           APICmd           `cmd:"" help:"Raw API access"`
 	Completion    CompletionCmd    `cmd:"" help:"Generate shell completions"`
@@ -161,9 +163,14 @@ func execute(args []string) (err error) {
 	writer.Color = cli.Color
 	writer.NoTTY = cli.NoInput
 	ctx = output.WithWriter(ctx, writer)
+	ctx = context.WithValue(ctx, authResolverKey{}, newAuthCredentialResolver())
 
 	// Load config
-	cfg, _ := config.Read() // Ignore error, use defaults
+	cfg, cfgErr := config.Read()
+	if cfgErr != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "warning: %v\n", cfgErr)
+	}
+	cli.RootFlags = applyRootConfigDefaults(cli.RootFlags, cfg, args)
 
 	// Resolve site from flags, config, or project file
 	site := cli.Site
@@ -241,6 +248,31 @@ func boolString(v bool) string {
 	return "false"
 }
 
+func applyRootConfigDefaults(flags RootFlags, cfg config.Config, args []string) RootFlags {
+	if cfg.APIURL != "" && !hasCLIFlag(args, "--apiurl") && os.Getenv("NIMBU_API_URL") == "" {
+		flags.APIURL = cfg.APIURL
+	}
+
+	if cfg.Timeout != "" && !hasCLIFlag(args, "--timeout") && os.Getenv("NIMBU_TIMEOUT") == "" {
+		if timeout, err := time.ParseDuration(cfg.Timeout); err == nil {
+			flags.Timeout = timeout
+		} else {
+			_, _ = fmt.Fprintf(os.Stderr, "warning: invalid timeout in config: %q\n", cfg.Timeout)
+		}
+	}
+
+	return flags
+}
+
+func hasCLIFlag(args []string, flag string) bool {
+	for _, arg := range args {
+		if arg == flag || strings.HasPrefix(arg, flag+"=") {
+			return true
+		}
+	}
+	return false
+}
+
 // VersionString returns the version string.
 func VersionString() string {
 	return fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, date)
@@ -280,18 +312,12 @@ const (
 func GetAPIClient(ctx context.Context) (*api.Client, error) {
 	flags := ctx.Value(rootFlagsKey{}).(*RootFlags)
 
-	// Get token from keyring
-	store, err := auth.OpenDefault()
-	if err != nil {
-		return nil, fmt.Errorf("open keyring: %w", err)
-	}
-
-	token, err := store.GetToken()
+	token, err := ResolveAuthToken(ctx)
 	if err != nil {
 		if errors.Is(err, auth.ErrNoToken) {
 			return nil, fmt.Errorf("%w: run 'nimbu-cli auth login' first", auth.ErrNoToken)
 		}
-		return nil, fmt.Errorf("get token: %w", err)
+		return nil, err
 	}
 
 	client := api.New(flags.APIURL, token)
@@ -338,7 +364,7 @@ func RequireSite(ctx context.Context, site string) (string, error) {
 		return proj.Site, nil
 	}
 
-	return "", fmt.Errorf("site required; use --site flag, NIMBU_SITE env, or .nimbu.json")
+	return "", fmt.Errorf("site required; use --site flag, NIMBU_SITE env, or nimbu.yml")
 }
 
 // MapAPIError maps API errors to exit codes.

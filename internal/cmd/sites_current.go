@@ -57,7 +57,7 @@ func (c *SitesCurrentCmd) Run(ctx context.Context, flags *RootFlags) error {
 		fmt.Println("  --site flag")
 		fmt.Println("  NIMBU_SITE environment variable")
 		fmt.Println("  default_site in config file")
-		fmt.Println("  site in .nimbu.json project file")
+		fmt.Println("  site in nimbu.yml project file")
 		return nil
 	}
 

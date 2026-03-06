@@ -38,7 +38,7 @@ func writeBashCompletion(_ *kong.Kong) error {
 
 _nimbu_cli_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
-    local commands="auth sites channels pages menus products collections coupons orders customers accounts notifications roles redirects functions jobs apps themes uploads blogs webhooks translations config api completion"
+    local commands="auth sites channels pages menus products collections coupons orders customers accounts notifications roles redirects functions jobs apps themes uploads blogs webhooks translations server config api completion"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=($(compgen -W "${commands}" -- "${cur}"))
@@ -75,10 +75,10 @@ _nimbu_cli_completions() {
                 COMPREPLY=($(compgen -W "list get code" -- "${cur}"))
                 ;;
             themes)
-                COMPREPLY=($(compgen -W "list get layouts templates snippets assets files" -- "${cur}"))
+                COMPREPLY=($(compgen -W "list get push sync layouts templates snippets assets files" -- "${cur}"))
                 ;;
             uploads)
-                COMPREPLY=($(compgen -W "list get create delete" -- "${cur}"))
+                COMPREPLY=($(compgen -W "list get create delete count" -- "${cur}"))
                 ;;
             blogs)
                 COMPREPLY=($(compgen -W "list get create update delete count posts articles" -- "${cur}"))
@@ -89,14 +89,23 @@ _nimbu_cli_completions() {
             config)
                 COMPREPLY=($(compgen -W "list get set unset path" -- "${cur}"))
                 ;;
+            server)
+                COMPREPLY=($(compgen -W "--cmd --arg --cwd --ready-url --ready-timeout --proxy-host --proxy-port --template-root --no-watch --watch-scan-interval --max-body-mb --quiet-requests --events-json --debug" -- "${cur}"))
+                ;;
             completion)
                 COMPREPLY=($(compgen -W "bash zsh fish" -- "${cur}"))
                 ;;
         esac
     elif [[ ${COMP_WORDS[1]} == "themes" ]]; then
         case "${COMP_WORDS[2]}" in
-            layouts|templates|snippets|assets|files)
+            push|sync)
+                COMPREPLY=($(compgen -W "--all --build --dry-run --theme" -- "${cur}"))
+                ;;
+            layouts|templates|snippets|assets)
                 COMPREPLY=($(compgen -W "list get create delete" -- "${cur}"))
+                ;;
+            files)
+                COMPREPLY=($(compgen -W "list get put delete" -- "${cur}"))
                 ;;
         esac
     elif [[ ${COMP_WORDS[1]} == "apps" && ${COMP_WORDS[2]} == "code" ]]; then
@@ -145,6 +154,7 @@ _nimbu_cli() {
         'blogs:Manage blogs'
         'webhooks:Manage webhooks'
         'translations:Manage translations'
+        'server:Run local simulator proxy with child dev server'
         'config:Manage configuration'
         'api:Raw API access'
         'completion:Generate shell completions'
@@ -193,6 +203,8 @@ _nimbu_cli() {
             themes_commands=(
                 'list:List themes'
                 'get:Get theme details'
+                'push:Upload managed local theme files'
+                'sync:Upload and reconcile managed local theme files'
                 'layouts:Manage layouts'
                 'templates:Manage templates'
                 'snippets:Manage snippets'
@@ -272,6 +284,7 @@ complete -c nimbu-cli -n "__fish_use_subcommand" -a "uploads" -d "Manage uploads
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "blogs" -d "Manage blogs"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "webhooks" -d "Manage webhooks"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "translations" -d "Manage translations"
+complete -c nimbu-cli -n "__fish_use_subcommand" -a "server" -d "Run local simulator proxy with child dev server"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "config" -d "Manage configuration"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "api" -d "Raw API access"
 complete -c nimbu-cli -n "__fish_use_subcommand" -a "completion" -d "Generate shell completions"
@@ -286,7 +299,7 @@ complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "token" -d "Print
 complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "keyring" -d "Manage keyring"
 
 # Themes subcommands
-complete -c nimbu-cli -n "__fish_seen_subcommand_from themes" -a "list get layouts templates snippets assets files" -d "Theme commands"
+complete -c nimbu-cli -n "__fish_seen_subcommand_from themes" -a "list get push sync layouts templates snippets assets files" -d "Theme commands"
 complete -c nimbu-cli -n "__fish_seen_subcommand_from channels" -a "list get fields entries" -d "Channel commands"
 complete -c nimbu-cli -n "__fish_seen_subcommand_from blogs" -a "list get create update delete count posts articles" -d "Blog commands"
 complete -c nimbu-cli -n "__fish_seen_subcommand_from apps" -a "list get code" -d "App commands"
@@ -298,7 +311,7 @@ complete -c nimbu-cli -n "__fish_seen_subcommand_from layouts" -a "list get crea
 complete -c nimbu-cli -n "__fish_seen_subcommand_from templates" -a "list get create delete" -d "Manage templates"
 complete -c nimbu-cli -n "__fish_seen_subcommand_from snippets" -a "list get create delete" -d "Manage snippets"
 complete -c nimbu-cli -n "__fish_seen_subcommand_from assets" -a "list get create delete" -d "Manage assets"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from files" -a "list get create delete" -d "Manage theme files"
+complete -c nimbu-cli -n "__fish_seen_subcommand_from files" -a "list get put delete" -d "Manage theme files"
 complete -c nimbu-cli -n "__fish_seen_subcommand_from code" -a "list create" -d "Manage app code files"
 
 # Config subcommands

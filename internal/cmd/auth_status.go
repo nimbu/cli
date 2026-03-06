@@ -14,20 +14,14 @@ type AuthStatusCmd struct{}
 
 // Run executes the status command.
 func (c *AuthStatusCmd) Run(ctx context.Context) error {
-	store, err := auth.OpenDefault()
-	if err != nil {
-		return fmt.Errorf("open keyring: %w", err)
-	}
-
+	cred, err := ResolveAuthCredential(ctx)
 	hasToken := true
-	_, err = store.GetToken()
 	if errors.Is(err, auth.ErrNoToken) {
 		hasToken = false
 	} else if err != nil {
-		return fmt.Errorf("check token: %w", err)
+		return err
 	}
-
-	email, _ := store.GetEmail()
+	email := cred.Email
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
