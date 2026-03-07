@@ -13,6 +13,8 @@ import (
 )
 
 func TestChannelEntriesCopyDryRunDoesNotWrite(t *testing.T) {
+	t.Setenv("NIMBU_TOKEN", "test-token")
+
 	var writes int
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
