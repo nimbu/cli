@@ -188,7 +188,8 @@ func (p *channelFieldPresenter) classifyField(field api.CustomField) channelFiel
 func (p *channelFieldPresenter) renderSection(section struct {
 	name   channelFieldSection
 	fields []api.CustomField
-}) error {
+},
+) error {
 	if _, err := fmt.Fprintln(p.out, p.sectionHeader(string(section.name))); err != nil {
 		return err
 	}
