@@ -46,15 +46,17 @@ type channelFieldRow struct {
 
 func newChannelFieldPresenter(ctx context.Context) *channelFieldPresenter {
 	writer := output.WriterFromContext(ctx)
-	out := writer.Out
-	if out == nil {
-		out = io.Discard
-	}
+	out := io.Writer(io.Discard)
 
 	profile := termenv.Ascii
 	useColor := false
-	if writer != nil && writer.UseColor() {
-		useColor = true
+	if writer != nil {
+		if writer.Out != nil {
+			out = writer.Out
+		}
+		useColor = writer.UseColor()
+	}
+	if useColor {
 		switch writer.Color {
 		case "always":
 			profile = termenv.TrueColor
@@ -378,9 +380,6 @@ func (p *channelFieldPresenter) renderExtraDetails(field api.CustomField, indent
 		value string
 	}
 	lines := make([]detailLine, 0, 6)
-	if field.Reference != "" && (field.Type == "belongs_to" || field.Type == "belongs_to_many") {
-		// Relation target is already shown inline.
-	}
 	if field.GeoType != "" {
 		lines = append(lines, detailLine{label: "geo", value: field.GeoType})
 	}

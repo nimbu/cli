@@ -74,7 +74,7 @@ func ParseThemeRef(raw, hostOverride, defaultSite, defaultBaseURL string) (Theme
 		return ThemeRef{}, fmt.Errorf("theme reference required")
 	}
 	parts := strings.SplitN(value, "/", 2)
-	site := defaultSite
+	site := ""
 	theme := "default-theme"
 	if len(parts) == 1 {
 		if defaultSite != "" {

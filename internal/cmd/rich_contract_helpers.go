@@ -2,10 +2,7 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -43,24 +40,8 @@ func validateShallowInlineAssignments(resource string, assignments []string, all
 	return nil
 }
 
-func writeJSONToWriter(ctx context.Context, value any) error {
-	w := output.WriterFromContext(ctx)
-	enc := json.NewEncoder(w.Out)
-	enc.SetIndent("", "  ")
-	return enc.Encode(value)
-}
-
 func printLine(ctx context.Context, format string, args ...any) error {
 	_, err := fmt.Fprintf(output.WriterFromContext(ctx).Out, format, args...)
-	return err
-}
-
-func writeIndentedJSON(ctx context.Context, value any) error {
-	data, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(output.WriterFromContext(ctx).Out, "%s\n", data)
 	return err
 }
 
@@ -68,23 +49,4 @@ func mergeTopLevel(dst map[string]any, src map[string]any) {
 	for key, value := range src {
 		dst[key] = value
 	}
-}
-
-func maybeRelativePath(base, target string) string {
-	if base == "" || target == "" {
-		return target
-	}
-	rel, err := filepath.Rel(base, target)
-	if err != nil {
-		return target
-	}
-	return rel
-}
-
-func readAll(reader io.Reader) (string, error) {
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
 }

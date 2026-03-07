@@ -65,10 +65,7 @@ func NewProgress(ctx context.Context) *Progress {
 	}
 
 	profile := termenv.Ascii
-	useColor := false
-	if writer.Color == "always" || (writer.Color != "never" && writer.ErrIsTTY()) {
-		useColor = true
-	}
+	useColor := writer.Color == "always" || (writer.Color != "never" && writer.ErrIsTTY())
 	if useColor {
 		switch writer.Color {
 		case "always":
