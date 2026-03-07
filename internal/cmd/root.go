@@ -43,6 +43,7 @@ type RootFlags struct {
 	Color          string        `help:"Color output: auto|always|never" default:"${color}" env:"NIMBU_COLOR"`
 	JSON           bool          `help:"Output JSON to stdout" default:"${json}" env:"NIMBU_JSON"`
 	Plain          bool          `help:"Output stable TSV to stdout" default:"${plain}" env:"NIMBU_PLAIN"`
+	NoProgress     bool          `help:"Disable live progress UI" env:"NIMBU_NO_PROGRESS"`
 	Force          bool          `help:"Skip confirmations for destructive operations"`
 	NoInput        bool          `help:"Never prompt; fail instead (for CI)" env:"NIMBU_NO_INPUT"`
 	Readonly       bool          `help:"Disable all write operations" env:"NIMBU_READONLY"`
@@ -66,6 +67,7 @@ type CLI struct {
 	Coupons       CouponsCmd       `cmd:"" help:"Manage coupons"`
 	Orders        OrdersCmd        `cmd:"" help:"Manage orders"`
 	Customers     CustomersCmd     `cmd:"" help:"Manage customers"`
+	Mails         MailsCmd         `cmd:"" aliases:"mail" help:"Sync notification templates to local files"`
 	Accounts      AccountsCmd      `cmd:"" help:"Manage accounts"`
 	Notifications NotificationsCmd `cmd:"" help:"Manage notifications"`
 	Roles         RolesCmd         `cmd:"" help:"Manage roles"`
@@ -162,7 +164,11 @@ func execute(args []string) (err error) {
 	writer.Mode = outMode
 	writer.Color = cli.Color
 	writer.NoTTY = cli.NoInput
+	writer.NoSpin = cli.NoProgress
 	ctx = output.WithWriter(ctx, writer)
+	progress := output.NewProgress(ctx)
+	defer progress.Close()
+	ctx = output.WithProgress(ctx, progress)
 	ctx = context.WithValue(ctx, authResolverKey{}, newAuthCredentialResolver())
 
 	// Load config
@@ -338,6 +344,32 @@ func GetAPIClientWithSite(ctx context.Context, site string) (*api.Client, error)
 	if err != nil {
 		return nil, err
 	}
+	if site != "" {
+		client = client.WithSite(site)
+	}
+	return client, nil
+}
+
+// GetAPIClientWithBaseURL creates an API client with a specific base URL and site.
+func GetAPIClientWithBaseURL(ctx context.Context, baseURL, site string) (*api.Client, error) {
+	flags := ctx.Value(rootFlagsKey{}).(*RootFlags)
+
+	token, err := ResolveAuthToken(ctx)
+	if err != nil {
+		if errors.Is(err, auth.ErrNoToken) {
+			return nil, fmt.Errorf("%w: run 'nimbu-cli auth login' first", auth.ErrNoToken)
+		}
+		return nil, err
+	}
+
+	apiURL := strings.TrimSpace(baseURL)
+	if apiURL == "" {
+		apiURL = flags.APIURL
+	}
+
+	client := api.New(apiURL, token)
+	client = client.WithTimeout(flags.Timeout)
+	client = client.WithDebug(flags.Debug)
 	if site != "" {
 		client = client.WithSite(site)
 	}

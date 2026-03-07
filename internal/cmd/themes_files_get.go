@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/nimbu/cli/internal/output"
-	"github.com/nimbu/cli/internal/themesync"
+	"github.com/nimbu/cli/internal/themes"
 )
 
 // ThemeFilesGetCmd gets/downloads a theme file.
@@ -29,15 +29,15 @@ func (c *ThemeFilesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	kind, remoteName := themesync.ParseCLIPath(c.Path)
+	kind, remoteName := themes.ParseCLIPath(c.Path)
 	if remoteName == "" || remoteName == "." {
 		return fmt.Errorf("invalid theme file path: %s", c.Path)
 	}
-	content, err := themesync.ReadContent(ctx, client, c.Theme, kind, remoteName)
+	content, err := themes.ReadContent(ctx, client, c.Theme, kind, remoteName)
 	if err != nil {
 		return fmt.Errorf("get theme file: %w", err)
 	}
-	displayPath := themesync.DisplayPath(kind, remoteName)
+	displayPath := themes.DisplayPath(kind, remoteName)
 
 	// Write to file if output path specified
 	if c.Output != "" {

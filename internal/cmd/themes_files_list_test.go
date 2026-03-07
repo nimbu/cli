@@ -4,11 +4,11 @@ import (
 	"testing"
 
 	"github.com/nimbu/cli/internal/api"
-	"github.com/nimbu/cli/internal/themesync"
+	"github.com/nimbu/cli/internal/themes"
 )
 
 func TestThemeResourcePathPreservesFolderForNestedResources(t *testing.T) {
-	got := themeResourcePath(themesync.KindTemplate, api.ThemeResource{
+	got := themeResourcePath(themes.KindTemplate, api.ThemeResource{
 		Folder: "customers",
 		Name:   "login.liquid",
 	})

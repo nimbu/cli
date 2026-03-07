@@ -35,17 +35,17 @@ func (c *PagesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("list pages: %w", err)
 	}
 
-	var pages []api.Page
+	var pages []api.PageSummary
 	var meta listFooterMeta
 
 	if c.All {
-		pages, err = api.List[api.Page](ctx, client, "/pages", opts...)
+		pages, err = api.List[api.PageSummary](ctx, client, "/pages", opts...)
 		if err != nil {
 			return fmt.Errorf("list pages: %w", err)
 		}
 		meta = allListFooterMeta(len(pages))
 	} else {
-		paged, err := api.ListPage[api.Page](ctx, client, "/pages", c.Page, c.PerPage, opts...)
+		paged, err := api.ListPage[api.PageSummary](ctx, client, "/pages", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list pages: %w", err)
 		}
@@ -59,9 +59,9 @@ func (c *PagesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, pages)
 	}
 
-	plainFields := []string{"id", "slug", "title"}
-	tableFields := []string{"id", "slug", "title", "template", "published"}
-	tableHeaders := []string{"ID", "SLUG", "TITLE", "TEMPLATE", "PUBLISHED"}
+	plainFields := []string{"id", "fullpath", "title"}
+	tableFields := []string{"id", "fullpath", "title", "template", "published"}
+	tableHeaders := []string{"ID", "FULLPATH", "TITLE", "TEMPLATE", "PUBLISHED"}
 
 	if mode.Plain {
 		return output.PlainFromSlice(ctx, pages, listOutputFields(flags, plainFields))

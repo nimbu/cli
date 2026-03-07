@@ -8,4 +8,5 @@ type TranslationsCmd struct {
 	Update TranslationsUpdateCmd `cmd:"" help:"Update a translation"`
 	Delete TranslationsDeleteCmd `cmd:"" help:"Delete a translation"`
 	Count  TranslationsCountCmd  `cmd:"" help:"Count translations"`
+	Copy   TranslationsCopyCmd   `cmd:"" help:"Copy translations between sites"`
 }

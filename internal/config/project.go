@@ -13,10 +13,21 @@ const ProjectFileName = "nimbu.yml"
 
 // ProjectConfig holds project-specific configuration.
 type ProjectConfig struct {
-	Site  string      `json:"site,omitempty" yaml:"site,omitempty"`
-	Theme string      `json:"theme,omitempty" yaml:"theme,omitempty"`
-	Dev   *DevConfig  `json:"dev,omitempty" yaml:"dev,omitempty"`
-	Sync  *SyncConfig `json:"sync,omitempty" yaml:"sync,omitempty"`
+	Apps  []AppProjectConfig `json:"apps,omitempty" yaml:"apps,omitempty"`
+	Site  string             `json:"site,omitempty" yaml:"site,omitempty"`
+	Theme string             `json:"theme,omitempty" yaml:"theme,omitempty"`
+	Dev   *DevConfig         `json:"dev,omitempty" yaml:"dev,omitempty"`
+	Sync  *SyncConfig        `json:"sync,omitempty" yaml:"sync,omitempty"`
+}
+
+// AppProjectConfig configures one local cloud-code app mapping.
+type AppProjectConfig struct {
+	ID   string `json:"id,omitempty" yaml:"id,omitempty"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+	Dir  string `json:"dir,omitempty" yaml:"dir,omitempty"`
+	Glob string `json:"glob,omitempty" yaml:"glob,omitempty"`
+	Host string `json:"host,omitempty" yaml:"host,omitempty"`
+	Site string `json:"site,omitempty" yaml:"site,omitempty"`
 }
 
 // DevConfig holds local development server configuration.
@@ -260,6 +271,46 @@ func WarnUnknownSyncKeys(path string) ([]string, error) {
 		}
 	}
 
+	return warnings, nil
+}
+
+// WarnUnknownAppsKeys returns warning strings for unknown keys in the `apps` block.
+func WarnUnknownAppsKeys(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var root map[string]any
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return nil, err
+	}
+
+	appsRaw, ok := root["apps"]
+	if !ok || appsRaw == nil {
+		return nil, nil
+	}
+
+	apps, ok := appsRaw.([]any)
+	if !ok {
+		return nil, nil
+	}
+
+	var warnings []string
+	for idx, raw := range apps {
+		app, ok := asStringMap(raw)
+		if !ok {
+			continue
+		}
+		warnings = appendUnknownMapKeys(warnings, fmt.Sprintf("apps[%d]", idx), app, map[string]struct{}{
+			"dir":  {},
+			"glob": {},
+			"host": {},
+			"id":   {},
+			"name": {},
+			"site": {},
+		})
+	}
 	return warnings, nil
 }
 

@@ -8,4 +8,5 @@ type PagesCmd struct {
 	Update PagesUpdateCmd `cmd:"" help:"Update page"`
 	Delete PagesDeleteCmd `cmd:"" help:"Delete page"`
 	Count  PagesCountCmd  `cmd:"" help:"Count pages"`
+	Copy   PagesCopyCmd   `cmd:"" help:"Copy pages between sites"`
 }

@@ -117,12 +117,31 @@ func (c *Client) buildRequest(ctx context.Context, method, path string, body any
 
 	// Build body
 	var bodyReader io.Reader
+	var contentType string
+	var contentLength int64 = -1
+	var getBody func() (io.ReadCloser, error)
 	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("encode body: %w", err)
+		switch custom := body.(type) {
+		case RequestBody:
+			bodyReader = custom.Reader
+			contentType = custom.ContentType
+			contentLength = custom.ContentLength
+			getBody = custom.GetBody
+		case *RequestBody:
+			if custom != nil {
+				bodyReader = custom.Reader
+				contentType = custom.ContentType
+				contentLength = custom.ContentLength
+				getBody = custom.GetBody
+			}
+		default:
+			data, err := json.Marshal(body)
+			if err != nil {
+				return nil, fmt.Errorf("encode body: %w", err)
+			}
+			bodyReader = bytes.NewReader(data)
+			contentType = "application/json"
 		}
-		bodyReader = bytes.NewReader(data)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), bodyReader)
@@ -132,10 +151,18 @@ func (c *Client) buildRequest(ctx context.Context, method, path string, body any
 
 	meta := operationMetaFromOptions(method, reqOpts)
 	req = req.WithContext(withOperationMeta(req.Context(), meta))
+	if contentLength >= 0 {
+		req.ContentLength = contentLength
+	}
+	if getBody != nil {
+		req.GetBody = getBody
+	}
 
 	// Set headers
 	req.Header.Set("Accept", "application/json")
-	if body != nil {
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	} else if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 

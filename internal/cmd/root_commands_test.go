@@ -13,6 +13,7 @@ func TestCLIHasNewTopLevelCommands(t *testing.T) {
 		"Accounts",
 		"Collections",
 		"Coupons",
+		"Mails",
 		"Notifications",
 		"Roles",
 		"Redirects",
@@ -40,13 +41,18 @@ func TestReadmeMentionsNewTopLevelCommands(t *testing.T) {
 		"nimbu-cli accounts",
 		"nimbu-cli collections",
 		"nimbu-cli coupons",
+		"nimbu-cli mails",
 		"nimbu-cli notifications",
 		"nimbu-cli roles",
 		"nimbu-cli redirects",
 		"nimbu-cli functions",
 		"nimbu-cli jobs",
 		"nimbu-cli apps",
+		"nimbu-cli apps push",
 		"nimbu-cli server",
+		"nimbu-cli themes pull",
+		"nimbu-cli themes diff",
+		"nimbu-cli themes copy",
 		"nimbu-cli themes push",
 		"nimbu-cli themes sync",
 	}
@@ -120,5 +126,11 @@ func TestCompactCommandsSection(t *testing.T) {
 	}
 	if !strings.Contains(out, "sites <command> [flags]") || !strings.Contains(out, "· Manage sites") {
 		t.Fatalf("sites row not compacted: %q", out)
+	}
+}
+
+func TestParserBuildsWithoutDuplicateFlags(t *testing.T) {
+	if _, _, err := newParser(); err != nil {
+		t.Fatalf("newParser() error = %v", err)
 	}
 }

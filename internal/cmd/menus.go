@@ -8,4 +8,5 @@ type MenusCmd struct {
 	Update MenusUpdateCmd `cmd:"" help:"Update menu"`
 	Delete MenusDeleteCmd `cmd:"" help:"Delete menu"`
 	Count  MenusCountCmd  `cmd:"" help:"Count menus"`
+	Copy   MenusCopyCmd   `cmd:"" help:"Copy menus between sites"`
 }

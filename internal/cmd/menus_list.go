@@ -35,17 +35,17 @@ func (c *MenusListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("list menus: %w", err)
 	}
 
-	var menus []api.Menu
+	var menus []api.MenuSummary
 	var meta listFooterMeta
 
 	if c.All {
-		menus, err = api.List[api.Menu](ctx, client, "/menus", opts...)
+		menus, err = api.List[api.MenuSummary](ctx, client, "/menus", opts...)
 		if err != nil {
 			return fmt.Errorf("list menus: %w", err)
 		}
 		meta = allListFooterMeta(len(menus))
 	} else {
-		paged, err := api.ListPage[api.Menu](ctx, client, "/menus", c.Page, c.PerPage, opts...)
+		paged, err := api.ListPage[api.MenuSummary](ctx, client, "/menus", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list menus: %w", err)
 		}

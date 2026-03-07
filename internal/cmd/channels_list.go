@@ -39,17 +39,17 @@ func (c *ChannelsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("list channels: %w", err)
 	}
 
-	var channels []api.Channel
+	var channels []api.ChannelSummary
 	var meta listFooterMeta
 
 	if c.All {
-		channels, err = api.List[api.Channel](ctx, client, "/channels", opts...)
+		channels, err = api.List[api.ChannelSummary](ctx, client, "/channels", opts...)
 		if err != nil {
 			return fmt.Errorf("list channels: %w", err)
 		}
 		meta = allListFooterMeta(len(channels))
 	} else {
-		paged, err := api.ListPage[api.Channel](ctx, client, "/channels", c.Page, c.PerPage, opts...)
+		paged, err := api.ListPage[api.ChannelSummary](ctx, client, "/channels", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list channels: %w", err)
 		}

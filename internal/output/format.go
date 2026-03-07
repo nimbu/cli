@@ -96,6 +96,17 @@ func (w *Writer) IsTTY() bool {
 	return false
 }
 
+// ErrIsTTY returns true if stderr is a terminal.
+func (w *Writer) ErrIsTTY() bool {
+	if w.NoTTY {
+		return false
+	}
+	if f, ok := w.Err.(*os.File); ok {
+		return term.IsTerminal(int(f.Fd()))
+	}
+	return false
+}
+
 // UseColor returns true if color output should be used.
 func (w *Writer) UseColor() bool {
 	switch w.Color {

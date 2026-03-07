@@ -7,4 +7,5 @@ type SitesCmd struct {
 	Current  SitesCurrentCmd  `cmd:"" help:"Show current site context"`
 	Count    SitesCountCmd    `cmd:"" help:"Count accessible sites"`
 	Settings SitesSettingsCmd `cmd:"" help:"Get site settings"`
+	Copy     SitesCopyCmd     `cmd:"" help:"Copy site configuration and content between sites"`
 }

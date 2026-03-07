@@ -1,6 +1,9 @@
 package api
 
-import "fmt"
+import (
+	"fmt"
+	"io"
+)
 
 // RequestOption configures a request.
 type RequestOption func(*requestOptions)
@@ -11,6 +14,14 @@ type requestOptions struct {
 	Headers        map[string]string
 	OperationClass OperationClass
 	Idempotent     *bool
+}
+
+// RequestBody supplies a custom request stream instead of JSON-marshaled data.
+type RequestBody struct {
+	Reader        io.Reader
+	GetBody       func() (io.ReadCloser, error)
+	ContentType   string
+	ContentLength int64
 }
 
 // WithSite sets the site for this request.

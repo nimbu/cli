@@ -11,7 +11,7 @@ import (
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
-	"github.com/nimbu/cli/internal/themesync"
+	"github.com/nimbu/cli/internal/themes"
 )
 
 // ThemeFilesListCmd lists theme files.
@@ -91,10 +91,10 @@ func fetchThemeFileListRows(ctx context.Context, client *api.Client, theme strin
 	}
 
 	rows := make([]themeFileListItem, 0, len(assets)+len(layouts)+len(templates)+len(snippets))
-	rows = append(rows, themeResourcesToFiles(assets, themesync.KindAsset)...)
-	rows = append(rows, themeResourcesToFiles(layouts, themesync.KindLayout)...)
-	rows = append(rows, themeResourcesToFiles(templates, themesync.KindTemplate)...)
-	rows = append(rows, themeResourcesToFiles(snippets, themesync.KindSnippet)...)
+	rows = append(rows, themeResourcesToFiles(assets, themes.KindAsset)...)
+	rows = append(rows, themeResourcesToFiles(layouts, themes.KindLayout)...)
+	rows = append(rows, themeResourcesToFiles(templates, themes.KindTemplate)...)
+	rows = append(rows, themeResourcesToFiles(snippets, themes.KindSnippet)...)
 
 	sort.SliceStable(rows, func(i, j int) bool {
 		if rows[i].Path == rows[j].Path {
@@ -106,7 +106,7 @@ func fetchThemeFileListRows(ctx context.Context, client *api.Client, theme strin
 	return rows, nil
 }
 
-func themeResourcesToFiles(resources []api.ThemeResource, kind themesync.Kind) []themeFileListItem {
+func themeResourcesToFiles(resources []api.ThemeResource, kind themes.Kind) []themeFileListItem {
 	rows := make([]themeFileListItem, 0, len(resources))
 	for _, resource := range resources {
 		rows = append(rows, themeFileListItem{
@@ -118,8 +118,8 @@ func themeResourcesToFiles(resources []api.ThemeResource, kind themesync.Kind) [
 	return rows
 }
 
-func themeResourcePath(kind themesync.Kind, resource api.ThemeResource) string {
-	if kind == themesync.KindAsset {
+func themeResourcePath(kind themes.Kind, resource api.ThemeResource) string {
+	if kind == themes.KindAsset {
 		p := strings.Trim(strings.TrimSpace(resource.Path), "/")
 		if p != "" {
 			return p
@@ -130,11 +130,11 @@ func themeResourcePath(kind themesync.Kind, resource api.ThemeResource) string {
 	name := strings.TrimSpace(resource.Name)
 	if name != "" {
 		if folder != "" {
-			return themesync.DisplayPath(kind, pathpkg.Join(folder, name))
+			return themes.DisplayPath(kind, pathpkg.Join(folder, name))
 		}
-		return themesync.DisplayPath(kind, name)
+		return themes.DisplayPath(kind, name)
 	}
-	return themesync.DisplayPath(kind, resource.ID)
+	return themes.DisplayPath(kind, resource.ID)
 }
 
 func paginateThemeFileListRows(rows []themeFileListItem, page, perPage int) []themeFileListItem {

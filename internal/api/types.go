@@ -50,7 +50,7 @@ type LoginRequest struct {
 	ExpiresIn   int    `json:"expires_in"`
 }
 
-// Channel represents a content channel.
+// Channel represents a content channel summary.
 type Channel struct {
 	ID          string    `json:"id"`
 	Slug        string    `json:"slug"`
@@ -60,6 +60,9 @@ type Channel struct {
 	CreatedAt   time.Time `json:"created_at,omitempty"`
 	UpdatedAt   time.Time `json:"updated_at,omitempty"`
 }
+
+// ChannelSummary is the lightweight list/get projection for channels.
+type ChannelSummary = Channel
 
 // Entry represents a channel entry.
 type Entry struct {
@@ -75,20 +78,26 @@ type Entry struct {
 	UpdatedAt time.Time      `json:"updated_at,omitempty"`
 }
 
-// Page represents a page.
+// Page represents a page summary.
 type Page struct {
-	ID        string         `json:"id"`
-	Slug      string         `json:"slug,omitempty"`
-	Title     string         `json:"title,omitempty"`
-	Template  string         `json:"template,omitempty"`
-	Published bool           `json:"published,omitempty"`
-	Locale    string         `json:"locale,omitempty"`
-	Fields    map[string]any `json:"fields,omitempty"`
-	CreatedAt time.Time      `json:"created_at,omitempty"`
-	UpdatedAt time.Time      `json:"updated_at,omitempty"`
+	ID         string         `json:"id"`
+	Fullpath   string         `json:"fullpath,omitempty"`
+	Parent     string         `json:"parent,omitempty"`
+	ParentPath string         `json:"parent_path,omitempty"`
+	Slug       string         `json:"slug,omitempty"`
+	Title      string         `json:"title,omitempty"`
+	Template   string         `json:"template,omitempty"`
+	Published  bool           `json:"published,omitempty"`
+	Locale     string         `json:"locale,omitempty"`
+	Fields     map[string]any `json:"fields,omitempty"`
+	CreatedAt  time.Time      `json:"created_at,omitempty"`
+	UpdatedAt  time.Time      `json:"updated_at,omitempty"`
 }
 
-// Menu represents a navigation menu.
+// PageSummary is the lightweight list projection for pages.
+type PageSummary = Page
+
+// Menu represents a navigation menu summary.
 type Menu struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
@@ -98,6 +107,9 @@ type Menu struct {
 	CreatedAt time.Time  `json:"created_at,omitempty"`
 	UpdatedAt time.Time  `json:"updated_at,omitempty"`
 }
+
+// MenuSummary is the lightweight list projection for menus.
+type MenuSummary = Menu
 
 // MenuItem represents a menu item.
 type MenuItem struct {

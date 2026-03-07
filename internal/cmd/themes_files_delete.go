@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/nimbu/cli/internal/output"
-	"github.com/nimbu/cli/internal/themesync"
+	"github.com/nimbu/cli/internal/themes"
 )
 
 // ThemeFilesDeleteCmd deletes a theme file.
@@ -34,16 +34,16 @@ func (c *ThemeFilesDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	kind, remoteName := themesync.ParseCLIPath(c.Path)
+	kind, remoteName := themes.ParseCLIPath(c.Path)
 	if remoteName == "" || remoteName == "." {
 		return fmt.Errorf("invalid theme file path: %s", c.Path)
 	}
-	resource := themesync.Resource{
-		DisplayPath: themesync.DisplayPath(kind, remoteName),
+	resource := themes.Resource{
+		DisplayPath: themes.DisplayPath(kind, remoteName),
 		Kind:        kind,
 		RemoteName:  remoteName,
 	}
-	if err := themesync.Delete(ctx, client, c.Theme, resource); err != nil {
+	if err := themes.Delete(ctx, client, c.Theme, resource); err != nil {
 		return fmt.Errorf("delete theme file: %w", err)
 	}
 

@@ -40,6 +40,7 @@ func TestCompletionsIncludeNewTopLevelCommands(t *testing.T) {
 		"accounts",
 		"collections",
 		"coupons",
+		"mails",
 		"notifications",
 		"roles",
 		"redirects",
@@ -47,8 +48,13 @@ func TestCompletionsIncludeNewTopLevelCommands(t *testing.T) {
 		"jobs",
 		"apps",
 		"translations",
+		"info",
+		"pull",
+		"diff",
+		"copy",
 		"push",
 		"sync",
+		"config",
 	}
 
 	bash := captureStdout(t, func() error { return writeBashCompletion(nil) })
@@ -64,6 +70,23 @@ func TestCompletionsIncludeNewTopLevelCommands(t *testing.T) {
 		}
 		if !strings.Contains(fish, cmd) {
 			t.Fatalf("fish completion missing %q", cmd)
+		}
+	}
+}
+
+func TestCompletionsIncludeCustomerAndProductFields(t *testing.T) {
+	bash := captureStdout(t, func() error { return writeBashCompletion(nil) })
+	zsh := captureStdout(t, func() error { return writeZshCompletion(nil) })
+	fish := captureStdout(t, func() error { return writeFishCompletion(nil) })
+
+	for _, needle := range []string{
+		`list get create update delete count copy fields config`,
+		`list get create update delete count fields config`,
+		`fields:Show customer field schema`,
+		`fields:Show product field schema`,
+	} {
+		if !strings.Contains(bash, needle) && !strings.Contains(zsh, needle) && !strings.Contains(fish, needle) {
+			t.Fatalf("expected completion output to include %q", needle)
 		}
 	}
 }

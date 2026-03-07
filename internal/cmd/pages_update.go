@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -11,7 +10,7 @@ import (
 
 // PagesUpdateCmd updates a page.
 type PagesUpdateCmd struct {
-	Page        string   `arg:"" help:"Page ID or slug"`
+	Page        string   `arg:"" help:"Page fullpath"`
 	File        string   `help:"Read page JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. title=About, published:=true)"`
 }
@@ -32,14 +31,46 @@ func (c *PagesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	body, err := readJSONBodyInput(c.File, c.Assignments)
-	if err != nil {
+	var opts []api.RequestOption
+	if flags.Locale != "" {
+		opts = append(opts, api.WithLocale(flags.Locale))
+	}
+
+	var body api.PageDocument
+	if len(c.Assignments) > 0 {
+		if err := validateShallowInlineAssignments("pages update", c.Assignments, map[string]struct{}{
+			"title":     {},
+			"template":  {},
+			"published": {},
+			"locale":    {},
+		}); err != nil {
+			return err
+		}
+
+		body, err = api.GetPageDocument(ctx, client, c.Page, opts...)
+		if err != nil {
+			return fmt.Errorf("fetch current page: %w", err)
+		}
+
+		updates, err := readJSONBodyInput("", c.Assignments)
+		if err != nil {
+			return err
+		}
+		mergeTopLevel(body, updates)
+	} else {
+		rawBody, err := readRichDocumentInput(c.File)
+		if err != nil {
+			return err
+		}
+		body = api.PageDocument(rawBody)
+	}
+
+	if err := api.ExpandPageAttachmentPaths(body); err != nil {
 		return err
 	}
 
-	var page api.Page
-	path := "/pages/" + url.PathEscape(c.Page)
-	if err := client.Put(ctx, path, body, &page); err != nil {
+	page, err := api.PatchPageDocument(ctx, client, c.Page, body, opts...)
+	if err != nil {
 		return fmt.Errorf("update page: %w", err)
 	}
 
@@ -49,9 +80,11 @@ func (c *PagesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if mode.Plain {
-		return output.Plain(ctx, page.ID)
+		return output.Plain(ctx, page["id"])
 	}
 
-	fmt.Printf("Updated page %s\n", page.ID)
+	if err := printLine(ctx, "Updated page %v\n", page["id"]); err != nil {
+		return err
+	}
 	return nil
 }

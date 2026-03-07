@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/nimbu/cli/internal/output"
-	"github.com/nimbu/cli/internal/themesync"
+	"github.com/nimbu/cli/internal/themes"
 )
 
 // ThemeFilesPutCmd uploads/updates a theme file.
@@ -32,7 +32,7 @@ func (c *ThemeFilesPutCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	kind, remoteName := themesync.ParseCLIPath(c.Path)
+	kind, remoteName := themes.ParseCLIPath(c.Path)
 	if remoteName == "" || remoteName == "." {
 		return fmt.Errorf("invalid theme file path: %s", c.Path)
 	}
@@ -40,12 +40,12 @@ func (c *ThemeFilesPutCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return fmt.Errorf("read theme file content: %w", err)
 	}
-	resource := themesync.Resource{
-		DisplayPath: themesync.DisplayPath(kind, remoteName),
+	resource := themes.Resource{
+		DisplayPath: themes.DisplayPath(kind, remoteName),
 		Kind:        kind,
 		RemoteName:  remoteName,
 	}
-	if err := themesync.UpsertBytes(ctx, client, c.Theme, resource, content, flags != nil && flags.Force); err != nil {
+	if err := themes.UpsertBytes(ctx, client, c.Theme, resource, content, flags != nil && flags.Force); err != nil {
 		return fmt.Errorf("put theme file: %w", err)
 	}
 

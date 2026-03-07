@@ -8,4 +8,5 @@ type ChannelEntriesCmd struct {
 	Update ChannelEntriesUpdateCmd `cmd:"" help:"Update entry"`
 	Delete ChannelEntriesDeleteCmd `cmd:"" help:"Delete entry"`
 	Count  ChannelEntriesCountCmd  `cmd:"" help:"Count entries"`
+	Copy   ChannelEntriesCopyCmd   `cmd:"" help:"Copy channel entries between sites"`
 }

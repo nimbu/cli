@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -11,7 +10,7 @@ import (
 
 // MenusGetCmd gets menu details.
 type MenusGetCmd struct {
-	Menu string `arg:"" help:"Menu ID or handle"`
+	Menu string `arg:"" help:"Menu slug or handle"`
 }
 
 // Run executes the get command.
@@ -26,9 +25,8 @@ func (c *MenusGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var menu api.Menu
-	path := "/menus/" + url.PathEscape(c.Menu)
-	if err := client.Get(ctx, path, &menu); err != nil {
+	menu, err := api.GetMenuDocument(ctx, client, c.Menu)
+	if err != nil {
 		return fmt.Errorf("get menu: %w", err)
 	}
 
@@ -37,14 +35,33 @@ func (c *MenusGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, menu)
 	}
 
+	stats := api.MenuStats(menu)
 	if mode.Plain {
-		return output.Plain(ctx, menu.ID, menu.Handle, menu.Name, len(menu.Items))
+		return output.Plain(ctx, menu["id"], api.MenuDocumentSlug(menu), api.MenuDocumentName(menu), stats.ItemCount)
 	}
 
-	fmt.Printf("ID:     %s\n", menu.ID)
-	fmt.Printf("Handle: %s\n", menu.Handle)
-	fmt.Printf("Name:   %s\n", menu.Name)
-	fmt.Printf("Items:  %d\n", len(menu.Items))
+	if err := printLine(ctx, "ID:        %v\n", menu["id"]); err != nil {
+		return err
+	}
+	if slug := api.MenuDocumentSlug(menu); slug != "" {
+		if err := printLine(ctx, "Slug:      %s\n", slug); err != nil {
+			return err
+		}
+	}
+	if handle := api.MenuDocumentHandle(menu); handle != "" {
+		if err := printLine(ctx, "Handle:    %s\n", handle); err != nil {
+			return err
+		}
+	}
+	if err := printLine(ctx, "Name:      %s\n", api.MenuDocumentName(menu)); err != nil {
+		return err
+	}
+	if err := printLine(ctx, "Items:     %d\n", stats.ItemCount); err != nil {
+		return err
+	}
+	if err := printLine(ctx, "Max depth: %d\n", stats.MaxDepth); err != nil {
+		return err
+	}
 
 	return nil
 }

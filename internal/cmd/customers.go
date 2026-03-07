@@ -8,4 +8,7 @@ type CustomersCmd struct {
 	Update CustomersUpdateCmd `cmd:"" help:"Update a customer"`
 	Delete CustomersDeleteCmd `cmd:"" help:"Delete a customer"`
 	Count  CustomersCountCmd  `cmd:"" help:"Count customers"`
+	Copy   CustomersCopyCmd   `cmd:"" help:"Copy customers between sites"`
+	Fields CustomersFieldsCmd `cmd:"" help:"Show customer field schema"`
+	Config CustomersConfigCmd `cmd:"" help:"Copy or diff customer customizations"`
 }

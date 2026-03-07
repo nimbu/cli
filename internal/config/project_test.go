@@ -123,6 +123,35 @@ sync:
 	}
 }
 
+func TestReadProjectConfigAppsYAML(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ProjectFileName)
+	data := `site: demo
+apps:
+  - id: storefront
+    name: storefront
+    dir: code
+    glob: "**/*.js"
+    host: api.nimbu.io
+    site: demo
+`
+
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := ReadProjectConfigFrom(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if len(cfg.Apps) != 1 {
+		t.Fatalf("app count = %d", len(cfg.Apps))
+	}
+	if cfg.Apps[0].ID != "storefront" || cfg.Apps[0].Glob != "**/*.js" {
+		t.Fatalf("unexpected app config: %#v", cfg.Apps[0])
+	}
+}
+
 func TestWarnUnknownSyncKeysYAML(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ProjectFileName)
