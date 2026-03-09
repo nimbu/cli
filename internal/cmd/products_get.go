@@ -38,7 +38,7 @@ func (c *ProductsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if mode.Plain {
-		return output.Plain(ctx, p.ID, p.Slug, p.Name, p.SKU, p.Price, p.Published)
+		return output.Plain(ctx, p.ID, p.Slug, p.Name, p.SKU, p.Price, p.Status)
 	}
 
 	fmt.Printf("ID:          %s\n", p.ID)
@@ -50,9 +50,20 @@ func (c *ProductsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if p.Description != "" {
 		fmt.Printf("Description: %s\n", p.Description)
 	}
-	fmt.Printf("Price:       %.2f %s\n", p.Price, p.Currency)
-	fmt.Printf("Inventory:   %d\n", p.Inventory)
-	fmt.Printf("Published:   %v\n", p.Published)
+	if p.Status != "" {
+		fmt.Printf("Status:      %s\n", p.Status)
+	}
+	if p.Currency != "" {
+		fmt.Printf("Price:       %.2f %s\n", p.Price, p.Currency)
+	} else {
+		fmt.Printf("Price:       %.2f\n", p.Price)
+	}
+	fmt.Printf("Stock:       %d\n", p.CurrentStock)
+	fmt.Printf("Digital:     %v\n", p.Digital)
+	fmt.Printf("Shipping:    %v\n", p.RequiresShipping)
+	if p.OnSale {
+		fmt.Printf("Sale Price:  %.2f\n", p.OnSalePrice)
+	}
 	if !p.CreatedAt.IsZero() {
 		fmt.Printf("Created:     %s\n", p.CreatedAt.Format("2006-01-02 15:04:05"))
 	}

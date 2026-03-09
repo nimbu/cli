@@ -55,9 +55,9 @@ func (c *WebhooksListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, webhooks)
 	}
 
-	plainFields := []string{"id", "url", "active"}
-	tableFields := []string{"id", "url", "active"}
-	tableHeaders := []string{"ID", "URL", "ACTIVE"}
+	plainFields := []string{"id", "url"}
+	tableFields := []string{"id", "url", "events"}
+	tableHeaders := []string{"ID", "URL", "EVENTS"}
 
 	if mode.Plain {
 		return output.PlainFromSlice(ctx, webhooks, listOutputFields(flags, plainFields))

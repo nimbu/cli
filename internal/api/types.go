@@ -123,17 +123,26 @@ type MenuItem struct {
 
 // Product represents a product.
 type Product struct {
-	ID          string    `json:"id"`
-	Slug        string    `json:"slug,omitempty"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Price       float64   `json:"price,omitempty"`
-	Currency    string    `json:"currency,omitempty"`
-	SKU         string    `json:"sku,omitempty"`
-	Inventory   int       `json:"inventory,omitempty"`
-	Published   bool      `json:"published,omitempty"`
-	CreatedAt   time.Time `json:"created_at,omitempty"`
-	UpdatedAt   time.Time `json:"updated_at,omitempty"`
+	ID               string    `json:"id"`
+	URL              string    `json:"url,omitempty"`
+	Slug             string    `json:"slug,omitempty"`
+	Name             string    `json:"name"`
+	Description      string    `json:"description,omitempty"`
+	Status           string    `json:"status,omitempty"`
+	Price            float64   `json:"price,omitempty"`
+	Currency         string    `json:"currency,omitempty"`
+	SKU              string    `json:"sku,omitempty"`
+	Inventory        int       `json:"inventory,omitempty"`
+	Published        bool      `json:"published,omitempty"`
+	CurrentStock     int       `json:"current_stock,omitempty"`
+	Digital          bool      `json:"digital,omitempty"`
+	RequiresShipping bool      `json:"requires_shipping,omitempty"`
+	OnSale           bool      `json:"on_sale,omitempty"`
+	OnSalePrice      float64   `json:"on_sale_price,omitempty"`
+	VariantsEnabled  bool      `json:"variants_enabled,omitempty"`
+	KeepStock        bool      `json:"keep_stock,omitempty"`
+	CreatedAt        time.Time `json:"created_at,omitempty"`
+	UpdatedAt        time.Time `json:"updated_at,omitempty"`
 }
 
 // Order represents an order.
@@ -286,12 +295,14 @@ type Upload struct {
 	Size      int64     `json:"size,omitempty"`
 	MimeType  string    `json:"mime_type,omitempty"`
 	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
 // Webhook represents a webhook.
 type Webhook struct {
 	ID        string    `json:"id"`
 	URL       string    `json:"url"`
+	TargetURL string    `json:"target_url,omitempty"`
 	Events    []string  `json:"events,omitempty"`
 	Active    bool      `json:"active,omitempty"`
 	Secret    string    `json:"secret,omitempty"`
@@ -480,28 +491,35 @@ type AppRoute struct {
 	Verb        string         `json:"verb,omitempty"`
 	Path        string         `json:"path,omitempty"`
 	Constraints map[string]any `json:"constraints,omitempty"`
+	UpdatedAt   time.Time      `json:"updated_at,omitempty"`
 	SHA         string         `json:"sha,omitempty"`
 }
 
 // AppCallback represents a callback inside an app.
 type AppCallback struct {
-	Event string `json:"event,omitempty"`
-	URL   string `json:"url,omitempty"`
-	SHA   string `json:"sha,omitempty"`
+	Event     string    `json:"event,omitempty"`
+	Type      string    `json:"type,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	URL       string    `json:"url,omitempty"`
+	SHA       string    `json:"sha,omitempty"`
 }
 
 // AppJob represents a job inside an app.
 type AppJob struct {
-	Name  string `json:"name"`
-	Every string `json:"every,omitempty"`
-	SHA   string `json:"sha,omitempty"`
+	Name      string    `json:"name"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	Every     string    `json:"every,omitempty"`
+	SHA       string    `json:"sha,omitempty"`
 }
 
 // AppSchedule represents a schedule inside an app.
 type AppSchedule struct {
-	Name string `json:"name"`
-	Cron string `json:"cron,omitempty"`
-	SHA  string `json:"sha,omitempty"`
+	Name      string         `json:"name"`
+	Timing    string         `json:"timing,omitempty"`
+	Data      map[string]any `json:"data,omitempty"`
+	UpdatedAt time.Time      `json:"updated_at,omitempty"`
+	Cron      string         `json:"cron,omitempty"`
+	SHA       string         `json:"sha,omitempty"`
 }
 
 // App represents an OAuth app.
@@ -528,6 +546,101 @@ type AppCodeFile struct {
 	Code      string    `json:"code,omitempty"`
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+
+// UnmarshalJSON normalizes product fields from current and legacy API responses.
+func (p *Product) UnmarshalJSON(data []byte) error {
+	type productAlias Product
+	var payload struct {
+		productAlias
+		Published *bool `json:"published"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+
+	*p = Product(payload.productAlias)
+	if p.CurrentStock == 0 && p.Inventory != 0 {
+		p.CurrentStock = p.Inventory
+	}
+	if p.Status == "" && payload.Published != nil {
+		switch {
+		case *payload.Published:
+			p.Status = "published"
+		case !*payload.Published:
+			p.Status = "draft"
+		}
+	}
+
+	return nil
+}
+
+// UnmarshalJSON normalizes upload metadata from nested source payloads.
+func (u *Upload) UnmarshalJSON(data []byte) error {
+	type uploadAlias Upload
+	var payload struct {
+		uploadAlias
+		Source *struct {
+			Filename    string `json:"filename"`
+			URL         string `json:"url"`
+			ContentType string `json:"content_type"`
+			Size        int64  `json:"size"`
+		} `json:"source"`
+	}
+
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+
+	*u = Upload(payload.uploadAlias)
+	if payload.Source != nil {
+		if u.Name == "" {
+			u.Name = payload.Source.Filename
+		}
+		if u.URL == "" {
+			u.URL = payload.Source.URL
+		}
+		if u.MimeType == "" {
+			u.MimeType = payload.Source.ContentType
+		}
+		if u.Size == 0 {
+			u.Size = payload.Source.Size
+		}
+	}
+
+	return nil
+}
+
+// UnmarshalJSON normalizes webhook target_url to URL for CLI output.
+func (w *Webhook) UnmarshalJSON(data []byte) error {
+	type webhookAlias Webhook
+	var payload webhookAlias
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+
+	*w = Webhook(payload)
+	if w.URL == "" {
+		w.URL = w.TargetURL
+	}
+
+	return nil
+}
+
+// UnmarshalJSON normalizes app schedule timing for older CLI fields.
+func (s *AppSchedule) UnmarshalJSON(data []byte) error {
+	type scheduleAlias AppSchedule
+	var payload scheduleAlias
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+
+	*s = AppSchedule(payload)
+	if s.Cron == "" {
+		s.Cron = s.Timing
+	}
+
+	return nil
 }
 
 // JobRunResult represents a scheduled job response.

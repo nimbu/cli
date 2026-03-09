@@ -59,9 +59,9 @@ func (c *ProductsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, products)
 	}
 
-	plainFields := []string{"id", "slug", "name", "sku", "price"}
-	tableFields := []string{"id", "slug", "name", "sku", "price", "published"}
-	tableHeaders := []string{"ID", "SLUG", "NAME", "SKU", "PRICE", "PUBLISHED"}
+	plainFields := []string{"id", "slug", "name", "sku", "price", "status"}
+	tableFields := []string{"id", "slug", "name", "sku", "price", "status"}
+	tableHeaders := []string{"ID", "SLUG", "NAME", "SKU", "PRICE", "STATUS"}
 
 	if mode.Plain {
 		return output.PlainFromSlice(ctx, products, listOutputFields(flags, plainFields))

@@ -38,12 +38,11 @@ func (c *WebhooksGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if mode.Plain {
-		return output.Plain(ctx, webhook.ID, webhook.URL, webhook.Active)
+		return output.Plain(ctx, webhook.ID, webhook.URL)
 	}
 
 	fmt.Printf("ID:     %s\n", webhook.ID)
 	fmt.Printf("URL:    %s\n", webhook.URL)
-	fmt.Printf("Active: %v\n", webhook.Active)
 	if len(webhook.Events) > 0 {
 		fmt.Printf("Events: %v\n", webhook.Events)
 	}

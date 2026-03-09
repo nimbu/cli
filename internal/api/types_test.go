@@ -67,3 +67,76 @@ func TestChannelUnmarshalTrimNameAndMissingCount(t *testing.T) {
 		t.Fatal("expected nil entry count when field missing")
 	}
 }
+
+func TestUploadUnmarshalNestedSourceMetadata(t *testing.T) {
+	var u Upload
+	err := json.Unmarshal([]byte(`{
+		"id":"u1",
+		"source":{
+			"filename":"hero.jpg",
+			"url":"https://cdn.example.test/hero.jpg",
+			"content_type":"image/jpeg",
+			"size":42
+		}
+	}`), &u)
+	if err != nil {
+		t.Fatalf("unmarshal upload: %v", err)
+	}
+
+	if u.Name != "hero.jpg" {
+		t.Fatalf("expected filename from source, got %q", u.Name)
+	}
+	if u.URL != "https://cdn.example.test/hero.jpg" {
+		t.Fatalf("expected url from source, got %q", u.URL)
+	}
+	if u.MimeType != "image/jpeg" {
+		t.Fatalf("expected mime type from source, got %q", u.MimeType)
+	}
+	if u.Size != 42 {
+		t.Fatalf("expected size from source, got %d", u.Size)
+	}
+}
+
+func TestWebhookUnmarshalTargetURLFallback(t *testing.T) {
+	var w Webhook
+	err := json.Unmarshal([]byte(`{"id":"w1","target_url":"https://hooks.example.test","events":["order.created"]}`), &w)
+	if err != nil {
+		t.Fatalf("unmarshal webhook: %v", err)
+	}
+
+	if w.URL != "https://hooks.example.test" {
+		t.Fatalf("expected url from target_url, got %q", w.URL)
+	}
+}
+
+func TestProductUnmarshalCurrentAPIFields(t *testing.T) {
+	var p Product
+	err := json.Unmarshal([]byte(`{
+		"id":"p1",
+		"slug":"coffee",
+		"name":"Coffee",
+		"status":"active",
+		"price":9.5,
+		"current_stock":12,
+		"digital":false,
+		"requires_shipping":true,
+		"on_sale":true,
+		"on_sale_price":7.5
+	}`), &p)
+	if err != nil {
+		t.Fatalf("unmarshal product: %v", err)
+	}
+
+	if p.Status != "active" {
+		t.Fatalf("expected status, got %q", p.Status)
+	}
+	if p.CurrentStock != 12 {
+		t.Fatalf("expected current stock, got %d", p.CurrentStock)
+	}
+	if !p.RequiresShipping {
+		t.Fatal("expected requires shipping")
+	}
+	if !p.OnSale || p.OnSalePrice != 7.5 {
+		t.Fatalf("expected on sale price, got %+v", p)
+	}
+}

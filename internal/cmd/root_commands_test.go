@@ -30,6 +30,22 @@ func TestCLIHasNewTopLevelCommands(t *testing.T) {
 	}
 }
 
+func TestWebhooksCmdOnlyExposesSupportedSubcommands(t *testing.T) {
+	rt := reflect.TypeOf(WebhooksCmd{})
+	required := []string{"List", "Get", "Delete"}
+	for _, field := range required {
+		if _, ok := rt.FieldByName(field); !ok {
+			t.Fatalf("WebhooksCmd missing %s command", field)
+		}
+	}
+
+	for _, field := range []string{"Create", "Update", "Count"} {
+		if _, ok := rt.FieldByName(field); ok {
+			t.Fatalf("WebhooksCmd unexpectedly exposes %s", field)
+		}
+	}
+}
+
 func TestReadmeMentionsNewTopLevelCommands(t *testing.T) {
 	data, err := os.ReadFile("../../README.md")
 	if err != nil {

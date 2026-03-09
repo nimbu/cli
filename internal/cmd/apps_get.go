@@ -38,14 +38,16 @@ func (c *AppsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if mode.Plain {
-		return output.Plain(ctx, app.Key, app.Name, app.Domain, app.SDKVersion)
+		return output.Plain(ctx, app.Key, app.Name, app.Domain, app.CallbackURL)
 	}
 
 	fmt.Printf("Key:        %s\n", app.Key)
 	fmt.Printf("Name:       %s\n", app.Name)
 	fmt.Printf("Domain:     %s\n", app.Domain)
 	fmt.Printf("Callback:   %s\n", app.CallbackURL)
-	fmt.Printf("SDK:        %s\n", app.SDKVersion)
+	if app.SDKVersion != "" {
+		fmt.Printf("SDK:        %s\n", app.SDKVersion)
+	}
 	fmt.Printf("Functions:  %d\n", len(app.Functions))
 	fmt.Printf("Routes:     %d\n", len(app.Routes))
 	fmt.Printf("Callbacks:  %d\n", len(app.Callbacks))

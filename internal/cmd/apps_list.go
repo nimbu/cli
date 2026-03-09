@@ -51,9 +51,9 @@ func (c *AppsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, apps)
 	}
 
-	plainFields := []string{"key", "name", "domain", "sdk_version"}
-	tableFields := []string{"key", "name", "domain", "sdk_version"}
-	tableHeaders := []string{"KEY", "NAME", "DOMAIN", "SDK"}
+	plainFields := []string{"key", "name", "domain", "callback_url"}
+	tableFields := []string{"key", "name", "domain", "callback_url"}
+	tableHeaders := []string{"KEY", "NAME", "DOMAIN", "CALLBACK"}
 
 	if mode.Plain {
 		return output.PlainFromSlice(ctx, apps, listOutputFields(flags, plainFields))
