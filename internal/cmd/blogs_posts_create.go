@@ -12,7 +12,7 @@ import (
 type BlogPostsCreateCmd struct {
 	Blog        string   `arg:"" help:"Blog ID or handle"`
 	File        string   `help:"Read post JSON from file (use - for stdin)"`
-	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. title=Hello, published:=true)"`
+	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. title=Hello, status=published)"`
 }
 
 // Run executes the create command.

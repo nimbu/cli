@@ -29,7 +29,7 @@ func TestPhase1ListFooterSnapshots(t *testing.T) {
 		{name: "json", cfg: output.Mode{JSON: true}},
 		{name: "plain", cfg: output.Mode{Plain: true}},
 	} {
-		sb.WriteString(fmt.Sprintf("## mode=%s\n", mode.name))
+		fmt.Fprintf(&sb, "## mode=%s\n", mode.name)
 		for _, resource := range resources {
 			buf := &bytes.Buffer{}
 			ctx := output.WithWriter(context.Background(), &output.Writer{Out: buf, Err: buf, Mode: mode.cfg})
@@ -42,7 +42,7 @@ func TestPhase1ListFooterSnapshots(t *testing.T) {
 			if line == "" {
 				line = "<empty>"
 			}
-			sb.WriteString(fmt.Sprintf("%s => %s\n", resource, line))
+			fmt.Fprintf(&sb, "%s => %s\n", resource, line)
 		}
 		sb.WriteString("\n")
 	}
@@ -63,7 +63,7 @@ func TestPhase1ErrorContractSnapshots(t *testing.T) {
 
 	var sb strings.Builder
 	for _, tc := range tests {
-		sb.WriteString(fmt.Sprintf("## %s\n", tc.name))
+		fmt.Fprintf(&sb, "## %s\n", tc.name)
 		desc := classifyError(tc.err)
 		data, err := json.MarshalIndent(desc, "", "  ")
 		if err != nil {

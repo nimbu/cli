@@ -39,18 +39,18 @@ func (c *BlogPostsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if mode.Plain {
-		return output.Plain(ctx, post.ID, post.Slug, post.Title, post.Published)
+		return output.Plain(ctx, post.ID, post.Slug, post.Title, post.Status)
 	}
 
 	fmt.Printf("ID:        %s\n", post.ID)
 	fmt.Printf("Slug:      %s\n", post.Slug)
 	fmt.Printf("Title:     %s\n", post.Title)
-	fmt.Printf("Published: %v\n", post.Published)
+	fmt.Printf("Status:    %s\n", post.Status)
 	if post.Author != "" {
 		fmt.Printf("Author:    %s\n", post.Author)
 	}
-	if post.Body != "" {
-		fmt.Printf("Body:      %s\n", post.Body)
+	if post.TextContent != "" {
+		fmt.Printf("Body:      %s\n", post.TextContent)
 	}
 
 	return nil

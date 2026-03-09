@@ -314,20 +314,37 @@ type Blog struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Handle    string    `json:"handle,omitempty"`
+	Slug      string    `json:"slug,omitempty"`
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
+// UnmarshalJSON maps blog slug to Handle fallback.
+func (b *Blog) UnmarshalJSON(data []byte) error {
+	type blogAlias Blog
+	var payload blogAlias
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+
+	*b = Blog(payload)
+	if b.Handle == "" {
+		b.Handle = b.Slug
+	}
+
+	return nil
+}
+
 // BlogPost represents a blog post.
 type BlogPost struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Slug      string    `json:"slug,omitempty"`
-	Body      string    `json:"body,omitempty"`
-	Published bool      `json:"published,omitempty"`
-	Author    string    `json:"author,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	Slug        string    `json:"slug,omitempty"`
+	TextContent string    `json:"text_content,omitempty"`
+	Status      string    `json:"status,omitempty"`
+	Author      string    `json:"author,omitempty"`
+	CreatedAt   time.Time `json:"created_at,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at,omitempty"`
 }
 
 // Account represents an account accessible for the current site context.

@@ -13,7 +13,7 @@ import (
 type BlogsUpdateCmd struct {
 	Blog        string   `arg:"" help:"Blog ID or handle"`
 	File        string   `help:"Read blog JSON from file (use - for stdin)"`
-	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Blog, handle=news)"`
+	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Blog, slug=news)"`
 }
 
 // Run executes the update command.

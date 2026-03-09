@@ -60,8 +60,8 @@ func (c *BlogPostsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	plainFields := []string{"id", "slug", "title"}
-	tableFields := []string{"id", "slug", "title", "published"}
-	tableHeaders := []string{"ID", "SLUG", "TITLE", "PUBLISHED"}
+	tableFields := []string{"id", "slug", "title", "status"}
+	tableHeaders := []string{"ID", "SLUG", "TITLE", "STATUS"}
 
 	if mode.Plain {
 		return output.PlainFromSlice(ctx, posts, listOutputFields(flags, plainFields))

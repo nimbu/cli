@@ -13,7 +13,7 @@ type BlogPostsUpdateCmd struct {
 	Blog        string   `arg:"" help:"Blog ID or handle"`
 	Post        string   `arg:"" help:"Post ID or slug"`
 	File        string   `help:"Read post JSON from file (use - for stdin)"`
-	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. title=Hello, published:=true)"`
+	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. title=Hello, status=published)"`
 }
 
 // Run executes the update command.

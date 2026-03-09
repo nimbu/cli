@@ -11,7 +11,7 @@ import (
 // BlogsCreateCmd creates a blog.
 type BlogsCreateCmd struct {
 	File        string   `help:"Read blog JSON from file (use - for stdin)"`
-	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Blog, handle=news)"`
+	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Blog, slug=news)"`
 }
 
 // Run executes the create command.
