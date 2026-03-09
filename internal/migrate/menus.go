@@ -24,7 +24,7 @@ type MenuCopyResult struct {
 }
 
 // CopyMenus copies nested menu documents. When overwriteExisting is false, existing menus are skipped.
-func CopyMenus(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, query string, overwriteExisting bool) (MenuCopyResult, error) {
+func CopyMenus(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, query string, overwriteExisting bool, media *MediaRewritePlan) (MenuCopyResult, error) {
 	menus, err := listMenuDocuments(ctx, fromClient, query)
 	if err != nil {
 		return MenuCopyResult{From: fromRef, To: toRef, Query: query}, err
@@ -36,6 +36,9 @@ func CopyMenus(ctx context.Context, fromClient, toClient *api.Client, fromRef, t
 			continue
 		}
 		sanitizeMenuDocument(menu)
+		if media != nil {
+			media.RewriteValue("menus."+slug, menu)
+		}
 		var existing api.MenuDocument
 		err := toClient.Get(ctx, "/menus/"+url.PathEscape(slug), &existing)
 		switch {

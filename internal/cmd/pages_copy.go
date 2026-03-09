@@ -37,7 +37,7 @@ func (c *PagesCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	result, err := migrate.CopyPages(ctx, fromClient, toClient, fromRef, toRef, c.Fullpath)
+	result, err := migrate.CopyPages(ctx, fromClient, toClient, fromRef, toRef, c.Fullpath, nil)
 	if err != nil {
 		return err
 	}

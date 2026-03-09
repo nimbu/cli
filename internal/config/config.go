@@ -15,6 +15,7 @@ type Config struct {
 	APIURL         string `json:"api_url,omitempty"`
 	Timeout        string `json:"timeout,omitempty"`
 	KeyringBackend string `json:"keyring_backend,omitempty"`
+	BannerTheme    string `json:"banner_theme,omitempty"`
 }
 
 // Defaults returns config with default values.
@@ -63,6 +64,9 @@ func Read() (Config, error) {
 	if fileCfg.KeyringBackend != "" {
 		cfg.KeyringBackend = fileCfg.KeyringBackend
 	}
+	if fileCfg.BannerTheme != "" {
+		cfg.BannerTheme = fileCfg.BannerTheme
+	}
 
 	return cfg, nil
 }
@@ -103,6 +107,8 @@ func (c *Config) Get(key string) (string, error) {
 		return c.Timeout, nil
 	case "keyring_backend", "keyring":
 		return c.KeyringBackend, nil
+	case "banner_theme":
+		return c.BannerTheme, nil
 	default:
 		return "", fmt.Errorf("unknown config key: %s", key)
 	}
@@ -123,6 +129,8 @@ func (c *Config) Set(key, value string) error {
 		c.Timeout = value
 	case "keyring_backend", "keyring":
 		c.KeyringBackend = value
+	case "banner_theme":
+		c.BannerTheme = value
 	default:
 		return fmt.Errorf("unknown config key: %s", key)
 	}
@@ -140,6 +148,8 @@ func (c *Config) Unset(key string) error {
 		c.Timeout = ""
 	case "keyring_backend", "keyring":
 		c.KeyringBackend = ""
+	case "banner_theme":
+		c.BannerTheme = ""
 	default:
 		return fmt.Errorf("unknown config key: %s", key)
 	}
@@ -190,7 +200,7 @@ func cleanJSON5(s string) string {
 
 // ValidKeys returns all valid config keys.
 func ValidKeys() []string {
-	return []string{"default_site", "api_url", "timeout", "keyring_backend"}
+	return []string{"default_site", "api_url", "timeout", "keyring_backend", "banner_theme"}
 }
 
 var ErrNotFound = errors.New("not found")

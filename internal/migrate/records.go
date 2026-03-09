@@ -21,6 +21,7 @@ type RecordCopyOptions struct {
 	AllowErrors    bool
 	CopyCustomers  bool
 	DryRun         bool
+	Media          *MediaRewritePlan
 	Only           []string
 	PasswordLength int
 	PerPage        int
@@ -250,6 +251,9 @@ func (c *recordCopier) copyRecords(ctx context.Context, sourceChannel string, ta
 		}
 		flattenSelectFields(payload, info)
 		c.remapReferences(payload, info)
+		if c.options.Media != nil {
+			c.options.Media.RewriteValue(info.resource, payload)
+		}
 		selfFields := extractSelfRefs(payload, info.selfRefs)
 		targetID, action, err := c.upsertRecord(ctx, targetChannel, payload)
 		if err != nil {
@@ -787,41 +791,16 @@ func isRecoverableRecordError(err error) bool {
 }
 
 func downloadBinary(ctx context.Context, client *api.Client, rawURL string) ([]byte, error) {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return nil, err
-	}
-	attachAuth := false
-	if !parsed.IsAbs() {
-		base, err := url.Parse(client.BaseURL)
-		if err != nil {
-			return nil, err
-		}
-		parsed = base.ResolveReference(parsed)
-		attachAuth = true
-	} else if base, err := url.Parse(client.BaseURL); err == nil && strings.EqualFold(base.Host, parsed.Host) {
-		attachAuth = true
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	if attachAuth && client.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+client.Token)
-	}
-	if attachAuth && client.Site != "" {
-		req.Header.Set("X-Nimbu-Site", client.Site)
-	}
-	resp, err := client.HTTPClient.Do(req)
+	resp, resolvedURL, err := openDownloadResponse(ctx, client, rawURL)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("download %s: HTTP %d", parsed.String(), resp.StatusCode)
+		return nil, fmt.Errorf("download %s: HTTP %d", resolvedURL, resp.StatusCode)
 	}
 	if resp.ContentLength > maxRecordAttachmentBytes {
-		return nil, fmt.Errorf("download %s: attachment exceeds %d-byte limit", parsed.String(), maxRecordAttachmentBytes)
+		return nil, fmt.Errorf("download %s: attachment exceeds %d-byte limit", resolvedURL, maxRecordAttachmentBytes)
 	}
 
 	limited := &io.LimitedReader{R: resp.Body, N: maxRecordAttachmentBytes + 1}
@@ -830,7 +809,7 @@ func downloadBinary(ctx context.Context, client *api.Client, rawURL string) ([]b
 		return nil, err
 	}
 	if int64(len(data)) > maxRecordAttachmentBytes {
-		return nil, fmt.Errorf("download %s: attachment exceeds %d-byte limit", parsed.String(), maxRecordAttachmentBytes)
+		return nil, fmt.Errorf("download %s: attachment exceeds %d-byte limit", resolvedURL, maxRecordAttachmentBytes)
 	}
 	return data, nil
 }

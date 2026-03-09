@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/nimbu/cli/internal/config"
@@ -12,11 +13,12 @@ import (
 
 // ConfigCmd manages CLI configuration.
 type ConfigCmd struct {
-	List  ConfigListCmd  `cmd:"" help:"List all config values"`
-	Get   ConfigGetCmd   `cmd:"" help:"Get a config value"`
-	Set   ConfigSetCmd   `cmd:"" help:"Set a config value"`
-	Unset ConfigUnsetCmd `cmd:"" help:"Unset a config value"`
-	Path  ConfigPathCmd  `cmd:"" help:"Print config file path"`
+	List   ConfigListCmd   `cmd:"" help:"List all config values"`
+	Get    ConfigGetCmd    `cmd:"" help:"Get a config value"`
+	Set    ConfigSetCmd    `cmd:"" help:"Set a config value"`
+	Unset  ConfigUnsetCmd  `cmd:"" help:"Unset a config value"`
+	Path   ConfigPathCmd   `cmd:"" help:"Print config file path"`
+	Banner ConfigBannerCmd `cmd:"" help:"Pick a banner theme interactively"`
 }
 
 // ConfigListCmd lists all config values.
@@ -35,6 +37,7 @@ func (c *ConfigListCmd) Run(ctx context.Context) error {
 		"api_url":         cfg.APIURL,
 		"timeout":         cfg.Timeout,
 		"keyring_backend": cfg.KeyringBackend,
+		"banner_theme":    cfg.BannerTheme,
 	}
 
 	if mode.JSON {
@@ -50,7 +53,7 @@ func (c *ConfigListCmd) Run(ctx context.Context) error {
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "KEY\tVALUE")
-	for _, k := range []string{"default_site", "api_url", "timeout", "keyring_backend"} {
+	for _, k := range []string{"default_site", "api_url", "timeout", "keyring_backend", "banner_theme"} {
 		_, _ = fmt.Fprintf(tw, "%s\t%s\n", k, data[k])
 	}
 	return tw.Flush()
@@ -104,6 +107,12 @@ func (c *ConfigSetCmd) Run(ctx context.Context) error {
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, map[string]string{"status": "ok", "key": c.Key, "value": c.Value})
+	}
+
+	if strings.ToLower(c.Key) == "banner_theme" {
+		if _, ok := BannerThemeByName(c.Value); !ok {
+			fmt.Fprintf(os.Stderr, "warning: unknown theme %q; known themes: %s\n", c.Value, strings.Join(BannerThemeNames(), ", "))
+		}
 	}
 
 	fmt.Printf("Set %s = %s\n", c.Key, c.Value)

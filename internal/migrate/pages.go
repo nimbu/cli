@@ -25,7 +25,7 @@ type PageCopyResult struct {
 }
 
 // CopyPages copies pages matching query (`*`, prefix*, exact).
-func CopyPages(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, query string) (PageCopyResult, error) {
+func CopyPages(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, query string, media *MediaRewritePlan) (PageCopyResult, error) {
 	summaries, err := listPageSummaries(ctx, fromClient, query)
 	if err != nil {
 		return PageCopyResult{From: fromRef, To: toRef, Query: query}, err
@@ -67,6 +67,9 @@ func CopyPages(ctx context.Context, fromClient, toClient *api.Client, fromRef, t
 			return result, fmt.Errorf("prepare page %s: %w", fullpath, err)
 		}
 		sanitizePageDocument(doc)
+		if media != nil {
+			media.RewriteValue("pages."+fullpath, doc)
+		}
 
 		action := "create"
 		_, err = api.GetPageDocument(ctx, toClient, fullpath)

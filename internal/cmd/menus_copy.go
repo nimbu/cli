@@ -55,7 +55,7 @@ func (c *MenusCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 			overwrite = true
 		}
 	}
-	result, err := migrate.CopyMenus(ctx, fromClient, toClient, fromRef, toRef, c.Slug, overwrite)
+	result, err := migrate.CopyMenus(ctx, fromClient, toClient, fromRef, toRef, c.Slug, overwrite, nil)
 	if err != nil {
 		return err
 	}

@@ -32,7 +32,7 @@ func TestServerPresenterPrintSummary(t *testing.T) {
 	for _, want := range []string{
 		"nimbu-cli",
 		"+",
-		"_    _",
+		"██╗",
 		"dev server: http://localhost:3456 (proxy -> :4568)",
 		"live site: https://demo.nimbu.io",
 	} {

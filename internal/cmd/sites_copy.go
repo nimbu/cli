@@ -59,6 +59,9 @@ func (c *SitesCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, result)
 	}
 	if mode.Plain {
+		if err := printLine(ctx, "uploads\t%d\n", len(result.Uploads.Items)); err != nil {
+			return err
+		}
 		if err := printLine(ctx, "channels\t%d\n", len(result.Channels.Items)); err != nil {
 			return err
 		}
@@ -71,7 +74,13 @@ func (c *SitesCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if err := printLine(ctx, "menus\t%d\n", len(result.Menus.Items)); err != nil {
 			return err
 		}
-		return printLine(ctx, "translations\t%d\n", len(result.Translations.Items))
+		if err := printLine(ctx, "translations\t%d\n", len(result.Translations.Items)); err != nil {
+			return err
+		}
+		return printLine(ctx, "warnings\t%d\n", len(result.Warnings))
+	}
+	if err := printLine(ctx, "uploads: %d\n", len(result.Uploads.Items)); err != nil {
+		return err
 	}
 	if err := printLine(ctx, "channels: %d\n", len(result.Channels.Items)); err != nil {
 		return err
@@ -85,5 +94,8 @@ func (c *SitesCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err := printLine(ctx, "menus: %d\n", len(result.Menus.Items)); err != nil {
 		return err
 	}
-	return printLine(ctx, "translations: %d\n", len(result.Translations.Items))
+	if err := printLine(ctx, "translations: %d\n", len(result.Translations.Items)); err != nil {
+		return err
+	}
+	return printLine(ctx, "warnings: %d\n", len(result.Warnings))
 }

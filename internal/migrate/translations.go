@@ -14,6 +14,7 @@ type TranslationCopyOptions struct {
 	Query  string
 	Since  string
 	DryRun bool
+	Media  *MediaRewritePlan
 }
 
 // TranslationCopyItem describes one copied translation.
@@ -75,6 +76,12 @@ func CopyTranslations(ctx context.Context, fromClient, toClient *api.Client, fro
 	}
 	result := TranslationCopyResult{From: fromRef, To: toRef, Query: opts.Query, Since: opts.Since, DryRun: opts.DryRun}
 	for _, translation := range translations {
+		if opts.Media != nil {
+			translation.Value = opts.Media.RewriteString("translations."+translation.Key+".value", translation.Value)
+			for locale, value := range translation.Values {
+				translation.Values[locale] = opts.Media.RewriteString("translations."+translation.Key+".values."+locale, value)
+			}
+		}
 		action := "create"
 		if opts.DryRun {
 			action = "dry-run"

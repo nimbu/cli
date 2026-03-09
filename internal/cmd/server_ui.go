@@ -11,29 +11,22 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/muesli/termenv"
 
 	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/config"
 	"github.com/nimbu/cli/internal/output"
 )
 
 const serverBanner = "" +
-	" _    _              _\n" +
-	"| \\\\ | |            | |\n" +
-	"|  \\\\| (_)_ __ ___  | |__  _   _\n" +
-	"| . `  | | '_ ` _ \\\\| '_\\\\| | | |\n" +
-	"| |\\\\  | | | | | | || |_) | |_| |\n" +
-	"|_| \\\\_|_|_| |_| |_||_.__/\\\\__,_|"
-
-var serverBannerPalette = []string{
-	"#38bdf8",
-	"#22d3ee",
-	"#2dd4bf",
-	"#84cc16",
-	"#f59e0b",
-	"#fb7185",
-}
+	"███╗   ██╗██╗███╗   ███╗██████╗ ██╗   ██╗\n" +
+	"████╗  ██║██║████╗ ████║██╔══██╗██║   ██║\n" +
+	"██╔██╗ ██║██║██╔████╔██║██████╔╝██║   ██║\n" +
+	"██║╚██╗██║██║██║╚██╔╝██║██╔══██╗██║   ██║\n" +
+	"██║ ╚████║██║██║ ╚═╝ ██║██████╔╝╚██████╔╝\n" +
+	"╚═╝  ╚═══╝╚═╝╚═╝     ╚═╝╚═════╝  ╚═════╝"
 
 var serverGoodbyeMessages = []string{
 	"All quiet. Back to building.",
@@ -52,6 +45,7 @@ type serverPresenter struct {
 	useColor bool
 	out      io.Writer
 	termOut  *termenv.Output
+	palette  []string
 }
 
 type serverSummary struct {
@@ -88,11 +82,19 @@ func newServerPresenter(ctx context.Context, eventsJSON bool) *serverPresenter {
 		}
 	}
 
+	palette := DefaultBannerPalette()
+	if cfg, ok := ctx.Value(configKey{}).(*config.Config); ok && cfg != nil && cfg.BannerTheme != "" {
+		if theme, found := BannerThemeByName(cfg.BannerTheme); found {
+			palette = theme.Palette
+		}
+	}
+
 	return &serverPresenter{
 		enabled:  enabled,
 		useColor: useColor,
 		out:      out,
 		termOut:  termenv.NewOutput(out, termenv.WithProfile(profile)),
+		palette:  palette,
 	}
 }
 
@@ -113,25 +115,33 @@ func (p *serverPresenter) PrintBanner() {
 	label := fmt.Sprintf(" nimbu-cli %s ", serverCLIVersion())
 	contentWidth := 0
 	for _, line := range lines {
-		if len(line) > contentWidth {
-			contentWidth = len(line)
+		if w := utf8.RuneCountInString(line); w > contentWidth {
+			contentWidth = w
 		}
 	}
 	if minWidth := len(label) - 2; minWidth > contentWidth {
 		contentWidth = minWidth
 	}
 
+	const pad = 2
+	padStr := strings.Repeat(" ", pad)
+
+	innerWidth := contentWidth + 2*pad
+
+	emptyRow := "|" + strings.Repeat(" ", innerWidth) + "|"
+
 	_, _ = fmt.Fprintln(p.out)
-	_, _ = fmt.Fprintln(p.out, p.borderLine(framedBannerEdge(contentWidth, label)))
+	_, _ = fmt.Fprintln(p.out, p.borderLine(framedBannerEdge(innerWidth-2, label)))
+	_, _ = fmt.Fprintln(p.out, p.borderLine(emptyRow))
 	for i, line := range lines {
-		padded := line + strings.Repeat(" ", contentWidth-len(line))
+		padded := line + strings.Repeat(" ", contentWidth-utf8.RuneCountInString(line))
 		if p.useColor {
-			_, _ = fmt.Fprintf(p.out, "%s%s%s\n", p.border("| "), p.bannerLine(padded, i), p.border(" |"))
+			_, _ = fmt.Fprintf(p.out, "%s%s%s\n", p.border("|"+padStr), p.bannerLine(padded, i), p.border(padStr+"|"))
 			continue
 		}
-		_, _ = fmt.Fprintf(p.out, "| %s |\n", padded)
+		_, _ = fmt.Fprintf(p.out, "|%s%s%s|\n", padStr, padded, padStr)
 	}
-	_, _ = fmt.Fprintln(p.out, p.borderLine("+"+strings.Repeat("-", contentWidth+2)+"+"))
+	_, _ = fmt.Fprintln(p.out, p.borderLine("+"+strings.Repeat("-", innerWidth)+"+"))
 }
 
 func (p *serverPresenter) PrintSummary(summary serverSummary) {
@@ -181,10 +191,10 @@ func (p *serverPresenter) PrintGoodbye() {
 }
 
 func (p *serverPresenter) bannerLine(line string, idx int) string {
-	if !p.useColor || line == "" {
+	if !p.useColor || line == "" || len(p.palette) == 0 {
 		return line
 	}
-	color := serverBannerPalette[idx%len(serverBannerPalette)]
+	color := p.palette[idx%len(p.palette)]
 	return p.termOut.String(line).Foreground(p.termOut.Color(color)).Bold().String()
 }
 

@@ -22,6 +22,7 @@ type SiteCopyOptions struct {
 type SiteCopyResult struct {
 	From           SiteRef                 `json:"from"`
 	To             SiteRef                 `json:"to"`
+	Uploads        UploadCopyResult        `json:"uploads"`
 	Channels       ChannelCopyResult       `json:"channels"`
 	ChannelEntries []RecordCopyResult      `json:"channel_entries,omitempty"`
 	CustomerConfig CustomizationCopyResult `json:"customer_config"`
@@ -30,6 +31,7 @@ type SiteCopyResult struct {
 	Pages          PageCopyResult          `json:"pages"`
 	Menus          MenuCopyResult          `json:"menus"`
 	Translations   TranslationCopyResult   `json:"translations"`
+	Warnings       []string                `json:"warnings,omitempty"`
 }
 
 // CopySite orchestrates a broad site migration.
@@ -42,9 +44,17 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 	}
 	result.Channels = channelsResult
 
+	uploadsResult, media, err := CopyUploads(ctx, fromClient, toClient, fromRef, toRef)
+	if err != nil {
+		return result, err
+	}
+	result.Uploads = uploadsResult
+	result.Warnings = append(result.Warnings, uploadsResult.Warnings...)
+
 	recordOpts := RecordCopyOptions{
 		AllowErrors:    opts.AllowErrors,
 		CopyCustomers:  opts.CopyCustomers,
+		Media:          media,
 		Only:           opts.Only,
 		PasswordLength: 12,
 		Recursive:      opts.Recursive,
@@ -84,23 +94,24 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 	}
 	result.Theme = themeResult
 
-	pagesResult, err := CopyPages(ctx, fromClient, toClient, fromRef, toRef, "*")
+	pagesResult, err := CopyPages(ctx, fromClient, toClient, fromRef, toRef, "*", media)
 	if err != nil {
 		return result, err
 	}
 	result.Pages = pagesResult
 
-	menusResult, err := CopyMenus(ctx, fromClient, toClient, fromRef, toRef, "*", opts.Force)
+	menusResult, err := CopyMenus(ctx, fromClient, toClient, fromRef, toRef, "*", opts.Force, media)
 	if err != nil {
 		return result, err
 	}
 	result.Menus = menusResult
 
-	translationsResult, err := CopyTranslations(ctx, fromClient, toClient, fromRef, toRef, TranslationCopyOptions{Query: "*"})
+	translationsResult, err := CopyTranslations(ctx, fromClient, toClient, fromRef, toRef, TranslationCopyOptions{Query: "*", Media: media})
 	if err != nil {
 		return result, err
 	}
 	result.Translations = translationsResult
+	result.Warnings = append(result.Warnings, media.Warnings()...)
 
 	return result, nil
 }
