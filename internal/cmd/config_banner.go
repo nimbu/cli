@@ -60,13 +60,13 @@ func (c *ConfigBannerCmd) Run(ctx context.Context) error {
 	}
 
 	restore := func() {
-		fmt.Fprint(out, "\033[?25h") // show cursor
-		term.Restore(fd, oldState)
+		_, _ = fmt.Fprint(out, "\033[?25h") // show cursor
+		_ = term.Restore(fd, oldState)
 	}
 	defer restore()
 
 	// Hide cursor
-	fmt.Fprint(out, "\033[?25l")
+	_, _ = fmt.Fprint(out, "\033[?25l")
 
 	renderBannerPicker(out, termOut, themes, bannerLines, selected, true, pickerHeight)
 
@@ -93,13 +93,13 @@ func (c *ConfigBannerCmd) Run(ctx context.Context) error {
 		switch {
 		case n == 1 && buf[0] == 'q':
 			clearBannerPickerLines(out, pickerHeight)
-			fmt.Fprint(out, "Cancelled.\r\n")
+			_, _ = fmt.Fprint(out, "Cancelled.\r\n")
 			return nil
 
 		case n == 1 && buf[0] == 0x1b:
 			// Standalone Esc (no trailing bytes within timeout) — cancel
 			clearBannerPickerLines(out, pickerHeight)
-			fmt.Fprint(out, "Cancelled.\r\n")
+			_, _ = fmt.Fprint(out, "Cancelled.\r\n")
 			return nil
 
 		case n == 1 && (buf[0] == '\r' || buf[0] == '\n'):
@@ -182,9 +182,9 @@ func renderBannerPicker(out io.Writer, termOut *termenv.Output, themes []BannerT
 	nameDisplay := fmt.Sprintf("  %s  (%d/%d)", theme.Label, selected+1, len(themes))
 	styledName := termOut.String(nameDisplay).Foreground(termOut.Color("#22c55e")).Bold().String()
 
-	fmt.Fprintf(out, "%s\r\n", header)
-	fmt.Fprintf(out, "%s\r\n", styledName)
-	fmt.Fprint(out, "\r\n")
+	_, _ = fmt.Fprintf(out, "%s\r\n", header)
+	_, _ = fmt.Fprintf(out, "%s\r\n", styledName)
+	_, _ = fmt.Fprint(out, "\r\n")
 
 	contentWidth := 0
 	for _, line := range bannerLines {
@@ -197,16 +197,16 @@ func renderBannerPicker(out io.Writer, termOut *termenv.Output, themes []BannerT
 		padded := line + strings.Repeat(" ", contentWidth-utf8.RuneCountInString(line))
 		color := theme.Palette[i%len(theme.Palette)]
 		styled := termOut.String(padded).Foreground(termOut.Color(color)).Bold().String()
-		fmt.Fprintf(out, "  %s\r\n", styled)
+		_, _ = fmt.Fprintf(out, "  %s\r\n", styled)
 	}
 
-	fmt.Fprint(out, "\r\n")
-	fmt.Fprintf(out, "%s\r\n", hint)
+	_, _ = fmt.Fprint(out, "\r\n")
+	_, _ = fmt.Fprintf(out, "%s\r\n", hint)
 }
 
 func clearBannerPickerLines(out io.Writer, height int) {
 	for range height {
-		fmt.Fprint(out, "\033[A\033[2K")
+		_, _ = fmt.Fprint(out, "\033[A\033[2K")
 	}
-	fmt.Fprint(out, "\r")
+	_, _ = fmt.Fprint(out, "\r")
 }
