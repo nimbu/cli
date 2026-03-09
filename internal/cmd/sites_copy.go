@@ -68,10 +68,28 @@ func (c *SitesCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if err := printLine(ctx, "channel_entries\t%d\n", len(result.ChannelEntries)); err != nil {
 			return err
 		}
+		if err := printLine(ctx, "roles\t%d\n", len(result.Roles.Items)); err != nil {
+			return err
+		}
+		if err := printLine(ctx, "products\t%d\n", len(result.Products.Items)); err != nil {
+			return err
+		}
+		if err := printLine(ctx, "collections\t%d\n", len(result.Collections.Items)); err != nil {
+			return err
+		}
 		if err := printLine(ctx, "pages\t%d\n", len(result.Pages.Items)); err != nil {
 			return err
 		}
 		if err := printLine(ctx, "menus\t%d\n", len(result.Menus.Items)); err != nil {
+			return err
+		}
+		if err := printLine(ctx, "blogs\t%d\n", len(result.Blogs.Items)); err != nil {
+			return err
+		}
+		if err := printLine(ctx, "notifications\t%d\n", len(result.Notifications.Items)); err != nil {
+			return err
+		}
+		if err := printLine(ctx, "redirects\t%d\n", len(result.Redirects.Items)); err != nil {
 			return err
 		}
 		if err := printLine(ctx, "translations\t%d\n", len(result.Translations.Items)); err != nil {
@@ -88,10 +106,28 @@ func (c *SitesCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err := printLine(ctx, "channel entry stages: %d\n", len(result.ChannelEntries)); err != nil {
 		return err
 	}
+	if err := printLine(ctx, "roles: %d\n", len(result.Roles.Items)); err != nil {
+		return err
+	}
+	if err := printLine(ctx, "products: %d\n", len(result.Products.Items)); err != nil {
+		return err
+	}
+	if err := printLine(ctx, "collections: %d\n", len(result.Collections.Items)); err != nil {
+		return err
+	}
 	if err := printLine(ctx, "pages: %d\n", len(result.Pages.Items)); err != nil {
 		return err
 	}
 	if err := printLine(ctx, "menus: %d\n", len(result.Menus.Items)); err != nil {
+		return err
+	}
+	if err := printLine(ctx, "blogs: %d\n", len(result.Blogs.Items)); err != nil {
+		return err
+	}
+	if err := printLine(ctx, "notifications: %d\n", len(result.Notifications.Items)); err != nil {
+		return err
+	}
+	if err := printLine(ctx, "redirects: %d\n", len(result.Redirects.Items)); err != nil {
 		return err
 	}
 	if err := printLine(ctx, "translations: %d\n", len(result.Translations.Items)); err != nil {

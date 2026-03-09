@@ -8,4 +8,5 @@ type CollectionsCmd struct {
 	Update CollectionsUpdateCmd `cmd:"" help:"Update collection"`
 	Delete CollectionsDeleteCmd `cmd:"" help:"Delete collection"`
 	Count  CollectionsCountCmd  `cmd:"" help:"Count collections"`
+	Copy   CollectionsCopyCmd   `cmd:"" help:"Copy collections between sites"`
 }

@@ -7,4 +7,5 @@ type RolesCmd struct {
 	Create RolesCreateCmd `cmd:"" help:"Create role from JSON"`
 	Update RolesUpdateCmd `cmd:"" help:"Update role"`
 	Delete RolesDeleteCmd `cmd:"" help:"Delete role"`
+	Copy   RolesCopyCmd   `cmd:"" help:"Copy roles between sites"`
 }

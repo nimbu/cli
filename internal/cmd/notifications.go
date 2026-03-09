@@ -10,4 +10,5 @@ type NotificationsCmd struct {
 	Update NotificationsUpdateCmd `cmd:"" help:"Update notification"`
 	Delete NotificationsDeleteCmd `cmd:"" help:"Delete notification"`
 	Count  NotificationsCountCmd  `cmd:"" help:"Count notifications"`
+	Copy   NotificationsCopyCmd   `cmd:"" help:"Copy notifications between sites"`
 }

@@ -27,9 +27,15 @@ type SiteCopyResult struct {
 	ChannelEntries []RecordCopyResult      `json:"channel_entries,omitempty"`
 	CustomerConfig CustomizationCopyResult `json:"customer_config"`
 	ProductConfig  CustomizationCopyResult `json:"product_config"`
+	Roles          RoleCopyResult          `json:"roles"`
+	Products       ProductCopyResult       `json:"products"`
+	Collections    CollectionCopyResult    `json:"collections"`
 	Theme          themes.CopyResult       `json:"theme"`
 	Pages          PageCopyResult          `json:"pages"`
 	Menus          MenuCopyResult          `json:"menus"`
+	Blogs          BlogCopyResult          `json:"blogs"`
+	Notifications  NotificationCopyResult  `json:"notifications"`
+	Redirects      RedirectCopyResult      `json:"redirects"`
 	Translations   TranslationCopyResult   `json:"translations"`
 	Warnings       []string                `json:"warnings,omitempty"`
 }
@@ -80,6 +86,31 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 	}
 	result.ProductConfig = productConfig
 
+	rolesResult, err := CopyRoles(ctx, fromClient, toClient, fromRef, toRef)
+	if err != nil {
+		return result, err
+	}
+	result.Roles = rolesResult
+
+	productsResult, productMapping, err := CopyProducts(ctx, fromClient, toClient, fromRef, toRef, ProductCopyOptions{
+		AllowErrors: opts.AllowErrors,
+		Media:       media,
+	})
+	if err != nil {
+		return result, err
+	}
+	result.Products = productsResult
+
+	collectionsResult, err := CopyCollections(ctx, fromClient, toClient, fromRef, toRef, CollectionCopyOptions{
+		AllowErrors:    opts.AllowErrors,
+		Media:          media,
+		ProductMapping: productMapping,
+	})
+	if err != nil {
+		return result, err
+	}
+	result.Collections = collectionsResult
+
 	sourceTheme, err := activeThemeName(ctx, fromClient)
 	if err != nil {
 		return result, err
@@ -105,6 +136,24 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 		return result, err
 	}
 	result.Menus = menusResult
+
+	blogsResult, err := CopyBlogs(ctx, fromClient, toClient, fromRef, toRef, "*", media)
+	if err != nil {
+		return result, err
+	}
+	result.Blogs = blogsResult
+
+	notificationsResult, err := CopyNotifications(ctx, fromClient, toClient, fromRef, toRef, "*", media)
+	if err != nil {
+		return result, err
+	}
+	result.Notifications = notificationsResult
+
+	redirectsResult, err := CopyRedirects(ctx, fromClient, toClient, fromRef, toRef)
+	if err != nil {
+		return result, err
+	}
+	result.Redirects = redirectsResult
 
 	translationsResult, err := CopyTranslations(ctx, fromClient, toClient, fromRef, toRef, TranslationCopyOptions{Query: "*", Media: media})
 	if err != nil {

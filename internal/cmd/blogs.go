@@ -9,4 +9,5 @@ type BlogsCmd struct {
 	Delete BlogsDeleteCmd `cmd:"" help:"Delete a blog"`
 	Count  BlogsCountCmd  `cmd:"" help:"Count blogs"`
 	Posts  BlogPostsCmd   `cmd:"" help:"Manage blog articles" aliases:"articles"`
+	Copy   BlogsCopyCmd   `cmd:"" help:"Copy blogs and posts between sites"`
 }

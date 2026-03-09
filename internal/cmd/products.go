@@ -10,4 +10,5 @@ type ProductsCmd struct {
 	Count  ProductsCountCmd  `cmd:"" help:"Count products"`
 	Fields ProductsFieldsCmd `cmd:"" help:"Show product field schema"`
 	Config ProductsConfigCmd `cmd:"" help:"Copy or diff product customizations"`
+	Copy   ProductsCopyCmd   `cmd:"" help:"Copy products between sites"`
 }

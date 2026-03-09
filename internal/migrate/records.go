@@ -431,6 +431,11 @@ func (c *recordCopier) prepareAttachments(ctx context.Context, payload map[strin
 }
 
 func (c *recordCopier) embedFile(ctx context.Context, file map[string]any) error {
+	return embedFileFromClient(ctx, c.fromClient, file)
+}
+
+// embedFileFromClient downloads a file and encodes it as a base64 attachment.
+func embedFileFromClient(ctx context.Context, client *api.Client, file map[string]any) error {
 	if _, ok := file["attachment"]; ok {
 		return nil
 	}
@@ -441,7 +446,7 @@ func (c *recordCopier) embedFile(ctx context.Context, file map[string]any) error
 	if rawURL == "" {
 		return nil
 	}
-	data, err := downloadBinary(ctx, c.fromClient, rawURL)
+	data, err := downloadBinary(ctx, client, rawURL)
 	if err != nil {
 		return err
 	}
