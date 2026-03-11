@@ -58,6 +58,7 @@ type CLI struct {
 
 	Version       kong.VersionFlag `help:"Print version and exit"`
 	Auth          AuthCmd          `cmd:"" help:"Authentication and credentials"`
+	Init          InitCmd          `cmd:"" help:"Bootstrap a local theme project"`
 	Sites         SitesCmd         `cmd:"" help:"Manage sites"`
 	Channels      ChannelsCmd      `cmd:"" help:"Manage channels and entries"`
 	Pages         PagesCmd         `cmd:"" help:"Manage pages"`

@@ -36,6 +36,9 @@ nimbu auth login
 # List your sites
 nimbu sites list
 
+# Bootstrap a local theme project
+nimbu init
+
 # Work with a specific site
 nimbu channels list --site my-site
 
@@ -125,6 +128,7 @@ Locales are validated with a strict-lite BCP47 pattern (`nl`, `fr`, `nl-BE`, `zh
 
 ```
 nimbu auth       Authentication and credentials
+nimbu init       Bootstrap a local theme project
 nimbu sites      Manage sites
 nimbu channels   Manage channels and entries
 nimbu pages      Manage pages

@@ -34,3 +34,6 @@ coverage.html
 *.test
 *.prof
 /themes
+
+.playwright
+.superpowers
