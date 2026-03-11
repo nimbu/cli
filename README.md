@@ -15,7 +15,7 @@ Fast, AI-agent friendly CLI for the [Nimbu](https://nimbu.io) API.
 ### Homebrew
 
 ```bash
-brew install --cask nimbu/tap/nimbu
+brew install nimbu/tap/nimbu
 ```
 
 ### Build from Source
