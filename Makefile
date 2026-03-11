@@ -5,7 +5,7 @@ SHELL := /bin/bash
 .PHONY: build run help fmt fmt-check lint test ci tools clean
 
 BIN_DIR := $(CURDIR)/bin
-BIN := $(BIN_DIR)/nimbu-cli
+BIN := $(BIN_DIR)/nimbu
 CMD := ./cmd/nimbu-cli
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -45,8 +45,8 @@ help: build
 	@$(BIN) --help
 
 install: build
-	@cp $(BIN) $(GOPATH)/bin/nimbu-cli
-	@ln -sf $(GOPATH)/bin/nimbu-cli $(GOPATH)/bin/nb 2>/dev/null || true
+	@cp $(BIN) $(GOPATH)/bin/nimbu
+	@ln -sf $(GOPATH)/bin/nimbu $(GOPATH)/bin/nb 2>/dev/null || true
 
 tools:
 	@mkdir -p $(TOOLS_DIR)

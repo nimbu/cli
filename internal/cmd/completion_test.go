@@ -90,3 +90,25 @@ func TestCompletionsIncludeCustomerAndProductFields(t *testing.T) {
 		}
 	}
 }
+
+func TestCompletionsUseRenamedCommandAndAlias(t *testing.T) {
+	bash := captureStdout(t, func() error { return writeBashCompletion(nil) })
+	zsh := captureStdout(t, func() error { return writeZshCompletion(nil) })
+	fish := captureStdout(t, func() error { return writeFishCompletion(nil) })
+
+	for name, out := range map[string]string{
+		"bash": bash,
+		"zsh":  zsh,
+		"fish": fish,
+	} {
+		if strings.Contains(out, "nimbu-cli") {
+			t.Fatalf("%s completion should not mention old command name: %q", name, out)
+		}
+		if !strings.Contains(out, "nimbu") {
+			t.Fatalf("%s completion should mention renamed command", name)
+		}
+		if !strings.Contains(out, "nb") {
+			t.Fatalf("%s completion should keep nb alias", name)
+		}
+	}
+}

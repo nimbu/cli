@@ -32,11 +32,11 @@ func (c *CompletionCmd) Run(ctx context.Context) error {
 }
 
 func writeBashCompletion(_ *kong.Kong) error {
-	_, _ = fmt.Fprintln(os.Stdout, `# Bash completion for nimbu-cli
+	_, _ = fmt.Fprintln(os.Stdout, `# Bash completion for nimbu
 # Add this to your ~/.bashrc:
-#   eval "$(nimbu-cli completion bash)"
+#   eval "$(nimbu completion bash)"
 
-_nimbu_cli_completions() {
+_nimbu_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local commands="auth sites channels pages menus products collections coupons orders customers mails accounts notifications roles redirects functions jobs apps themes uploads blogs webhooks translations server config api completion"
 
@@ -148,19 +148,19 @@ _nimbu_cli_completions() {
     fi
 }
 
-complete -F _nimbu_cli_completions nimbu-cli
-complete -F _nimbu_cli_completions nb`)
+complete -F _nimbu_completions nimbu
+complete -F _nimbu_completions nb`)
 	return nil
 }
 
 func writeZshCompletion(_ *kong.Kong) error {
-	_, _ = fmt.Fprintln(os.Stdout, `#compdef nimbu-cli nb
+	_, _ = fmt.Fprintln(os.Stdout, `#compdef nimbu nb
 
-# Zsh completion for nimbu-cli
+# Zsh completion for nimbu
 # Add this to your ~/.zshrc:
-#   eval "$(nimbu-cli completion zsh)"
+#   eval "$(nimbu completion zsh)"
 
-_nimbu_cli() {
+_nimbu() {
     local -a commands
     commands=(
         'auth:Authentication and credentials'
@@ -345,92 +345,92 @@ _nimbu_cli() {
     esac
 }
 
-compdef _nimbu_cli nimbu-cli
-compdef _nimbu_cli nb`)
+compdef _nimbu nimbu
+compdef _nimbu nb`)
 	return nil
 }
 
 func writeFishCompletion(_ *kong.Kong) error {
-	_, _ = fmt.Fprintln(os.Stdout, `# Fish completion for nimbu-cli
+	_, _ = fmt.Fprintln(os.Stdout, `# Fish completion for nimbu
 # Add this to your ~/.config/fish/config.fish:
-#   nimbu-cli completion fish | source
+#   nimbu completion fish | source
 
 # Main commands
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "auth" -d "Authentication and credentials"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "sites" -d "Manage sites"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "channels" -d "Manage channels and entries"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "pages" -d "Manage pages"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "menus" -d "Manage navigation menus"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "products" -d "Manage products"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "collections" -d "Manage collections"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "coupons" -d "Manage coupons"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "orders" -d "Manage orders"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "customers" -d "Manage customers"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "mails" -d "Sync notification templates to local files"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "accounts" -d "Manage accounts"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "notifications" -d "Manage notifications"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "roles" -d "Manage roles"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "redirects" -d "Manage redirects"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "functions" -d "Execute cloud functions"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "jobs" -d "Execute cloud jobs"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "apps" -d "Manage OAuth apps"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "themes" -d "Manage themes"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "uploads" -d "Manage uploads"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "blogs" -d "Manage blogs"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "webhooks" -d "Manage webhooks"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "translations" -d "Manage translations"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "server" -d "Run local simulator proxy with child dev server"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "config" -d "Manage configuration"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "api" -d "Raw API access"
-complete -c nimbu-cli -n "__fish_use_subcommand" -a "completion" -d "Generate shell completions"
+complete -c nimbu -n "__fish_use_subcommand" -a "auth" -d "Authentication and credentials"
+complete -c nimbu -n "__fish_use_subcommand" -a "sites" -d "Manage sites"
+complete -c nimbu -n "__fish_use_subcommand" -a "channels" -d "Manage channels and entries"
+complete -c nimbu -n "__fish_use_subcommand" -a "pages" -d "Manage pages"
+complete -c nimbu -n "__fish_use_subcommand" -a "menus" -d "Manage navigation menus"
+complete -c nimbu -n "__fish_use_subcommand" -a "products" -d "Manage products"
+complete -c nimbu -n "__fish_use_subcommand" -a "collections" -d "Manage collections"
+complete -c nimbu -n "__fish_use_subcommand" -a "coupons" -d "Manage coupons"
+complete -c nimbu -n "__fish_use_subcommand" -a "orders" -d "Manage orders"
+complete -c nimbu -n "__fish_use_subcommand" -a "customers" -d "Manage customers"
+complete -c nimbu -n "__fish_use_subcommand" -a "mails" -d "Sync notification templates to local files"
+complete -c nimbu -n "__fish_use_subcommand" -a "accounts" -d "Manage accounts"
+complete -c nimbu -n "__fish_use_subcommand" -a "notifications" -d "Manage notifications"
+complete -c nimbu -n "__fish_use_subcommand" -a "roles" -d "Manage roles"
+complete -c nimbu -n "__fish_use_subcommand" -a "redirects" -d "Manage redirects"
+complete -c nimbu -n "__fish_use_subcommand" -a "functions" -d "Execute cloud functions"
+complete -c nimbu -n "__fish_use_subcommand" -a "jobs" -d "Execute cloud jobs"
+complete -c nimbu -n "__fish_use_subcommand" -a "apps" -d "Manage OAuth apps"
+complete -c nimbu -n "__fish_use_subcommand" -a "themes" -d "Manage themes"
+complete -c nimbu -n "__fish_use_subcommand" -a "uploads" -d "Manage uploads"
+complete -c nimbu -n "__fish_use_subcommand" -a "blogs" -d "Manage blogs"
+complete -c nimbu -n "__fish_use_subcommand" -a "webhooks" -d "Manage webhooks"
+complete -c nimbu -n "__fish_use_subcommand" -a "translations" -d "Manage translations"
+complete -c nimbu -n "__fish_use_subcommand" -a "server" -d "Run local simulator proxy with child dev server"
+complete -c nimbu -n "__fish_use_subcommand" -a "config" -d "Manage configuration"
+complete -c nimbu -n "__fish_use_subcommand" -a "api" -d "Raw API access"
+complete -c nimbu -n "__fish_use_subcommand" -a "completion" -d "Generate shell completions"
 
 # Auth subcommands
-complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "login" -d "Log in to Nimbu"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "logout" -d "Log out"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "status" -d "Show authentication status"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "whoami" -d "Show current user"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "scopes" -d "Show active token scopes"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "token" -d "Print access token"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from auth" -a "keyring" -d "Manage keyring"
+complete -c nimbu -n "__fish_seen_subcommand_from auth" -a "login" -d "Log in to Nimbu"
+complete -c nimbu -n "__fish_seen_subcommand_from auth" -a "logout" -d "Log out"
+complete -c nimbu -n "__fish_seen_subcommand_from auth" -a "status" -d "Show authentication status"
+complete -c nimbu -n "__fish_seen_subcommand_from auth" -a "whoami" -d "Show current user"
+complete -c nimbu -n "__fish_seen_subcommand_from auth" -a "scopes" -d "Show active token scopes"
+complete -c nimbu -n "__fish_seen_subcommand_from auth" -a "token" -d "Print access token"
+complete -c nimbu -n "__fish_seen_subcommand_from auth" -a "keyring" -d "Manage keyring"
 
 # Themes subcommands
-complete -c nimbu-cli -n "__fish_seen_subcommand_from themes" -a "list get pull diff copy push sync layouts templates snippets assets files" -d "Theme commands"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from sites" -a "list get current count settings copy" -d "Site commands"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from channels" -a "list get info copy diff fields entries" -d "Channel commands"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from channels entries" -a "list get create update delete count copy" -d "Channel entry commands"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from customers" -a "list get create update delete count copy fields config" -d "Customer commands"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from customers config" -a "copy diff" -d "Customer config commands"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from products" -a "list get create update delete count fields config" -d "Product commands"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from products config" -a "copy diff" -d "Product config commands"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from pages" -a "list get create update delete count copy" -d "Page commands"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from menus" -a "list get create update delete count copy" -d "Menu commands"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from blogs" -a "list get create update delete count posts articles" -d "Blog commands"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from apps" -a "list get config push code" -d "App commands"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from mails" -a "pull push" -d "Mail commands"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from notifications" -a "list get create update delete count pull push" -d "Notification commands"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from translations" -a "list get create update delete count copy" -d "Translation commands"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from functions" -a "run" -d "Run function"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from jobs" -a "run" -d "Run job"
+complete -c nimbu -n "__fish_seen_subcommand_from themes" -a "list get pull diff copy push sync layouts templates snippets assets files" -d "Theme commands"
+complete -c nimbu -n "__fish_seen_subcommand_from sites" -a "list get current count settings copy" -d "Site commands"
+complete -c nimbu -n "__fish_seen_subcommand_from channels" -a "list get info copy diff fields entries" -d "Channel commands"
+complete -c nimbu -n "__fish_seen_subcommand_from channels entries" -a "list get create update delete count copy" -d "Channel entry commands"
+complete -c nimbu -n "__fish_seen_subcommand_from customers" -a "list get create update delete count copy fields config" -d "Customer commands"
+complete -c nimbu -n "__fish_seen_subcommand_from customers config" -a "copy diff" -d "Customer config commands"
+complete -c nimbu -n "__fish_seen_subcommand_from products" -a "list get create update delete count fields config" -d "Product commands"
+complete -c nimbu -n "__fish_seen_subcommand_from products config" -a "copy diff" -d "Product config commands"
+complete -c nimbu -n "__fish_seen_subcommand_from pages" -a "list get create update delete count copy" -d "Page commands"
+complete -c nimbu -n "__fish_seen_subcommand_from menus" -a "list get create update delete count copy" -d "Menu commands"
+complete -c nimbu -n "__fish_seen_subcommand_from blogs" -a "list get create update delete count posts articles" -d "Blog commands"
+complete -c nimbu -n "__fish_seen_subcommand_from apps" -a "list get config push code" -d "App commands"
+complete -c nimbu -n "__fish_seen_subcommand_from mails" -a "pull push" -d "Mail commands"
+complete -c nimbu -n "__fish_seen_subcommand_from notifications" -a "list get create update delete count pull push" -d "Notification commands"
+complete -c nimbu -n "__fish_seen_subcommand_from translations" -a "list get create update delete count copy" -d "Translation commands"
+complete -c nimbu -n "__fish_seen_subcommand_from functions" -a "run" -d "Run function"
+complete -c nimbu -n "__fish_seen_subcommand_from jobs" -a "run" -d "Run job"
 
 # Theme section subcommands
-complete -c nimbu-cli -n "__fish_seen_subcommand_from layouts" -a "list get create delete" -d "Manage layouts"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from templates" -a "list get create delete" -d "Manage templates"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from snippets" -a "list get create delete" -d "Manage snippets"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from assets" -a "list get create delete" -d "Manage assets"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from files" -a "list get put delete" -d "Manage theme files"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from code" -a "list create" -d "Manage app code files"
+complete -c nimbu -n "__fish_seen_subcommand_from layouts" -a "list get create delete" -d "Manage layouts"
+complete -c nimbu -n "__fish_seen_subcommand_from templates" -a "list get create delete" -d "Manage templates"
+complete -c nimbu -n "__fish_seen_subcommand_from snippets" -a "list get create delete" -d "Manage snippets"
+complete -c nimbu -n "__fish_seen_subcommand_from assets" -a "list get create delete" -d "Manage assets"
+complete -c nimbu -n "__fish_seen_subcommand_from files" -a "list get put delete" -d "Manage theme files"
+complete -c nimbu -n "__fish_seen_subcommand_from code" -a "list create" -d "Manage app code files"
 
 # Config subcommands
-complete -c nimbu-cli -n "__fish_seen_subcommand_from config" -a "list" -d "List all config values"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from config" -a "get" -d "Get a config value"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from config" -a "set" -d "Set a config value"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from config" -a "unset" -d "Unset a config value"
-complete -c nimbu-cli -n "__fish_seen_subcommand_from config" -a "path" -d "Print config file path"
+complete -c nimbu -n "__fish_seen_subcommand_from config" -a "list" -d "List all config values"
+complete -c nimbu -n "__fish_seen_subcommand_from config" -a "get" -d "Get a config value"
+complete -c nimbu -n "__fish_seen_subcommand_from config" -a "set" -d "Set a config value"
+complete -c nimbu -n "__fish_seen_subcommand_from config" -a "unset" -d "Unset a config value"
+complete -c nimbu -n "__fish_seen_subcommand_from config" -a "path" -d "Print config file path"
 
 # Completion shells
-complete -c nimbu-cli -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
+complete -c nimbu -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
 
 # Alias for nb
-complete -c nb -w nimbu-cli`)
+complete -c nb -w nimbu`)
 	return nil
 }

@@ -6,10 +6,10 @@ import (
 	"runtime"
 )
 
-const AppName = "nimbu-cli"
+const AppName = "nimbu"
 
 // ConfigDir returns the directory for configuration files.
-// Uses XDG_CONFIG_HOME on Linux, ~/Library/Application Support on macOS,
+// Uses ~/.config on macOS and Linux by default (or XDG_CONFIG_HOME on Linux),
 // and %APPDATA% on Windows.
 func ConfigDir() (string, error) {
 	var base string

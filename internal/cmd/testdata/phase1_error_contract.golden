@@ -20,7 +20,7 @@
 ## scope_missing
 {
   "code": "auth.scope_missing",
-  "message": "missing required scope(s): [read_products]. Example: nimbu-cli auth scopes",
+  "message": "missing required scope(s): [read_products]. Example: nimbu auth scopes",
   "hint": "create or use a token including the listed scopes",
   "exit_code": 4,
   "retryable": false,

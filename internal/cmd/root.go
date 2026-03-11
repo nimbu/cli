@@ -214,7 +214,7 @@ func newParser() (*kong.Kong, *CLI, error) {
 	cli := &CLI{}
 	parser, err := kong.New(
 		cli,
-		kong.Name("nimbu-cli"),
+		kong.Name("nimbu"),
 		kong.Description("CLI for the Nimbu API - AI-agent first, human-friendly second"),
 		kong.UsageOnError(),
 		kong.Help(helpPrinter()),
@@ -321,7 +321,7 @@ func GetAPIClient(ctx context.Context) (*api.Client, error) {
 	token, err := ResolveAuthToken(ctx)
 	if err != nil {
 		if errors.Is(err, auth.ErrNoToken) {
-			return nil, fmt.Errorf("%w: run 'nimbu-cli auth login' first", auth.ErrNoToken)
+			return nil, fmt.Errorf("%w: run 'nimbu auth login' first", auth.ErrNoToken)
 		}
 		return nil, err
 	}
@@ -357,7 +357,7 @@ func GetAPIClientWithBaseURL(ctx context.Context, baseURL, site string) (*api.Cl
 	token, err := ResolveAuthToken(ctx)
 	if err != nil {
 		if errors.Is(err, auth.ErrNoToken) {
-			return nil, fmt.Errorf("%w: run 'nimbu-cli auth login' first", auth.ErrNoToken)
+			return nil, fmt.Errorf("%w: run 'nimbu auth login' first", auth.ErrNoToken)
 		}
 		return nil, err
 	}

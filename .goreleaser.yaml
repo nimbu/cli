@@ -1,13 +1,15 @@
 version: 2
 
+project_name: nimbu
+
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - id: nimbu-cli
+  - id: nimbu
     main: ./cmd/nimbu-cli
-    binary: nimbu-cli
+    binary: nimbu
     env:
       - CGO_ENABLED=0
     goos:
@@ -22,9 +24,9 @@ builds:
       - -X github.com/nimbu/cli/internal/cmd.commit={{ .ShortCommit }}
       - -X github.com/nimbu/cli/internal/cmd.date={{ .Date }}
 
-  - id: nimbu-cli-darwin
+  - id: nimbu-darwin
     main: ./cmd/nimbu-cli
-    binary: nimbu-cli
+    binary: nimbu
     env:
       - CGO_ENABLED=1
     goos:
@@ -40,12 +42,14 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    formats:
+      - tar.gz
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     files:
       - LICENSE*
       - README*
@@ -61,20 +65,22 @@ changelog:
       - '^test:'
       - '^chore:'
 
-brews:
-  - name: nimbu-cli
+homebrew_casks:
+  - name: nimbu
     ids:
       - default
+    binaries:
+      - nimbu
     repository:
       owner: nimbu
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    folder: Formula
     homepage: https://github.com/nimbu/nimbu-go-cli
     description: CLI for the Nimbu API
     license: MIT
-    install: |
-      bin.install "nimbu-cli"
-      bin.install_symlink "nimbu-cli" => "nb"
-    test: |
-      system "#{bin}/nimbu-cli", "--version"
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/nimbu"]
+          end

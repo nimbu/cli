@@ -28,7 +28,7 @@ func (c *OrdersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	if err := requireScopes(ctx, client, []string{"read_orders"}, "Example: nimbu-cli auth scopes"); err != nil {
+	if err := requireScopes(ctx, client, []string{"read_orders"}, "Example: nimbu auth scopes"); err != nil {
 		return err
 	}
 

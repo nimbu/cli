@@ -22,12 +22,12 @@ type ConfigBannerCmd struct{}
 func (c *ConfigBannerCmd) Run(ctx context.Context) error {
 	writer := output.WriterFromContext(ctx)
 	if !writer.UseColor() {
-		return fmt.Errorf("interactive banner picker requires a color terminal; use 'nimbu-cli config set banner_theme <name>' instead\navailable themes: %s", strings.Join(BannerThemeNames(), ", "))
+		return fmt.Errorf("interactive banner picker requires a color terminal; use 'nimbu config set banner_theme <name>' instead\navailable themes: %s", strings.Join(BannerThemeNames(), ", "))
 	}
 
 	fd := int(os.Stdin.Fd())
 	if !term.IsTerminal(fd) {
-		return fmt.Errorf("interactive banner picker requires a terminal; use 'nimbu-cli config set banner_theme <name>' instead")
+		return fmt.Errorf("interactive banner picker requires a terminal; use 'nimbu config set banner_theme <name>' instead")
 	}
 
 	cfg, err := config.Read()

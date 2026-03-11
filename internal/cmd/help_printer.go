@@ -50,7 +50,7 @@ func helpPrinter() kong.HelpPrinter {
 }
 
 func appendRootInlinePayloadFooter(text string) string {
-	if !strings.HasPrefix(text, "Usage: nimbu-cli <command> [flags]") {
+	if !strings.HasPrefix(text, "Usage: nimbu <command> [flags]") {
 		return text
 	}
 	if !strings.Contains(text, "\nCommands:\n") {

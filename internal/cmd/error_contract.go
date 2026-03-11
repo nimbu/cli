@@ -98,7 +98,7 @@ func classifyError(err error) errorDescriptor {
 		case 401:
 			desc.Code = errorAuthUnauthorized
 			desc.ExitCode = ExitAuth
-			desc.Hint = "refresh credentials with `nimbu-cli auth login`"
+			desc.Hint = "refresh credentials with `nimbu auth login`"
 		case 403:
 			desc.ExitCode = ExitAuthz
 			desc.Hint = scopeHint(apiErr)
@@ -150,7 +150,7 @@ func classifyError(err error) errorDescriptor {
 		desc.Code = errorAuthNotLoggedIn
 		desc.ExitCode = ExitAuth
 		desc.Message = "not logged in"
-		desc.Hint = "run `nimbu-cli auth login`"
+		desc.Hint = "run `nimbu auth login`"
 		return desc
 	}
 

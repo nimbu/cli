@@ -112,7 +112,7 @@ func (p *serverPresenter) PrintBanner() {
 	}
 
 	lines := strings.Split(strings.Trim(serverBanner, "\n"), "\n")
-	label := fmt.Sprintf(" nimbu-cli %s ", serverCLIVersion())
+	label := fmt.Sprintf(" nimbu %s ", serverCLIVersion())
 	contentWidth := 0
 	for _, line := range lines {
 		if w := utf8.RuneCountInString(line); w > contentWidth {

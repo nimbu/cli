@@ -1,4 +1,4 @@
-# nimbu-cli
+# nimbu
 
 Fast, AI-agent friendly CLI for the [Nimbu](https://nimbu.io) API.
 
@@ -15,7 +15,7 @@ Fast, AI-agent friendly CLI for the [Nimbu](https://nimbu.io) API.
 ### Homebrew
 
 ```bash
-brew install nimbu/tap/nimbu-cli
+brew install --cask nimbu/tap/nimbu
 ```
 
 ### Build from Source
@@ -24,26 +24,26 @@ brew install nimbu/tap/nimbu-cli
 git clone https://github.com/nimbu/nimbu-go-cli.git
 cd nimbu-go-cli
 make build
-./bin/nimbu-cli --help
+./bin/nimbu --help
 ```
 
 ## Quick Start
 
 ```bash
 # Login to your Nimbu account
-nimbu-cli auth login
+nimbu auth login
 
 # List your sites
-nimbu-cli sites list
+nimbu sites list
 
 # Work with a specific site
-nimbu-cli channels list --site my-site
+nimbu channels list --site my-site
 
 # JSON output for scripting
-nimbu-cli channels entries list blog --site my-site --json | jq '.[]'
+nimbu channels entries list blog --site my-site --json | jq '.[]'
 
 # Start local simulator proxy + project dev server
-nimbu-cli server
+nimbu server
 ```
 
 ## Inline Payload Syntax
@@ -60,17 +60,17 @@ Operators:
 Use dot paths for nesting:
 
 ```bash
-nimbu-cli products update product-123 name="Wine Box" price:=29.9 seo.title="Gift box"
+nimbu products update product-123 name="Wine Box" price:=29.9 seo.title="Gift box"
 ```
 
 `--file` and inline assignments are mutually exclusive.
 
 ```bash
 # File payload
-nimbu-cli pages update about --file payload.json
+nimbu pages update about --file payload.json
 
 # Inline payload
-nimbu-cli pages update about title="About us" published:=true
+nimbu pages update about title="About us" published:=true
 ```
 
 For richer document resources, inline updates stay intentionally shallow:
@@ -95,19 +95,19 @@ Examples:
 
 ```bash
 # Fetch a page by fullpath
-nimbu-cli pages get about/team --json
+nimbu pages get about/team --json
 
 # Download page file editables and rewrite JSON to local file refs
-nimbu-cli pages get about/team --download-assets tmp/page-assets --json
+nimbu pages get about/team --download-assets tmp/page-assets --json
 
 # Replace-safe page update using a full document payload
-nimbu-cli pages update about/team --file page.json
+nimbu pages update about/team --file page.json
 
 # Nested menu fetch
-nimbu-cli menus get main --json
+nimbu menus get main --json
 
 # Rich channel contract with schema and ACL data
-nimbu-cli channels get articles --json
+nimbu channels get articles --json
 ```
 
 ### Translations shorthand
@@ -115,8 +115,8 @@ nimbu-cli channels get articles --json
 `translations create` and `translations update` support locale shorthand: top-level locale keys are mapped to `values.<locale>`.
 
 ```bash
-nimbu-cli translations update activate.label.lastname nl=Achternaam
-nimbu-cli translations update activate.label.lastname values.fr=Nom
+nimbu translations update activate.label.lastname nl=Achternaam
+nimbu translations update activate.label.lastname values.fr=Nom
 ```
 
 Locales are validated with a strict-lite BCP47 pattern (`nl`, `fr`, `nl-BE`, `zh-Hant`, ...).
@@ -124,32 +124,32 @@ Locales are validated with a strict-lite BCP47 pattern (`nl`, `fr`, `nl-BE`, `zh
 ## Commands
 
 ```
-nimbu-cli auth       Authentication and credentials
-nimbu-cli sites      Manage sites
-nimbu-cli channels   Manage channels and entries
-nimbu-cli pages      Manage pages
-nimbu-cli menus      Manage navigation menus
-nimbu-cli products   Manage products
-nimbu-cli collections Manage collections
-nimbu-cli coupons    Manage coupons
-nimbu-cli orders     Manage orders
-nimbu-cli customers  Manage customers
-nimbu-cli mails      Sync notification templates to local files
-nimbu-cli accounts   Manage accounts
-nimbu-cli notifications Manage notifications
-nimbu-cli roles      Manage roles
-nimbu-cli redirects  Manage redirects
-nimbu-cli functions  Execute cloud functions
-nimbu-cli jobs       Execute cloud jobs
-nimbu-cli apps       Manage OAuth apps
-nimbu-cli themes     Manage themes
-nimbu-cli uploads    Manage uploads
-nimbu-cli blogs      Manage blogs
-nimbu-cli webhooks   Manage webhooks
-nimbu-cli server     Run local simulator proxy with child dev server
-nimbu-cli config     Manage configuration
-nimbu-cli api        Raw API access
-nimbu-cli completion Generate shell completions
+nimbu auth       Authentication and credentials
+nimbu sites      Manage sites
+nimbu channels   Manage channels and entries
+nimbu pages      Manage pages
+nimbu menus      Manage navigation menus
+nimbu products   Manage products
+nimbu collections Manage collections
+nimbu coupons    Manage coupons
+nimbu orders     Manage orders
+nimbu customers  Manage customers
+nimbu mails      Sync notification templates to local files
+nimbu accounts   Manage accounts
+nimbu notifications Manage notifications
+nimbu roles      Manage roles
+nimbu redirects  Manage redirects
+nimbu functions  Execute cloud functions
+nimbu jobs       Execute cloud jobs
+nimbu apps       Manage OAuth apps
+nimbu themes     Manage themes
+nimbu uploads    Manage uploads
+nimbu blogs      Manage blogs
+nimbu webhooks   Manage webhooks
+nimbu server     Run local simulator proxy with child dev server
+nimbu config     Manage configuration
+nimbu api        Raw API access
+nimbu completion Generate shell completions
 ```
 
 ## Configuration
@@ -169,7 +169,7 @@ NIMBU_ENABLE_COMMANDS # Command allowlist (comma-separated)
 
 ### Config File
 
-`~/.config/nimbu-cli/config.json`:
+`~/.config/nimbu/config.json`:
 
 ```json5
 {
@@ -239,7 +239,7 @@ sync:
 
 ### Local Server Command
 
-`nimbu-cli server` starts:
+`nimbu server` starts:
 
 1. Nimbu simulator proxy (default `http://127.0.0.1:4568`)
 2. Child dev server command from `nimbu.yml`
@@ -255,16 +255,18 @@ Runtime notes:
 Override example:
 
 ```bash
-nimbu-cli server --cmd pnpm --arg vite --arg --port --arg 5173 --ready-url http://127.0.0.1:5173
+nimbu server --cmd pnpm --arg vite --arg --port --arg 5173 --ready-url http://127.0.0.1:5173
 ```
 
 ### Theme Push/Sync Commands
 
-`nimbu-cli themes push` uploads managed local theme resources without deleting remote
+`nimbu themes push` uploads managed local theme resources without deleting remote
 files.
 
-`nimbu-cli themes sync` uploads managed local theme resources and can also delete
+`nimbu themes sync` uploads managed local theme resources and can also delete
 managed remote resources that no longer exist locally.
+
+`nimbu themes cdn-root` prints the resolved CDN root for the configured theme.
 
 Supported managed resource kinds:
 
@@ -286,21 +288,22 @@ Notes:
 Examples:
 
 ```bash
-nimbu-cli themes push --build
-nimbu-cli themes push --liquid-only
-nimbu-cli themes push --only snippets/header.liquid --only stylesheets/theme.css
-nimbu-cli themes push --all --theme storefront
-nimbu-cli themes pull --theme storefront
-nimbu-cli themes diff --theme storefront
-nimbu-cli themes copy --from source-site/storefront --to target-site/storefront
-nimbu-cli themes sync --build
-nimbu-cli themes sync --all --prune --dry-run
+nimbu themes push --build
+nimbu themes push --liquid-only
+nimbu themes push --only snippets/header.liquid --only stylesheets/theme.css
+nimbu themes push --all --theme storefront
+nimbu themes pull --theme storefront
+nimbu themes diff --theme storefront
+nimbu themes cdn-root
+nimbu themes copy --from source-site/storefront --to target-site/storefront
+nimbu themes sync --build
+nimbu themes sync --all --prune --dry-run
 ```
 
 ### Mail Template Sync
 
-`nimbu-cli notifications pull` and `nimbu-cli notifications push` sync notification
-templates between Nimbu and the legacy on-disk mail contract. `nimbu-cli mails` is a
+`nimbu notifications pull` and `nimbu notifications push` sync notification
+templates between Nimbu and the legacy on-disk mail contract. `nimbu mails` is a
 parity alias with the same `pull` and `push` subcommands.
 
 Disk layout:
@@ -325,25 +328,25 @@ Plain text body
 Examples:
 
 ```bash
-nimbu-cli notifications pull
-nimbu-cli notifications push --only order_created
-nimbu-cli mails pull --only welcome
+nimbu notifications pull
+nimbu notifications push --only order_created
+nimbu mails pull --only welcome
 ```
 
 ### Cloud Code App Workflows
 
-`nimbu-cli apps config` writes a host/site-scoped app entry to `nimbu.yml`.
+`nimbu apps config` writes a host/site-scoped app entry to `nimbu.yml`.
 
-`nimbu-cli apps push` pushes local cloud code files for the selected configured app,
+`nimbu apps push` pushes local cloud code files for the selected configured app,
 preserving dependency order for `require()` and static ESM imports. `--sync` also
 deletes remote files that no longer exist locally.
 
 Examples:
 
 ```bash
-nimbu-cli apps config
-nimbu-cli apps push --app storefront
-nimbu-cli apps push --app storefront --sync --force
+nimbu apps config
+nimbu apps push --app storefront
+nimbu apps push --app storefront --sync --force
 ```
 
 ## Development

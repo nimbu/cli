@@ -30,7 +30,7 @@ func TestServerPresenterPrintSummary(t *testing.T) {
 		t.Fatalf("expected banner spacer line, got: %q", got)
 	}
 	for _, want := range []string{
-		"nimbu-cli",
+		"nimbu",
 		"+",
 		"██╗",
 		"dev server: http://localhost:3456 (proxy -> :4568)",

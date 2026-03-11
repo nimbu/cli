@@ -54,23 +54,24 @@ func TestReadmeMentionsNewTopLevelCommands(t *testing.T) {
 
 	readme := string(data)
 	required := []string{
-		"nimbu-cli accounts",
-		"nimbu-cli collections",
-		"nimbu-cli coupons",
-		"nimbu-cli mails",
-		"nimbu-cli notifications",
-		"nimbu-cli roles",
-		"nimbu-cli redirects",
-		"nimbu-cli functions",
-		"nimbu-cli jobs",
-		"nimbu-cli apps",
-		"nimbu-cli apps push",
-		"nimbu-cli server",
-		"nimbu-cli themes pull",
-		"nimbu-cli themes diff",
-		"nimbu-cli themes copy",
-		"nimbu-cli themes push",
-		"nimbu-cli themes sync",
+		"nimbu accounts",
+		"nimbu collections",
+		"nimbu coupons",
+		"nimbu mails",
+		"nimbu notifications",
+		"nimbu roles",
+		"nimbu redirects",
+		"nimbu functions",
+		"nimbu jobs",
+		"nimbu apps",
+		"nimbu apps push",
+		"nimbu server",
+		"nimbu themes pull",
+		"nimbu themes diff",
+		"nimbu themes cdn-root",
+		"nimbu themes copy",
+		"nimbu themes push",
+		"nimbu themes sync",
 	}
 
 	for _, needle := range required {
@@ -104,7 +105,7 @@ func TestReadmeDocumentsInlinePayloadSyntax(t *testing.T) {
 }
 
 func TestAppendRootInlinePayloadFooter(t *testing.T) {
-	input := "Usage: nimbu-cli <command> [flags]\n\nCLI for the Nimbu API\n\nCommands:\n  sites\n"
+	input := "Usage: nimbu <command> [flags]\n\nCLI for the Nimbu API\n\nCommands:\n  sites\n"
 	out := appendRootInlinePayloadFooter(input)
 
 	required := []string{
@@ -131,7 +132,7 @@ func TestAppendRootInlinePayloadFooter(t *testing.T) {
 }
 
 func TestCompactCommandsSection(t *testing.T) {
-	input := "Usage: nimbu-cli <command> [flags]\n\nCommands:\n  auth <command> [flags]\n    Authentication and credentials\n\n  sites <command> [flags]\n    Manage sites\n\nRun \"nimbu-cli <command> --help\" for more information on a command.\n"
+	input := "Usage: nimbu <command> [flags]\n\nCommands:\n  auth <command> [flags]\n    Authentication and credentials\n\n  sites <command> [flags]\n    Manage sites\n\nRun \"nimbu <command> --help\" for more information on a command.\n"
 	out := compactCommandsSection(input)
 
 	if strings.Contains(out, "\n    Authentication and credentials") {

@@ -113,7 +113,7 @@ func loginWithCredentials(ctx context.Context, client *api.Client, email, passwo
 func performLogin(ctx context.Context, client *api.Client, email, password string, expiresIn int, secondFactor string) (api.AuthResponse, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
-		hostname = "nimbu-cli"
+		hostname = "nimbu"
 	}
 
 	var resp api.AuthResponse
@@ -123,7 +123,7 @@ func performLogin(ctx context.Context, client *api.Client, email, password strin
 	}
 
 	err = client.Post(ctx, "/auth/login", api.LoginRequest{
-		Description: "Nimbu CLI login from " + hostname,
+		Description: "Nimbu login from " + hostname,
 		ExpiresIn:   expiresIn,
 	}, &resp, opts...)
 	return resp, err

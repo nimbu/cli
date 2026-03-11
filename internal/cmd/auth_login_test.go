@@ -53,7 +53,7 @@ func TestLoginWithCredentials(t *testing.T) {
 	client := api.New(srv.URL, "")
 	host, err := os.Hostname()
 	if err != nil {
-		host = "nimbu-cli"
+		host = "nimbu"
 	}
 
 	resp, err := loginWithCredentials(context.Background(), client, "me@example.com", "sekret", 60, false, func(string) (string, error) {
@@ -72,7 +72,7 @@ func TestLoginWithCredentials(t *testing.T) {
 	if gotAuth != "Basic "+base64.StdEncoding.EncodeToString([]byte("me@example.com:sekret")) {
 		t.Fatalf("unexpected auth header: %s", gotAuth)
 	}
-	if reqBody.Description != "Nimbu CLI login from "+host {
+	if reqBody.Description != "Nimbu login from "+host {
 		t.Fatalf("unexpected description: %s", reqBody.Description)
 	}
 	if reqBody.ExpiresIn != 60 {

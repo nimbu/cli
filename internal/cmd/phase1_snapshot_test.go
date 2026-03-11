@@ -57,7 +57,7 @@ func TestPhase1ErrorContractSnapshots(t *testing.T) {
 	}{
 		{name: "api_not_found", err: &api.Error{StatusCode: 404, Message: "not found", Code: "object_not_found"}},
 		{name: "api_rate_limited", err: &api.Error{StatusCode: 429, Message: "rate limited"}},
-		{name: "scope_missing", err: &scopeMissingError{Required: []string{"read_products"}, Sample: "Example: nimbu-cli auth scopes"}},
+		{name: "scope_missing", err: &scopeMissingError{Required: []string{"read_products"}, Sample: "Example: nimbu auth scopes"}},
 		{name: "validation_local", err: fmt.Errorf("site required")},
 	}
 

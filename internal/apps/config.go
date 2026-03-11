@@ -50,7 +50,7 @@ func ResolveApp(candidates []AppConfig, requested string) (AppConfig, error) {
 		return candidates[0], nil
 	}
 	if len(candidates) == 0 {
-		return AppConfig{}, fmt.Errorf("no apps configured for current host/site; run 'nimbu-cli apps config'")
+		return AppConfig{}, fmt.Errorf("no apps configured for current host/site; run 'nimbu apps config'")
 	}
 	return AppConfig{}, fmt.Errorf("multiple apps configured; pass --app")
 }
