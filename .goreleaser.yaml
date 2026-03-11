@@ -12,47 +12,42 @@ builds:
     binary: nimbu
     env:
       - CGO_ENABLED=0
-    goos:
-      - linux
-      - windows
-    goarch:
-      - amd64
-      - arm64
+    targets:
+      - linux_amd64
+      - linux_arm64
+      - windows_amd64
+      - windows_arm64
     ldflags:
       - -s -w
-      - -X github.com/nimbu/cli/internal/cmd.version={{ .Tag }}
-      - -X github.com/nimbu/cli/internal/cmd.commit={{ .ShortCommit }}
-      - -X github.com/nimbu/cli/internal/cmd.date={{ .Date }}
+      - -X github.com/nimbu/cli/internal/cmd.version={{.Version}}
+      - -X github.com/nimbu/cli/internal/cmd.commit={{.Commit}}
+      - -X github.com/nimbu/cli/internal/cmd.date={{.Date}}
 
-  - id: nimbu-darwin
+  - id: nimbu_darwin
     main: ./cmd/nimbu-cli
     binary: nimbu
     env:
       - CGO_ENABLED=1
-    goos:
-      - darwin
-    goarch:
-      - amd64
-      - arm64
+    targets:
+      - darwin_amd64
+      - darwin_arm64
     ldflags:
       - -s -w
-      - -X github.com/nimbu/cli/internal/cmd.version={{ .Tag }}
-      - -X github.com/nimbu/cli/internal/cmd.commit={{ .ShortCommit }}
-      - -X github.com/nimbu/cli/internal/cmd.date={{ .Date }}
+      - -X github.com/nimbu/cli/internal/cmd.version={{.Version}}
+      - -X github.com/nimbu/cli/internal/cmd.commit={{.Commit}}
+      - -X github.com/nimbu/cli/internal/cmd.date={{.Date}}
 
 archives:
-  - id: default
+  - ids:
+      - nimbu
+      - nimbu_darwin
     formats:
       - tar.gz
-    name_template: >-
-      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     format_overrides:
       - goos: windows
         formats:
           - zip
-    files:
-      - LICENSE*
-      - README*
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
   name_template: 'checksums.txt'
@@ -65,22 +60,17 @@ changelog:
       - '^test:'
       - '^chore:'
 
-homebrew_casks:
+brews:
   - name: nimbu
-    ids:
-      - default
-    binaries:
-      - nimbu
     repository:
       owner: nimbu
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
     homepage: https://github.com/nimbu/nimbu-go-cli
     description: CLI for the Nimbu API
     license: MIT
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/nimbu"]
-          end
+    install: |
+      bin.install "nimbu"
+    test: |
+      system "#{bin}/nimbu", "version"
