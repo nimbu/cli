@@ -1,4 +1,8 @@
-# nimbu
+# 🍋 nimbu - the official Nimbu CLI  
+
+[![CI](https://github.com/nimbu/cli/actions/workflows/ci.yml/badge.svg)](https://github.com/nimbu/cli/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/nimbu/cli)](https://goreportcard.com/report/github.com/nimbu/cli)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Fast, AI-agent friendly CLI for the [Nimbu](https://nimbu.io) API.
 
@@ -12,17 +16,32 @@ Fast, AI-agent friendly CLI for the [Nimbu](https://nimbu.io) API.
 
 ## Installation
 
-### Homebrew
+### Homebrew (macOS/Linux)
 
 ```bash
 brew install nimbu/tap/nimbu
 ```
 
+### Go
+
+```bash
+go install github.com/nimbu/cli/cmd/nimbu-cli@latest
+```
+
+### Download Binary
+
+Download from [GitHub Releases](https://github.com/nimbu/cli/releases).
+
+Available for:
+- **macOS**: Intel & Apple Silicon (tar.gz)
+- **Linux**: amd64 & arm64 (tar.gz)
+- **Windows**: amd64 & arm64 (zip)
+
 ### Build from Source
 
 ```bash
-git clone https://github.com/nimbu/nimbu-go-cli.git
-cd nimbu-go-cli
+git clone https://github.com/nimbu/cli.git
+cd cli
 make build
 ./bin/nimbu --help
 ```
