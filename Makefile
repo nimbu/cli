@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 .DEFAULT_GOAL := build
 
-.PHONY: build run help fmt fmt-check lint test ci tools clean
+.PHONY: build run help fmt fmt-check lint test ci tools setup clean
 
 BIN_DIR := $(CURDIR)/bin
 BIN := $(BIN_DIR)/nimbu
@@ -70,6 +70,10 @@ test:
 	@go test ./...
 
 ci: fmt-check lint test
+
+setup: tools
+	@command -v lefthook >/dev/null 2>&1 || { echo "Install lefthook: brew install lefthook"; exit 1; }
+	@lefthook install
 
 clean:
 	@rm -rf $(BIN_DIR) $(TOOLS_DIR)
