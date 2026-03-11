@@ -109,6 +109,33 @@ func TestWebhookUnmarshalTargetURLFallback(t *testing.T) {
 	}
 }
 
+func TestThemeUnmarshalCDNRoot(t *testing.T) {
+	var theme Theme
+	err := json.Unmarshal([]byte(`{
+		"id":"theme-1",
+		"name":"Storefront",
+		"cdn_base_path":"s/acme/themes/storefront/",
+		"cdn_host":"https://cdn.example.test",
+		"cdn_root":"https://cdn.example.test/s/acme/themes/storefront/",
+		"site_id":"site-1",
+		"site_short_id":"acme",
+		"theme_short_id":"storefront"
+	}`), &theme)
+	if err != nil {
+		t.Fatalf("unmarshal theme: %v", err)
+	}
+
+	if theme.CDNRoot != "https://cdn.example.test/s/acme/themes/storefront/" {
+		t.Fatalf("expected cdn_root, got %q", theme.CDNRoot)
+	}
+	if theme.CDNHost != "https://cdn.example.test" || theme.CDNBasePath != "s/acme/themes/storefront/" {
+		t.Fatalf("expected host/base path, got %+v", theme)
+	}
+	if theme.SiteID != "site-1" || theme.SiteShortID != "acme" || theme.ThemeShortID != "storefront" {
+		t.Fatalf("expected site/theme ids, got %+v", theme)
+	}
+}
+
 func TestProductUnmarshalCurrentAPIFields(t *testing.T) {
 	var p Product
 	err := json.Unmarshal([]byte(`{

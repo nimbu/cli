@@ -256,11 +256,17 @@ func (c *Channel) UnmarshalJSON(data []byte) error {
 
 // Theme represents a theme.
 type Theme struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Active    bool      `json:"active,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	CDNBasePath  string    `json:"cdn_base_path,omitempty"`
+	CDNHost      string    `json:"cdn_host,omitempty"`
+	CDNRoot      string    `json:"cdn_root,omitempty"`
+	SiteID       string    `json:"site_id,omitempty"`
+	SiteShortID  string    `json:"site_short_id,omitempty"`
+	ThemeShortID string    `json:"theme_short_id,omitempty"`
+	Active       bool      `json:"active,omitempty"`
+	CreatedAt    time.Time `json:"created_at,omitempty"`
+	UpdatedAt    time.Time `json:"updated_at,omitempty"`
 }
 
 // ThemeFile represents a theme file.

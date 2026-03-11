@@ -4,6 +4,7 @@ package cmd
 type ThemesCmd struct {
 	List      ThemesListCmd     `cmd:"" help:"List themes"`
 	Get       ThemesGetCmd      `cmd:"" help:"Get theme details"`
+	CDNRoot   ThemesCDNRootCmd  `cmd:"" name:"cdn-root" help:"Print the resolved theme CDN root"`
 	Pull      ThemePullCmd      `cmd:"" help:"Download managed remote theme files"`
 	Diff      ThemeDiffCmd      `cmd:"" help:"Compare remote liquid theme files to local files"`
 	Copy      ThemeCopyCmd      `cmd:"" help:"Copy a theme between sites/themes"`
