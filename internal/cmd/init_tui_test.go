@@ -322,16 +322,13 @@ func TestInitTeaPreflightCollapsesIntoOneSummaryRow(t *testing.T) {
 	model.loadingSummary = "Template"
 	model.loadingDetail = "Cloning repository..."
 
-	if _, cmd := model.Update(initTeaSourceResolvedMsg{
+	model.Update(initTeaSourceResolvedMsg{
 		sourceDir:   "/tmp/source",
 		sourceLabel: "zenjoy/theme-starterskit@vite-go-cli",
 		outputDir:   "/tmp/out",
 		cleanup:     func() {},
-	}); cmd == nil {
-		// no-op, state mutation is what matters
-	}
-	if _, cmd := model.Update(initTeaManifestLoadedMsg{manifest: bootstrap.Manifest{Name: "Starterskit"}}); cmd == nil {
-	}
+	})
+	model.Update(initTeaManifestLoadedMsg{manifest: bootstrap.Manifest{Name: "Starterskit"}})
 	if got := len(model.transcript); got != 1 {
 		t.Fatalf("expected template transcript row immediately after manifest load, got %#v", model.transcript)
 	}
@@ -341,10 +338,9 @@ func TestInitTeaPreflightCollapsesIntoOneSummaryRow(t *testing.T) {
 	if model.loadingSummary != "Site" || model.loadingDetail != "Fetching your sites..." {
 		t.Fatalf("expected active site loading row after manifest load, got summary=%q detail=%q", model.loadingSummary, model.loadingDetail)
 	}
-	if _, cmd := model.Update(initTeaSitesLoadedMsg{
+	model.Update(initTeaSitesLoadedMsg{
 		sites: []api.Site{{ID: "site-1", Name: "Demo Shop", Subdomain: "demo-shop"}},
-	}); cmd == nil {
-	}
+	})
 
 	if got := len(model.transcript); got != 1 {
 		t.Fatalf("expected template row only after sites load, got %d entries: %#v", got, model.transcript)

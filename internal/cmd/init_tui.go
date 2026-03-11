@@ -563,10 +563,6 @@ func (m *initTeaModel) appendTranscript(label, value string) {
 	m.transcript = append(m.transcript, initTranscriptEntry{Label: label, Value: value})
 }
 
-func (m *initTeaModel) appendTranscriptText(value string) {
-	m.transcript = append(m.transcript, initTranscriptEntry{Text: value})
-}
-
 func (m *initTeaModel) templateDisplayName() string {
 	if name := strings.TrimSpace(m.manifest.Name); name != "" {
 		return name
@@ -637,10 +633,6 @@ func (m *initTeaModel) isSelected(id string) bool {
 	default:
 		return false
 	}
-}
-
-func (m *initTeaModel) selectedSite() (api.Site, bool) {
-	return findSiteByID(m.sites, m.answers.SiteID)
 }
 
 func (m *initTeaModel) resolveSourceCmd() tea.Cmd {

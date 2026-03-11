@@ -260,7 +260,7 @@ func emitInitResult(ctx context.Context, result initResult) error {
 	case mode.Plain:
 		return output.Plain(ctx, result.Path, result.Site, result.Theme, result.Source)
 	default:
-		fmt.Fprintf(output.WriterFromContext(ctx).Out, "Initialized %s for site %s and theme %s\n", result.Path, result.Site, result.Theme)
+		_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Out, "Initialized %s for site %s and theme %s\n", result.Path, result.Site, result.Theme)
 		return nil
 	}
 }
@@ -593,24 +593,6 @@ func findSiteByID(sites []api.Site, id string) (api.Site, bool) {
 		}
 	}
 	return api.Site{}, false
-}
-
-func findSiteChoiceByID(choices []initSiteChoice, id string) (initSiteChoice, bool) {
-	for _, choice := range choices {
-		if choice.Site.ID == id {
-			return choice, true
-		}
-	}
-	return initSiteChoice{}, false
-}
-
-func findThemeChoiceByID(choices []initThemeChoice, id string) (initThemeChoice, bool) {
-	for _, choice := range choices {
-		if choice.Theme.ID == id {
-			return choice, true
-		}
-	}
-	return initThemeChoice{}, false
 }
 
 func findThemeByID(themes []api.Theme, id string) (api.Theme, bool) {
