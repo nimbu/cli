@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/nimbu/cli/internal/migrate"
 	"github.com/nimbu/cli/internal/output"
@@ -37,24 +38,38 @@ func (c *BlogsCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	result, err := migrate.CopyBlogs(ctx, fromClient, toClient, fromRef, toRef, c.Handle, nil)
-	if err != nil {
-		return err
+	ctx, tl := copyWithTimeline(ctx, "Blogs", fromRef.Site, toRef.Site, false)
+	if tl != nil {
+		defer tl.Close()
 	}
+	result, err := migrate.CopyBlogs(ctx, fromClient, toClient, fromRef, toRef, c.Handle, nil, false)
+	if err != nil {
+		return finishCopyTimelineError(tl, err)
+	}
+	finishCopyTimeline(tl, "Blogs", fmt.Sprintf("%d synced", len(result.Items)))
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, result)
+	}
+	if mode.Plain {
+		for _, item := range result.Items {
+			label := item.Blog
+			if item.Slug != "" {
+				label = item.Blog + "/" + item.Slug
+			}
+			if err := printLine(ctx, "%s\t%s\t%s\n", item.Action, item.Kind, label); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if tl != nil {
+		return nil
 	}
 	for _, item := range result.Items {
 		label := item.Blog
 		if item.Slug != "" {
 			label = item.Blog + "/" + item.Slug
-		}
-		if mode.Plain {
-			if err := printLine(ctx, "%s\t%s\t%s\n", item.Action, item.Kind, label); err != nil {
-				return err
-			}
-			continue
 		}
 		if err := printLine(ctx, "%s %s %s\n", item.Action, item.Kind, label); err != nil {
 			return err

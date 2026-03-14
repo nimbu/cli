@@ -90,6 +90,12 @@ func NewProgress(ctx context.Context) *Progress {
 	return p
 }
 
+// NewDisabledProgress returns a no-op progress that silently discards all output.
+// Use when a timeline renderer handles progress display instead.
+func NewDisabledProgress() *Progress {
+	return &Progress{}
+}
+
 // WithProgress stores a progress session in context.
 func WithProgress(ctx context.Context, p *Progress) context.Context {
 	return context.WithValue(ctx, progressCtxKey{}, p)

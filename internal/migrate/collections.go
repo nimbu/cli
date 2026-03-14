@@ -25,6 +25,7 @@ type CollectionCopyResult struct {
 // CollectionCopyOptions controls collection copy behavior.
 type CollectionCopyOptions struct {
 	AllowErrors    bool
+	DryRun         bool
 	Media          *MediaRewritePlan
 	ProductMapping map[string]string
 }
@@ -49,7 +50,8 @@ func CopyCollections(ctx context.Context, fromClient, toClient *api.Client, from
 		}
 	}
 
-	for _, src := range srcCollections {
+	for i, src := range srcCollections {
+		emitStageItem(ctx, "Collections", stringValue(src["slug"]), int64(i+1), int64(len(srcCollections)))
 		slug := stringValue(src["slug"])
 		name := stringValue(src["name"])
 		if slug == "" {
@@ -69,23 +71,33 @@ func CopyCollections(ctx context.Context, fromClient, toClient *api.Client, from
 		}
 
 		if existing, ok := targetBySlug[slug]; ok {
-			targetID := stringValue(existing["id"])
-			path := "/collections/" + url.PathEscape(targetID)
-			if err := toClient.Put(ctx, path, payload, nil); err != nil {
-				if opts.AllowErrors {
-					continue
+			action := "update"
+			if opts.DryRun {
+				action = "dry-run:" + action
+			} else {
+				targetID := stringValue(existing["id"])
+				path := "/collections/" + url.PathEscape(targetID)
+				if err := toClient.Put(ctx, path, payload, nil); err != nil {
+					if opts.AllowErrors {
+						continue
+					}
+					return result, fmt.Errorf("update collection %s: %w", slug, err)
 				}
-				return result, fmt.Errorf("update collection %s: %w", slug, err)
 			}
-			result.Items = append(result.Items, CollectionCopyItem{Slug: slug, Name: name, Action: "update"})
+			result.Items = append(result.Items, CollectionCopyItem{Slug: slug, Name: name, Action: action})
 		} else {
-			if err := toClient.Post(ctx, "/collections", payload, nil); err != nil {
-				if opts.AllowErrors {
-					continue
+			action := "create"
+			if opts.DryRun {
+				action = "dry-run:" + action
+			} else {
+				if err := toClient.Post(ctx, "/collections", payload, nil); err != nil {
+					if opts.AllowErrors {
+						continue
+					}
+					return result, fmt.Errorf("create collection %s: %w", slug, err)
 				}
-				return result, fmt.Errorf("create collection %s: %w", slug, err)
 			}
-			result.Items = append(result.Items, CollectionCopyItem{Slug: slug, Name: name, Action: "create"})
+			result.Items = append(result.Items, CollectionCopyItem{Slug: slug, Name: name, Action: action})
 		}
 	}
 

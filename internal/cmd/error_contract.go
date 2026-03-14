@@ -50,12 +50,29 @@ type errorDescriptor struct {
 	ValidationErrors []api.ValidationError `json:"validation_errors,omitempty"`
 }
 
+// displayedError wraps an error that has already been shown to the user
+// (e.g. via the timeline ErrorFooter). emitCommandError skips the stderr
+// print for these but still returns the correct exit code.
+type displayedError struct {
+	err error
+}
+
+func (e *displayedError) Error() string { return e.err.Error() }
+func (e *displayedError) Unwrap() error { return e.err }
+
 func emitCommandError(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
 	}
 
 	desc := classifyError(err)
+
+	// If the error was already rendered (e.g. by timeline ErrorFooter),
+	// skip the duplicate print but still return the exit code.
+	var displayed *displayedError
+	if errors.As(err, &displayed) {
+		return &ExitError{Code: desc.ExitCode, Err: err}
+	}
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {

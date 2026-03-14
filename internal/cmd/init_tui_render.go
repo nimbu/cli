@@ -24,14 +24,14 @@ func renderInitTea(model *initTeaModel) string {
 }
 
 func renderInitTeaIntro(model *initTeaModel, width int) string {
-	plain := "┌   Let's setup a new project."
+	plain := "┌ Let's setup a new project."
 	if !model.useColor {
 		return truncateRunes(plain, width)
 	}
 
 	corner := initTeaDimStyle(model).Render("┌")
 	text := initTeaBrightText(model, "Let's setup a new project.")
-	return truncateRunes(corner+"   "+text, width)
+	return truncateRunes(corner+" "+text, width)
 }
 
 func renderInitTeaHeader(model *initTeaModel, width int) string {

@@ -6,10 +6,12 @@ import (
 	"sort"
 
 	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/observer"
 )
 
 // CopyOptions controls one copy run.
 type CopyOptions struct {
+	DryRun     bool
 	Force      bool
 	LiquidOnly bool
 }
@@ -39,16 +41,21 @@ func RunCopy(ctx context.Context, fromClient *api.Client, from CopyRef, toClient
 	})
 
 	result := CopyResult{From: from, To: to}
-	for _, resource := range remoteResources {
+	total := int64(len(remoteResources))
+	obs := observer.ObserverFromContext(ctx)
+	for i, resource := range remoteResources {
 		if opts.LiquidOnly && resource.Kind == KindAsset {
 			continue
 		}
-		content, err := readResourceContent(ctx, fromClient, from.Theme, resource)
-		if err != nil {
-			return result, fmt.Errorf("read %s: %w", resource.DisplayPath, err)
-		}
-		if err := UpsertBytes(ctx, toClient, to.Theme, resource, content, opts.Force); err != nil {
-			return result, fmt.Errorf("upload %s: %w", resource.DisplayPath, err)
+		obs.StageItem("Theme", resource.DisplayPath, int64(i+1), total)
+		if !opts.DryRun {
+			content, err := readResourceContent(ctx, fromClient, from.Theme, resource)
+			if err != nil {
+				return result, fmt.Errorf("read %s: %w", resource.DisplayPath, err)
+			}
+			if err := UpsertBytes(ctx, toClient, to.Theme, resource, content, opts.Force); err != nil {
+				return result, fmt.Errorf("upload %s: %w", resource.DisplayPath, err)
+			}
 		}
 		result.Items = append(result.Items, Action{
 			DisplayPath: resource.DisplayPath,

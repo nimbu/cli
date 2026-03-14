@@ -10,20 +10,21 @@ import (
 
 // ChannelDetail is the canonical rich channel contract.
 type ChannelDetail struct {
-	ID             string         `json:"id"`
-	Slug           string         `json:"slug"`
-	Name           string         `json:"name"`
-	Description    string         `json:"description,omitempty"`
-	ACL            map[string]any `json:"acl,omitempty"`
-	Customizations []CustomField  `json:"customizations,omitempty"`
-	EntriesURL     string         `json:"entries_url,omitempty"`
-	LabelField     string         `json:"label_field,omitempty"`
-	TitleField     string         `json:"title_field,omitempty"`
-	OrderBy        string         `json:"order_by,omitempty"`
-	OrderDirection string         `json:"order_direction,omitempty"`
-	RSSEnabled     bool           `json:"rss_enabled,omitempty"`
-	Submittable    bool           `json:"submittable,omitempty"`
-	URL            string         `json:"url,omitempty"`
+	ID                  string         `json:"id"`
+	Slug                string         `json:"slug"`
+	Name                string         `json:"name"`
+	Description         string         `json:"description,omitempty"`
+	ACL                 map[string]any `json:"acl,omitempty"`
+	Customizations      []CustomField  `json:"customizations,omitempty"`
+	EntriesURL          string         `json:"entries_url,omitempty"`
+	LabelField          string         `json:"label_field,omitempty"`
+	TitleField          string         `json:"title_field,omitempty"`
+	OrderBy             string         `json:"order_by,omitempty"`
+	OrderDirection      string         `json:"order_direction,omitempty"`
+	RSSEnabled          bool           `json:"rss_enabled,omitempty"`
+	Submittable         bool           `json:"submittable,omitempty"`
+	SubmittableFieldIDs []string       `json:"submittable_field_ids,omitempty"`
+	URL                 string         `json:"url,omitempty"`
 }
 
 // SelectOption represents a select or multi-select option in a channel customization.
@@ -77,6 +78,26 @@ func (f CustomField) IsRelational() bool {
 	default:
 		return false
 	}
+}
+
+// MarshalJSON emits known fields plus any Extra attributes preserved during unmarshal.
+func (f CustomField) MarshalJSON() ([]byte, error) {
+	type alias CustomField
+	data, err := json.Marshal(alias(f))
+	if err != nil {
+		return nil, err
+	}
+	if len(f.Extra) == 0 {
+		return data, nil
+	}
+	var merged map[string]any
+	if err := json.Unmarshal(data, &merged); err != nil {
+		return nil, err
+	}
+	for k, v := range f.Extra {
+		merged[k] = v
+	}
+	return json.Marshal(merged)
 }
 
 // UnmarshalJSON preserves unknown field attributes while decoding the known customization fields.

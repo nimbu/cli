@@ -40,7 +40,7 @@ type UploadCopyResult struct {
 	Warnings []string         `json:"warnings,omitempty"`
 }
 
-func CopyUploads(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef) (UploadCopyResult, *MediaRewritePlan, error) {
+func CopyUploads(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, dryRun bool) (UploadCopyResult, *MediaRewritePlan, error) {
 	sourceUploads, err := api.List[api.Upload](ctx, fromClient, "/uploads")
 	if err != nil {
 		return UploadCopyResult{From: fromRef, To: toRef}, nil, err
@@ -70,7 +70,8 @@ func CopyUploads(ctx context.Context, fromClient, toClient *api.Client, fromRef,
 	for _, origin := range sourceOrigins {
 		media.trackSourceURL(origin)
 	}
-	for _, sourceUpload := range sourceUploads {
+	for i, sourceUpload := range sourceUploads {
+		emitStageItem(ctx, "Uploads", sourceUpload.Name, int64(i+1), int64(len(sourceUploads)))
 		if strings.TrimSpace(sourceUpload.URL) == "" {
 			result.Items = append(result.Items, UploadCopyItem{
 				Action:   "skip",
@@ -82,7 +83,7 @@ func CopyUploads(ctx context.Context, fromClient, toClient *api.Client, fromRef,
 			continue
 		}
 
-		targetUpload, action, warning, err := resolveTargetUpload(ctx, fromClient, toClient, sourceUpload, targetIndex, sourceCounts)
+		targetUpload, action, warning, err := resolveTargetUpload(ctx, fromClient, toClient, sourceUpload, targetIndex, sourceCounts, dryRun)
 		if err != nil {
 			return result, nil, fmt.Errorf("copy upload %s: %w", sourceUpload.Name, err)
 		}
@@ -90,10 +91,12 @@ func CopyUploads(ctx context.Context, fromClient, toClient *api.Client, fromRef,
 			result.Warnings = append(result.Warnings, warning)
 		}
 		targetIndex[reuseKey(targetUpload)] = append(targetIndex[reuseKey(targetUpload)], targetUpload)
-		media.Add(sourceUpload.URL, targetUpload.URL)
-		for _, origin := range sourceOrigins {
-			if alias := sourceUploadAlias(origin, sourceUpload.URL); alias != "" {
-				media.Add(alias, targetUpload.URL)
+		if strings.TrimSpace(targetUpload.URL) != "" {
+			media.Add(sourceUpload.URL, targetUpload.URL)
+			for _, origin := range sourceOrigins {
+				if alias := sourceUploadAlias(origin, sourceUpload.URL); alias != "" {
+					media.Add(alias, targetUpload.URL)
+				}
 			}
 		}
 		result.Items = append(result.Items, UploadCopyItem{
@@ -174,7 +177,7 @@ func sourceUploadAlias(origin, sourceURL string) string {
 	return alias.String()
 }
 
-func resolveTargetUpload(ctx context.Context, fromClient, toClient *api.Client, source api.Upload, targetIndex map[uploadReuseKey][]api.Upload, sourceCounts map[uploadReuseKey]int) (api.Upload, string, string, error) {
+func resolveTargetUpload(ctx context.Context, fromClient, toClient *api.Client, source api.Upload, targetIndex map[uploadReuseKey][]api.Upload, sourceCounts map[uploadReuseKey]int, dryRun bool) (api.Upload, string, string, error) {
 	key := reuseKey(source)
 	if sourceCounts[key] == 1 {
 		switch len(targetIndex[key]) {
@@ -182,6 +185,9 @@ func resolveTargetUpload(ctx context.Context, fromClient, toClient *api.Client, 
 			return targetIndex[key][0], "reuse", "", nil
 		case 0:
 		default:
+			if dryRun {
+				return api.Upload{Name: source.Name, Size: source.Size}, "dry-run:create", fmt.Sprintf("create upload %s: ambiguous target match by name and size", source.Name), nil
+			}
 			created, err := createUpload(ctx, fromClient, toClient, source)
 			if err != nil {
 				return api.Upload{}, "", "", err
@@ -190,6 +196,9 @@ func resolveTargetUpload(ctx context.Context, fromClient, toClient *api.Client, 
 		}
 	}
 
+	if dryRun {
+		return api.Upload{Name: source.Name, Size: source.Size}, "dry-run:create", "", nil
+	}
 	created, err := createUpload(ctx, fromClient, toClient, source)
 	if err != nil {
 		return api.Upload{}, "", "", err

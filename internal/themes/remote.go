@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"mime"
-	"net/http"
 	"net/url"
 	"path"
 	"strings"
@@ -129,17 +128,13 @@ func readRemoteContent(ctx context.Context, client *api.Client, kind Kind, remot
 		return []byte(code), nil
 	}
 	if kind == KindAsset && strings.TrimSpace(publicURL) != "" {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, publicURL, nil)
-		if err != nil {
-			return nil, err
-		}
-		resp, err := client.HTTPClient.Do(req)
+		resp, resolvedURL, err := client.DownloadURL(ctx, publicURL)
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode >= 400 {
-			return nil, fmt.Errorf("download asset: HTTP %d", resp.StatusCode)
+			return nil, fmt.Errorf("download asset %q: HTTP %d", resolvedURL, resp.StatusCode)
 		}
 		task := output.ProgressFromContext(ctx).Transfer("download "+DisplayPath(kind, remoteName), resp.ContentLength)
 		defer task.Done("done")

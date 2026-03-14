@@ -234,6 +234,45 @@ func (c *Client) do(req *http.Request, result any) error {
 	return nil
 }
 
+// DownloadURL fetches a file from a URL (absolute or relative to BaseURL).
+// It appends raw=true to bypass CDN image optimization, resolves relative URLs,
+// and attaches auth headers when the URL targets the API host.
+func (c *Client) DownloadURL(ctx context.Context, rawURL string) (*http.Response, string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return nil, "", err
+	}
+	attachAuth := false
+	if !parsed.IsAbs() {
+		base, err := url.Parse(c.BaseURL)
+		if err != nil {
+			return nil, "", err
+		}
+		parsed = base.ResolveReference(parsed)
+		attachAuth = true
+	} else if base, err := url.Parse(c.BaseURL); err == nil && strings.EqualFold(base.Host, parsed.Host) {
+		attachAuth = true
+	}
+	q := parsed.Query()
+	q.Set("raw", "true")
+	parsed.RawQuery = q.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return nil, "", err
+	}
+	if attachAuth && c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	if attachAuth && c.Site != "" {
+		req.Header.Set("X-Nimbu-Site", c.Site)
+	}
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	return resp, parsed.String(), nil
+}
+
 // RawRequest performs a request and returns the raw response.
 func (c *Client) RawRequest(ctx context.Context, method, path string, body any, opts ...RequestOption) (*http.Response, error) {
 	req, err := c.buildRequest(ctx, method, path, body, opts...)

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/nimbu/cli/internal/migrate"
 	"github.com/nimbu/cli/internal/output"
@@ -47,6 +48,10 @@ func (c *ChannelEntriesCopyCmd) Run(ctx context.Context, flags *RootFlags) error
 	if err != nil {
 		return err
 	}
+	ctx, tl := copyWithTimeline(ctx, "Channel Entries", fromRef.Site, toRef.Site, c.DryRun)
+	if tl != nil {
+		defer tl.Close()
+	}
 	result, err := migrate.CopyChannelEntries(ctx, fromClient, toClient, fromRef, toRef, migrate.RecordCopyOptions{
 		AllowErrors:   c.AllowErrors,
 		CopyCustomers: c.CopyCustomers,
@@ -59,7 +64,11 @@ func (c *ChannelEntriesCopyCmd) Run(ctx context.Context, flags *RootFlags) error
 		Where:         c.Where,
 	})
 	if err != nil {
-		return err
+		return finishCopyTimelineError(tl, err)
+	}
+	finishCopyTimeline(tl, "Channel Entries", fmt.Sprintf("%d entries", len(result.Items)))
+	if tl != nil {
+		return nil
 	}
 	mode := output.FromContext(ctx)
 	if mode.JSON {

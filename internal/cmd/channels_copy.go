@@ -40,9 +40,17 @@ func (c *ChannelsCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if err != nil {
 			return err
 		}
-		result, err := migrate.CopyAllChannels(ctx, fromClient, toClient, fromRef, toRef)
+		ctx, tl := copyWithTimeline(ctx, "Channels", fromRef.Site, toRef.Site, false)
+		if tl != nil {
+			defer tl.Close()
+		}
+		result, err := migrate.CopyAllChannels(ctx, fromClient, toClient, fromRef, toRef, false)
 		if err != nil {
-			return err
+			return finishCopyTimelineError(tl, err)
+		}
+		finishCopyTimeline(tl, "Channels", fmt.Sprintf("%d synced", len(result.Items)))
+		if tl != nil {
+			return nil
 		}
 		return writeChannelCopyResult(ctx, result)
 	}
@@ -63,9 +71,17 @@ func (c *ChannelsCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	ctx, tl := copyWithTimeline(ctx, "Channels", fromRef.Site, toRef.Site, false)
+	if tl != nil {
+		defer tl.Close()
+	}
 	result, err := migrate.CopyChannel(ctx, fromClient, toClient, fromRef, toRef)
 	if err != nil {
-		return err
+		return finishCopyTimelineError(tl, err)
+	}
+	finishCopyTimeline(tl, "Channels", fmt.Sprintf("%d synced", len(result.Items)))
+	if tl != nil {
+		return nil
 	}
 	return writeChannelCopyResult(ctx, result)
 }

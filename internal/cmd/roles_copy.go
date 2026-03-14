@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/nimbu/cli/internal/migrate"
 	"github.com/nimbu/cli/internal/output"
@@ -36,9 +37,17 @@ func (c *RolesCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	result, err := migrate.CopyRoles(ctx, fromClient, toClient, fromRef, toRef)
+	ctx, tl := copyWithTimeline(ctx, "Roles", fromRef.Site, toRef.Site, false)
+	if tl != nil {
+		defer tl.Close()
+	}
+	result, err := migrate.CopyRoles(ctx, fromClient, toClient, fromRef, toRef, false)
 	if err != nil {
-		return err
+		return finishCopyTimelineError(tl, err)
+	}
+	finishCopyTimeline(tl, "Roles", fmt.Sprintf("%d synced", len(result.Items)))
+	if tl != nil {
+		return nil
 	}
 	mode := output.FromContext(ctx)
 	if mode.JSON {

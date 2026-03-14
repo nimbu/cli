@@ -22,7 +22,7 @@ type RedirectCopyResult struct {
 }
 
 // CopyRedirects copies URL redirects between sites.
-func CopyRedirects(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef) (RedirectCopyResult, error) {
+func CopyRedirects(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, dryRun bool) (RedirectCopyResult, error) {
 	result := RedirectCopyResult{From: fromRef, To: toRef}
 
 	sourceRedirects, err := api.List[api.Redirect](ctx, fromClient, "/redirects")
@@ -40,22 +40,37 @@ func CopyRedirects(ctx context.Context, fromClient, toClient *api.Client, fromRe
 		targetBySource[r.Source] = r
 	}
 
-	for _, r := range sourceRedirects {
-		payload := map[string]any{
-			"source": r.Source,
-			"target": r.Target,
-		}
-		if existing, ok := targetBySource[r.Source]; ok {
-			path := "/redirects/" + url.PathEscape(existing.ID)
-			if err := toClient.Put(ctx, path, payload, nil); err != nil {
-				return result, fmt.Errorf("update redirect %s: %w", r.Source, err)
+	for i, r := range sourceRedirects {
+		emitStageItem(ctx, "Redirects", r.Source, int64(i+1), int64(len(sourceRedirects)))
+		if _, ok := targetBySource[r.Source]; ok {
+			action := "update"
+			if dryRun {
+				action = "dry-run:" + action
+			} else {
+				payload := map[string]any{
+					"source": r.Source,
+					"target": r.Target,
+				}
+				path := "/redirects/" + url.PathEscape(targetBySource[r.Source].ID)
+				if err := toClient.Put(ctx, path, payload, nil); err != nil {
+					return result, fmt.Errorf("update redirect %s: %w", r.Source, err)
+				}
 			}
-			result.Items = append(result.Items, RedirectCopyItem{Source: r.Source, Action: "update"})
+			result.Items = append(result.Items, RedirectCopyItem{Source: r.Source, Action: action})
 		} else {
-			if err := toClient.Post(ctx, "/redirects", payload, nil); err != nil {
-				return result, fmt.Errorf("create redirect %s: %w", r.Source, err)
+			action := "create"
+			if dryRun {
+				action = "dry-run:" + action
+			} else {
+				payload := map[string]any{
+					"source": r.Source,
+					"target": r.Target,
+				}
+				if err := toClient.Post(ctx, "/redirects", payload, nil); err != nil {
+					return result, fmt.Errorf("create redirect %s: %w", r.Source, err)
+				}
 			}
-			result.Items = append(result.Items, RedirectCopyItem{Source: r.Source, Action: "create"})
+			result.Items = append(result.Items, RedirectCopyItem{Source: r.Source, Action: action})
 		}
 	}
 

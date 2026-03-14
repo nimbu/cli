@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/nimbu/cli/internal/migrate"
 	"github.com/nimbu/cli/internal/output"
@@ -37,9 +38,20 @@ func (c *PagesCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	result, err := migrate.CopyPages(ctx, fromClient, toClient, fromRef, toRef, c.Fullpath, nil)
+	ctx, tl := copyWithTimeline(ctx, "Pages", fromRef.Site, toRef.Site, false)
+	if tl != nil {
+		defer tl.Close()
+	}
+	result, err := migrate.CopyPages(ctx, fromClient, toClient, fromRef, toRef, c.Fullpath, nil, false)
 	if err != nil {
-		return err
+		return finishCopyTimelineError(tl, err)
+	}
+	finishCopyTimeline(tl, "Pages", fmt.Sprintf("%d synced", len(result.Items)))
+	for _, w := range result.Warnings {
+		_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Err, "warning: %s\n", w)
+	}
+	if tl != nil {
+		return nil
 	}
 	mode := output.FromContext(ctx)
 	if mode.JSON {

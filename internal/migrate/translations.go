@@ -75,7 +75,8 @@ func CopyTranslations(ctx context.Context, fromClient, toClient *api.Client, fro
 		return TranslationCopyResult{From: fromRef, To: toRef, Query: opts.Query, Since: opts.Since, DryRun: opts.DryRun}, err
 	}
 	result := TranslationCopyResult{From: fromRef, To: toRef, Query: opts.Query, Since: opts.Since, DryRun: opts.DryRun}
-	for _, translation := range translations {
+	for i, translation := range translations {
+		emitStageItem(ctx, "Translations", translation.Key, int64(i+1), int64(len(translations)))
 		if opts.Media != nil {
 			translation.Value = opts.Media.RewriteString("translations."+translation.Key+".value", translation.Value)
 			for locale, value := range translation.Values {

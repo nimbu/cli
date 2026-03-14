@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"net/http"
 	neturl "net/url"
 	"os"
 	"path"
@@ -93,9 +92,9 @@ func PageDocumentPublished(doc PageDocument) bool {
 // PageStats traverses the page document and counts editables and attachment-bearing file objects.
 func PageStats(doc PageDocument) PageDocumentStats {
 	stats := PageDocumentStats{}
-	_ = walkPageEditables(doc, func(_ string, editable map[string]any) error {
+	_ = WalkPageEditables(doc, func(_ string, editable map[string]any) error {
 		stats.EditableCount++
-		file := pageEditableFile(editable)
+		file := PageEditableFile(editable)
 		if file != nil && pageFileHasAttachment(file) {
 			stats.AttachmentCount++
 		}
@@ -106,8 +105,8 @@ func PageStats(doc PageDocument) PageDocumentStats {
 
 // ExpandPageAttachmentPaths loads local file refs from attachment_path and rewrites them for API upload.
 func ExpandPageAttachmentPaths(doc PageDocument) error {
-	return walkPageEditables(doc, func(_ string, editable map[string]any) error {
-		file := pageEditableFile(editable)
+	return WalkPageEditables(doc, func(_ string, editable map[string]any) error {
+		file := PageEditableFile(editable)
 		if file == nil {
 			return nil
 		}
@@ -133,18 +132,20 @@ func ExpandPageAttachmentPaths(doc PageDocument) error {
 }
 
 // DownloadPageAssets downloads remote file editables and rewrites them to local attachment_path refs.
-func DownloadPageAssets(ctx context.Context, c *Client, doc PageDocument, dir string) (int, error) {
+// Returns the count of successful downloads, any per-asset warnings (non-fatal), and a fatal error.
+func DownloadPageAssets(ctx context.Context, c *Client, doc PageDocument, dir string) (int, []string, error) {
 	if strings.TrimSpace(dir) == "" {
-		return 0, fmt.Errorf("download directory required")
+		return 0, nil, fmt.Errorf("download directory required")
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return 0, fmt.Errorf("create download directory: %w", err)
+		return 0, nil, fmt.Errorf("create download directory: %w", err)
 	}
 
 	usedNames := map[string]struct{}{}
 	downloads := 0
-	err := walkPageEditables(doc, func(_ string, editable map[string]any) error {
-		file := pageEditableFile(editable)
+	var warnings []string
+	err := WalkPageEditables(doc, func(name string, editable map[string]any) error {
+		file := PageEditableFile(editable)
 		if file == nil {
 			return nil
 		}
@@ -158,7 +159,8 @@ func DownloadPageAssets(ctx context.Context, c *Client, doc PageDocument, dir st
 		target := uniqueAttachmentPath(dir, filename, usedNames)
 
 		if err := downloadURLToFile(ctx, c, rawURL, target); err != nil {
-			return err
+			warnings = append(warnings, fmt.Sprintf("%s: %v", name, err))
+			return nil // continue with next editable
 		}
 
 		file["attachment_path"] = target
@@ -170,13 +172,14 @@ func DownloadPageAssets(ctx context.Context, c *Client, doc PageDocument, dir st
 		return nil
 	})
 	if err != nil {
-		return downloads, err
+		return downloads, warnings, err
 	}
 
-	return downloads, nil
+	return downloads, warnings, nil
 }
 
-func walkPageEditables(doc PageDocument, fn func(name string, editable map[string]any) error) error {
+// WalkPageEditables traverses all editables in a page document, including nested repeatables.
+func WalkPageEditables(doc PageDocument, fn func(name string, editable map[string]any) error) error {
 	items, ok := mapValue(doc["items"])
 	if !ok {
 		return nil
@@ -215,7 +218,8 @@ func walkPageEditableItems(items map[string]any, fn func(name string, editable m
 	return nil
 }
 
-func pageEditableFile(editable map[string]any) map[string]any {
+// PageEditableFile returns the file map from an editable, or nil if absent.
+func PageEditableFile(editable map[string]any) map[string]any {
 	file, ok := mapValue(editable["file"])
 	if !ok {
 		return nil
@@ -280,31 +284,14 @@ func uniqueAttachmentPath(dir, filename string, used map[string]struct{}) string
 }
 
 func downloadURLToFile(ctx context.Context, c *Client, rawURL, target string) error {
-	u, err := neturl.Parse(rawURL)
+	resp, resolvedURL, err := c.DownloadURL(ctx, rawURL)
 	if err != nil {
-		return fmt.Errorf("parse asset url %q: %w", rawURL, err)
-	}
-	if !u.IsAbs() {
-		base, baseErr := neturl.Parse(c.BaseURL)
-		if baseErr != nil {
-			return fmt.Errorf("parse base url: %w", baseErr)
-		}
-		u = base.ResolveReference(u)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return fmt.Errorf("build asset request: %w", err)
-	}
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("download asset %q: %w", u.String(), err)
+		return fmt.Errorf("download asset %q: %w", rawURL, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("download asset %q: %s", u.String(), strings.TrimSpace(string(body)))
+		return fmt.Errorf("download asset %q: HTTP %d", resolvedURL, resp.StatusCode)
 	}
 
 	temp, err := os.CreateTemp(filepath.Dir(target), "."+filepath.Base(target)+".tmp-*")

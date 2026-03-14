@@ -73,7 +73,7 @@ func TestCopyUploadsReusesAndCreatesUploadsAndBuildsRewritePlan(t *testing.T) {
 	fromClient := api.New(srv.URL, "").WithSite("source")
 	toClient := api.New(srv.URL, "").WithSite("target")
 
-	result, plan, err := CopyUploads(context.Background(), fromClient, toClient, SiteRef{Site: "source"}, SiteRef{Site: "target"})
+	result, plan, err := CopyUploads(context.Background(), fromClient, toClient, SiteRef{Site: "source"}, SiteRef{Site: "target"}, false)
 	if err != nil {
 		t.Fatalf("copy uploads: %v", err)
 	}
@@ -168,8 +168,10 @@ func TestCopyChannelEntriesRewritesKnownUploadURLsInStringFields(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/channels":
 			_, _ = w.Write([]byte(`[{"slug":"articles","customizations":[{"name":"content","type":"text"},{"name":"metadata","type":"string"}]}]`))
-		case r.Method == http.MethodGet && r.URL.Path == "/channels/articles/entries":
+		case r.Method == http.MethodGet && r.URL.Path == "/channels/articles/entries" && r.Header.Get("X-Nimbu-Site") == "source":
 			_, _ = w.Write([]byte(`[{"id":"entry-1","slug":"hello","content":"<img src=\"https://media.source.test/uploads/hero.jpg\">","metadata":"{\"image\":\"https://media.source.test/uploads/hero.jpg\"}","note":"https://other.example.test/keep"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/channels/articles/entries" && r.Header.Get("X-Nimbu-Site") == "target":
+			_, _ = w.Write([]byte(`[]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/channels/articles/entries":
 			if err := json.NewDecoder(r.Body).Decode(&created); err != nil {
 				t.Fatalf("decode created entry: %v", err)
@@ -239,6 +241,7 @@ func TestCopyPagesRewritesTextContentAndPreservesFileAttachments(t *testing.T) {
 		SiteRef{Site: "target"},
 		"*",
 		plan,
+		false,
 	)
 	if err != nil {
 		t.Fatalf("copy pages: %v", err)
@@ -288,6 +291,7 @@ func TestCopyMenusRewritesKnownUploadURLs(t *testing.T) {
 		"*",
 		true,
 		plan,
+		false,
 	)
 	if err != nil {
 		t.Fatalf("copy menus: %v", err)

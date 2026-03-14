@@ -252,7 +252,7 @@ func TestInitTeaViewShowsLoadingState(t *testing.T) {
 	if !strings.Contains(view, "Let's setup a new project.") {
 		t.Fatalf("expected intro line below banner, got:\n%s", view)
 	}
-	if !strings.Contains(view, "┌   Let's setup a new project.\n│\n") {
+	if !strings.Contains(view, "┌ Let's setup a new project.\n│\n") {
 		t.Fatalf("expected intro line to hand off into the timeline rail, got:\n%s", view)
 	}
 	if !strings.Contains(view, model.spinner.View()) {

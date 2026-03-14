@@ -55,9 +55,17 @@ func (c *MenusCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 			overwrite = true
 		}
 	}
-	result, err := migrate.CopyMenus(ctx, fromClient, toClient, fromRef, toRef, c.Slug, overwrite, nil)
+	ctx, tl := copyWithTimeline(ctx, "Menus", fromRef.Site, toRef.Site, false)
+	if tl != nil {
+		defer tl.Close()
+	}
+	result, err := migrate.CopyMenus(ctx, fromClient, toClient, fromRef, toRef, c.Slug, overwrite, nil, false)
 	if err != nil {
-		return err
+		return finishCopyTimelineError(tl, err)
+	}
+	finishCopyTimeline(tl, "Menus", fmt.Sprintf("%d synced", len(result.Items)))
+	if tl != nil {
+		return nil
 	}
 	mode := output.FromContext(ctx)
 	if mode.JSON {

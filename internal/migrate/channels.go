@@ -49,7 +49,7 @@ func CopyChannel(ctx context.Context, fromClient, toClient *api.Client, fromRef,
 	if err != nil {
 		return ChannelCopyResult{From: fromRef.SiteRef, To: toRef.SiteRef}, err
 	}
-	item, err := copyChannelDetail(ctx, toClient, detail, toRef.Channel)
+	item, err := copyChannelDetail(ctx, toClient, detail, toRef.Channel, false)
 	if err != nil {
 		return ChannelCopyResult{From: fromRef.SiteRef, To: toRef.SiteRef}, err
 	}
@@ -57,7 +57,7 @@ func CopyChannel(ctx context.Context, fromClient, toClient *api.Client, fromRef,
 }
 
 // CopyAllChannels copies all channels from source to target.
-func CopyAllChannels(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef) (ChannelCopyResult, error) {
+func CopyAllChannels(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, dryRun bool) (ChannelCopyResult, error) {
 	channels, err := api.ListChannelDetails(ctx, fromClient)
 	if err != nil {
 		return ChannelCopyResult{From: fromRef, To: toRef}, err
@@ -66,9 +66,11 @@ func CopyAllChannels(ctx context.Context, fromClient, toClient *api.Client, from
 	graph := api.BuildChannelDependencyGraph(channels)
 	ordered := topoSortChannels(channels, graph)
 	result := ChannelCopyResult{From: fromRef, To: toRef}
-	for _, channel := range ordered {
+	total := len(ordered)
+	for i, channel := range ordered {
+		emitStageItem(ctx, "Channels", channel.Slug, int64(i+1), int64(total))
 		if graph.HasCircularDependencies(channel.Slug) {
-			created, err := ensureCircularPlaceholder(ctx, toClient, channel.Slug)
+			created, err := ensureCircularPlaceholder(ctx, toClient, channel.Slug, dryRun)
 			if err != nil {
 				return result, err
 			}
@@ -76,7 +78,7 @@ func CopyAllChannels(ctx context.Context, fromClient, toClient *api.Client, from
 				result.Placeholders = append(result.Placeholders, channel.Slug)
 			}
 		}
-		item, err := copyChannelDetail(ctx, toClient, channel, channel.Slug)
+		item, err := copyChannelDetail(ctx, toClient, channel, channel.Slug, dryRun)
 		if err != nil {
 			return result, fmt.Errorf("copy channel %s: %w", channel.Slug, err)
 		}
@@ -134,7 +136,10 @@ func ChannelTypeScript(detail api.ChannelDetail) string {
 	return strings.Join(lines, "\n")
 }
 
-func copyChannelDetail(ctx context.Context, client *api.Client, detail api.ChannelDetail, targetSlug string) (ChannelCopyItem, error) {
+func copyChannelDetail(ctx context.Context, client *api.Client, detail api.ChannelDetail, targetSlug string, dryRun bool) (ChannelCopyItem, error) {
+	wasSubmittable := detail.Submittable
+	sourceFieldIDs := detail.SubmittableFieldIDs
+
 	payload := channelPayload(detail, targetSlug)
 	path := "/channels/" + url.PathEscape(strings.TrimSpace(targetSlug))
 	var existing api.ChannelDetail
@@ -143,20 +148,82 @@ func copyChannelDetail(ctx context.Context, client *api.Client, detail api.Chann
 	switch {
 	case err == nil:
 		action = "update"
-		if err := client.Patch(ctx, path, payload, &existing, api.WithParam("replace", "1")); err != nil {
+		payload["customizations"] = mergeCustomizations(detail.Customizations, existing.Customizations)
+		if dryRun {
+			action = "dry-run:" + action
+		} else if err := client.Patch(ctx, path, payload, &existing); err != nil {
 			return ChannelCopyItem{}, err
 		}
 	case api.IsNotFound(err):
-		if err := client.Post(ctx, "/channels", payload, &existing); err != nil {
+		if dryRun {
+			action = "dry-run:" + action
+		} else if err := client.Post(ctx, "/channels", payload, &existing); err != nil {
 			return ChannelCopyItem{}, err
 		}
 	default:
 		return ChannelCopyItem{}, err
 	}
+
+	if wasSubmittable && !dryRun && len(sourceFieldIDs) > 0 {
+		if err := enableSubmittable(ctx, client, detail, targetSlug, sourceFieldIDs); err != nil {
+			return ChannelCopyItem{}, err
+		}
+	}
+
 	return ChannelCopyItem{Source: detail.Slug, Target: targetSlug, Action: action}, nil
 }
 
-func ensureCircularPlaceholder(ctx context.Context, client *api.Client, slug string) (bool, error) {
+// enableSubmittable maps source submittable_field_ids to target field IDs by name
+// and enables submittable on the target channel.
+func enableSubmittable(ctx context.Context, client *api.Client, source api.ChannelDetail, targetSlug string, sourceFieldIDs []string) error {
+	// Build source field ID → name mapping
+	sourceIDToName := make(map[string]string, len(source.Customizations))
+	for _, f := range source.Customizations {
+		if f.ID != "" && f.Name != "" {
+			sourceIDToName[f.ID] = f.Name
+		}
+	}
+
+	// Read back target channel to get new field IDs
+	target, err := api.GetChannelDetail(ctx, client, targetSlug)
+	if err != nil {
+		return fmt.Errorf("read back channel %s for submittable setup: %w", targetSlug, err)
+	}
+
+	// Build target field name → ID mapping
+	targetNameToID := make(map[string]string, len(target.Customizations))
+	for _, f := range target.Customizations {
+		if f.ID != "" && f.Name != "" {
+			targetNameToID[f.Name] = f.ID
+		}
+	}
+
+	// Map source submittable_field_ids → target field IDs
+	var mappedIDs []string
+	for _, srcID := range sourceFieldIDs {
+		name := sourceIDToName[srcID]
+		if name == "" {
+			continue
+		}
+		if targetID := targetNameToID[name]; targetID != "" {
+			mappedIDs = append(mappedIDs, targetID)
+		}
+	}
+
+	if len(mappedIDs) == 0 {
+		return nil
+	}
+
+	path := "/channels/" + url.PathEscape(strings.TrimSpace(targetSlug))
+	update := map[string]any{
+		"submittable":           true,
+		"submittable_field_ids": mappedIDs,
+	}
+	var updated api.ChannelDetail
+	return client.Patch(ctx, path, update, &updated)
+}
+
+func ensureCircularPlaceholder(ctx context.Context, client *api.Client, slug string, dryRun bool) (bool, error) {
 	var existing api.ChannelDetail
 	err := client.Get(ctx, "/channels/"+url.PathEscape(slug), &existing)
 	if err == nil {
@@ -164,6 +231,9 @@ func ensureCircularPlaceholder(ctx context.Context, client *api.Client, slug str
 	}
 	if !api.IsNotFound(err) {
 		return false, err
+	}
+	if dryRun {
+		return true, nil
 	}
 	payload := map[string]any{
 		"name": slug,
@@ -179,6 +249,55 @@ func ensureCircularPlaceholder(ctx context.Context, client *api.Client, slug str
 	return true, client.Post(ctx, "/channels", payload, &existing)
 }
 
+// mergeCustomizations builds a customizations payload that preserves target field/option IDs.
+// Source fields are sent without IDs (server matches by name). Target-only fields get _destroy markers.
+func mergeCustomizations(source, target []api.CustomField) []map[string]any {
+	targetByName := make(map[string]api.CustomField, len(target))
+	for _, f := range target {
+		if f.Name != "" {
+			targetByName[f.Name] = f
+		}
+	}
+
+	sourceNames := make(map[string]bool, len(source))
+	items := make([]map[string]any, 0, len(source)+len(target))
+	for _, src := range source {
+		sourceNames[src.Name] = true
+		raw := normalizeField(src)
+		if tgt, ok := targetByName[src.Name]; ok {
+			mergeSelectOptions(raw, src, tgt)
+		}
+		items = append(items, raw)
+	}
+
+	for _, tgt := range target {
+		if !sourceNames[tgt.Name] && tgt.ID != "" {
+			items = append(items, map[string]any{"id": tgt.ID, "_destroy": true})
+		}
+	}
+	return items
+}
+
+// mergeSelectOptions adds _destroy markers for target-only select options.
+func mergeSelectOptions(fieldMap map[string]any, src, tgt api.CustomField) {
+	sourceSlugs := make(map[string]bool, len(src.SelectOptions))
+	for _, opt := range src.SelectOptions {
+		if opt.Slug != "" {
+			sourceSlugs[opt.Slug] = true
+		}
+	}
+
+	options, _ := fieldMap["select_options"].([]any)
+	for _, tgtOpt := range tgt.SelectOptions {
+		if !sourceSlugs[tgtOpt.Slug] && tgtOpt.ID != "" {
+			options = append(options, map[string]any{"id": tgtOpt.ID, "_destroy": true})
+		}
+	}
+	if len(options) > 0 {
+		fieldMap["select_options"] = options
+	}
+}
+
 func channelPayload(detail api.ChannelDetail, targetSlug string) map[string]any {
 	var payload map[string]any
 	data, _ := json.Marshal(detail)
@@ -186,6 +305,8 @@ func channelPayload(detail api.ChannelDetail, targetSlug string) map[string]any 
 	delete(payload, "id")
 	delete(payload, "created_at")
 	delete(payload, "updated_at")
+	delete(payload, "submittable")
+	delete(payload, "submittable_field_ids")
 	payload["slug"] = targetSlug
 	payload["customizations"] = NormalizeCustomizations(detail.Customizations)
 	return payload

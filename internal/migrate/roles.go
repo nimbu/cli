@@ -22,7 +22,7 @@ type RoleCopyResult struct {
 }
 
 // CopyRoles copies customer roles between sites.
-func CopyRoles(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef) (RoleCopyResult, error) {
+func CopyRoles(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, dryRun bool) (RoleCopyResult, error) {
 	result := RoleCopyResult{From: fromRef, To: toRef}
 
 	srcRoles, err := api.List[api.Role](ctx, fromClient, "/roles")
@@ -40,24 +40,38 @@ func CopyRoles(ctx context.Context, fromClient, toClient *api.Client, fromRef, t
 		targetByName[r.Name] = r
 	}
 
-	for _, src := range srcRoles {
-		payload := map[string]any{
-			"name":        src.Name,
-			"description": src.Description,
-		}
-
-		if existing, ok := targetByName[src.Name]; ok {
-			var updated api.Role
-			if err := toClient.Put(ctx, "/roles/"+url.PathEscape(existing.ID), payload, &updated); err != nil {
-				return result, fmt.Errorf("update role %s: %w", src.Name, err)
+	for i, src := range srcRoles {
+		emitStageItem(ctx, "Roles", src.Name, int64(i+1), int64(len(srcRoles)))
+		if _, ok := targetByName[src.Name]; ok {
+			action := "update"
+			if dryRun {
+				action = "dry-run:" + action
+			} else {
+				payload := map[string]any{
+					"name":        src.Name,
+					"description": src.Description,
+				}
+				var updated api.Role
+				if err := toClient.Put(ctx, "/roles/"+url.PathEscape(targetByName[src.Name].ID), payload, &updated); err != nil {
+					return result, fmt.Errorf("update role %s: %w", src.Name, err)
+				}
 			}
-			result.Items = append(result.Items, RoleCopyItem{Name: src.Name, Action: "update"})
+			result.Items = append(result.Items, RoleCopyItem{Name: src.Name, Action: action})
 		} else {
-			var created api.Role
-			if err := toClient.Post(ctx, "/roles", payload, &created); err != nil {
-				return result, fmt.Errorf("create role %s: %w", src.Name, err)
+			action := "create"
+			if dryRun {
+				action = "dry-run:" + action
+			} else {
+				payload := map[string]any{
+					"name":        src.Name,
+					"description": src.Description,
+				}
+				var created api.Role
+				if err := toClient.Post(ctx, "/roles", payload, &created); err != nil {
+					return result, fmt.Errorf("create role %s: %w", src.Name, err)
+				}
 			}
-			result.Items = append(result.Items, RoleCopyItem{Name: src.Name, Action: "create"})
+			result.Items = append(result.Items, RoleCopyItem{Name: src.Name, Action: action})
 		}
 	}
 

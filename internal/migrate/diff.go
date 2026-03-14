@@ -54,23 +54,28 @@ func NormalizeChannel(detail api.ChannelDetail) map[string]any {
 func NormalizeCustomizations(fields []api.CustomField) []map[string]any {
 	items := make([]map[string]any, 0, len(fields))
 	for _, field := range fields {
-		var raw map[string]any
-		data, _ := json.Marshal(field)
-		_ = json.Unmarshal(data, &raw)
-		delete(raw, "id")
-		if options, ok := raw["select_options"].([]any); ok {
-			for _, option := range options {
-				if optionMap, ok := option.(map[string]any); ok {
-					delete(optionMap, "id")
-				}
-			}
-		}
-		items = append(items, raw)
+		items = append(items, normalizeField(field))
 	}
 	sort.SliceStable(items, func(i, j int) bool {
 		return fmt.Sprint(items[i]["name"]) < fmt.Sprint(items[j]["name"])
 	})
 	return items
+}
+
+// normalizeField strips source IDs from a single custom field (and its select options).
+func normalizeField(field api.CustomField) map[string]any {
+	var raw map[string]any
+	data, _ := json.Marshal(field)
+	_ = json.Unmarshal(data, &raw)
+	delete(raw, "id")
+	if options, ok := raw["select_options"].([]any); ok {
+		for _, option := range options {
+			if optionMap, ok := option.(map[string]any); ok {
+				delete(optionMap, "id")
+			}
+		}
+	}
+	return raw
 }
 
 func diffValue(path string, from, to any, out *DiffSet) {

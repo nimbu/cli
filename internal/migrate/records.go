@@ -49,14 +49,27 @@ type RecordCopyResult struct {
 	Warnings []string         `json:"warnings,omitempty"`
 }
 
+// unresolvedRef captures a reference field that couldn't be mapped during copy.
+type unresolvedRef struct {
+	Channel    string // channel being copied
+	Entry      string // human-readable entry identifier
+	TargetID   string // target entry ID (for later patching)
+	Field      string // field name
+	FieldType  string // "belongs_to", "belongs_to_many", "customer"
+	RefChannel string // referenced channel slug
+}
+
 type recordCopier struct {
-	fromClient *api.Client
-	toClient   *api.Client
-	options    RecordCopyOptions
-	result     *RecordCopyResult
-	mapping    map[string]map[string]string
-	queued     map[string]map[string]struct{}
-	channelMap map[string]api.ChannelDetail
+	fromClient     *api.Client
+	toClient       *api.Client
+	options        RecordCopyOptions
+	result         *RecordCopyResult
+	mapping        map[string]map[string]string
+	preMatched     map[string]map[string]string // channel → sourceID → targetID (matched but content differs)
+	queued         map[string]map[string]struct{}
+	channelMap     map[string]api.ChannelDetail
+	deferredRefs   []deferredRef
+	unresolvedRefs []unresolvedRef
 }
 
 type schemaInfo struct {
@@ -74,6 +87,13 @@ type pendingSelfRef struct {
 	channel  string
 	targetID string
 	fields   map[string]any
+}
+
+type deferredRef struct {
+	channel   string
+	targetID  string
+	fields    map[string]any
+	refFields []api.CustomField
 }
 
 var (
@@ -107,6 +127,10 @@ func CopyChannelEntries(ctx context.Context, fromClient, toClient *api.Client, f
 	if err := copier.copyChannel(ctx, fromRef.Channel, toRef.Channel, nil, true); err != nil {
 		return result, err
 	}
+
+	validationWarnings := ValidateEntries(ctx, fromClient, toClient, copier.mapping, channelMap)
+	result.Warnings = append(result.Warnings, validationWarnings...)
+
 	return result, nil
 }
 
@@ -181,6 +205,7 @@ func (c *recordCopier) copyChannel(ctx context.Context, sourceChannel string, ta
 		}
 	}
 
+	c.preMatchEntries(ctx, sourceChannel, targetChannel, records, info)
 	_, warnings, err := c.copyRecords(ctx, sourceChannel, targetChannel, info, records)
 	c.result.Warnings = append(c.result.Warnings, warnings...)
 	return err
@@ -210,6 +235,7 @@ func (c *recordCopier) listRecords(ctx context.Context, sourceChannel string, id
 	if len(params) > 0 {
 		opts = append(opts, api.WithQuery(params))
 	}
+	opts = append(opts, api.WithParam("x-cdn-expires", "600"))
 	path := "/customers"
 	if sourceChannel != "customers" {
 		path = "/channels/" + url.PathEscape(sourceChannel) + "/entries"
@@ -233,11 +259,174 @@ func (c *recordCopier) listRecords(ctx context.Context, sourceChannel string, id
 	return api.List[map[string]any](ctx, c.fromClient, path, opts...)
 }
 
+// preMatchEntries fetches existing target entries and matches them against source
+// records by slug (+ title_field_value fallback). Content-identical matches are
+// added to the mapping and emitted as "skip" items. Content-different matches are
+// stored in preMatched for fast lookup during upsert.
+func (c *recordCopier) preMatchEntries(ctx context.Context, sourceChannel, targetChannel string, sourceRecords []map[string]any, info schemaInfo) {
+	if targetChannel == "customers" {
+		return // customers use email-based matching via findExistingID
+	}
+	path := "/channels/" + url.PathEscape(targetChannel) + "/entries"
+	targetRecords, err := api.List[map[string]any](ctx, c.toClient, path)
+	if err != nil {
+		return // non-fatal: fall back to per-record matching
+	}
+	if len(targetRecords) == 0 {
+		return
+	}
+
+	// Build target indexes: slug → entry, title_field_value → entry
+	bySlug := make(map[string]map[string]any, len(targetRecords))
+	byTitle := make(map[string]map[string]any, len(targetRecords))
+	for _, entry := range targetRecords {
+		if slug := stringValue(entry["slug"]); slug != "" {
+			bySlug[slug] = entry
+		}
+		if tfv := stringValue(entry["title_field_value"]); tfv != "" {
+			byTitle[tfv] = entry
+		}
+	}
+
+	mapped := c.ensureMapping(targetChannel)
+	if c.preMatched == nil {
+		c.preMatched = map[string]map[string]string{}
+	}
+	if c.preMatched[targetChannel] == nil {
+		c.preMatched[targetChannel] = map[string]string{}
+	}
+
+	for _, source := range sourceRecords {
+		sourceID := stringValue(source["id"])
+		if sourceID == "" {
+			continue
+		}
+		if _, ok := mapped[sourceID]; ok {
+			continue // already matched
+		}
+
+		// Match by slug, then title_field_value
+		var target map[string]any
+		if slug := stringValue(source["slug"]); slug != "" {
+			target = bySlug[slug]
+		}
+		if target == nil {
+			if tfv := stringValue(source["title_field_value"]); tfv != "" {
+				target = byTitle[tfv]
+			}
+		}
+		if target == nil {
+			continue
+		}
+
+		targetID := stringValue(target["id"])
+		if targetID == "" {
+			continue
+		}
+
+		if contentEqual(source, target, info) {
+			// Content identical — skip
+			mapped[sourceID] = targetID
+			c.result.Items = append(c.result.Items, RecordCopyItem{
+				Action:     "skip",
+				Identifier: recordIdentifier(source),
+				Resource:   targetChannel,
+				SourceID:   sourceID,
+				TargetID:   targetID,
+			})
+		} else {
+			// Content differs — pre-match for fast upsert
+			c.preMatched[targetChannel][sourceID] = targetID
+		}
+	}
+}
+
+// lookupPreMatched returns a pre-matched target ID for a source record.
+func (c *recordCopier) lookupPreMatched(channel, sourceID string) (string, bool) {
+	if c.preMatched == nil {
+		return "", false
+	}
+	if m, ok := c.preMatched[channel]; ok {
+		if targetID, ok := m[sourceID]; ok {
+			return targetID, true
+		}
+	}
+	return "", false
+}
+
+// contentEqual compares scalar fields between source and target, ignoring
+// system fields, files, galleries, and references (which have different IDs).
+func contentEqual(source, target map[string]any, info schemaInfo) bool {
+	skipCompare := map[string]bool{
+		"id": true, "_id": true, "created_at": true, "updated_at": true,
+		"url": true, "entries_url": true, "short_id": true,
+	}
+	// Skip complex fields (files, galleries) — their IDs differ
+	for _, f := range info.fileFields {
+		skipCompare[f.Name] = true
+	}
+	for _, f := range info.galleryFields {
+		skipCompare[f.Name] = true
+	}
+	for _, f := range info.customerFields {
+		skipCompare[f.Name] = true
+	}
+
+	// Build set of reference field names for targeted comparison.
+	refFields := map[string]bool{}
+	for _, f := range info.referenceFields {
+		refFields[f.Name] = true
+	}
+
+	for key, sourceVal := range source {
+		if skipCompare[key] {
+			continue
+		}
+		// Reference fields: only check if source has data but target is nil/empty.
+		// This detects entries broken by a previous run that sent plain IDs.
+		if refFields[key] {
+			if refFieldEmpty(target[key]) && !refFieldEmpty(sourceVal) {
+				return false
+			}
+			continue
+		}
+		targetVal := target[key]
+		if w := compareScalarField("", key, sourceVal, targetVal); w != "" {
+			return false
+		}
+	}
+	return true
+}
+
+// refFieldEmpty returns true if a reference field value is nil or has no
+// meaningful content. Handles both plain format (string/[]any) and rich format
+// (Reference/Relation objects).
+func refFieldEmpty(v any) bool {
+	if v == nil {
+		return true
+	}
+	switch val := v.(type) {
+	case string:
+		return val == ""
+	case []any:
+		return len(val) == 0
+	case map[string]any:
+		// Relation wrapper: check objects array
+		if objs, ok := val["objects"].([]any); ok {
+			return len(objs) == 0
+		}
+		// Reference object: check id
+		return stringValue(val["id"]) == ""
+	}
+	return false
+}
+
 func (c *recordCopier) copyRecords(ctx context.Context, sourceChannel string, targetChannel string, info schemaInfo, records []map[string]any) (map[string]string, []string, error) {
 	mapped := c.ensureMapping(targetChannel)
 	var warnings []string
 	var pending []pendingSelfRef
-	for _, record := range records {
+	for i, record := range records {
+		emitStageItem(ctx, "Channel Entries", recordIdentifier(record), int64(i+1), int64(len(records)))
 		sourceID := stringValue(record["id"])
 		if sourceID != "" {
 			if _, ok := mapped[sourceID]; ok {
@@ -245,20 +434,26 @@ func (c *recordCopier) copyRecords(ctx context.Context, sourceChannel string, ta
 			}
 		}
 		payload := deepCopyMap(record)
+		identifier := recordIdentifier(payload)
 		stripSystemFields(payload)
 		if err := c.prepareAttachments(ctx, payload, info); err != nil {
 			return mapped, warnings, err
 		}
 		flattenSelectFields(payload, info)
-		c.remapReferences(payload, info)
+		deferredFields := c.extractDeferredRefs(payload, info)
+		selfFields := extractSelfRefs(payload, info.selfRefs)
+		c.remapReferences(payload, info, identifier)
 		if c.options.Media != nil {
 			c.options.Media.RewriteValue(info.resource, payload)
 		}
-		selfFields := extractSelfRefs(payload, info.selfRefs)
-		targetID, action, err := c.upsertRecord(ctx, targetChannel, payload)
+		targetID, action, err := c.upsertRecord(ctx, targetChannel, sourceID, payload)
 		if err != nil {
-			if c.options.AllowErrors && isRecoverableRecordError(err) {
-				warnings = append(warnings, fmt.Sprintf("%s: %v", info.resource, err))
+			if isRecoverableRecordError(err) {
+				warnings = append(warnings, fmt.Sprintf("%s %s: %v", info.resource, identifier, err))
+				continue
+			}
+			if c.options.AllowErrors {
+				warnings = append(warnings, fmt.Sprintf("%s %s: %v", info.resource, identifier, err))
 				continue
 			}
 			return mapped, warnings, err
@@ -267,6 +462,14 @@ func (c *recordCopier) copyRecords(ctx context.Context, sourceChannel string, ta
 			mapped[sourceID] = targetID
 		}
 		pending = append(pending, pendingSelfRef{channel: targetChannel, targetID: targetID, fields: selfFields})
+		if len(deferredFields) > 0 && targetID != "" {
+			c.deferredRefs = append(c.deferredRefs, deferredRef{
+				channel:   targetChannel,
+				targetID:  targetID,
+				fields:    deferredFields,
+				refFields: info.referenceFields,
+			})
+		}
 		c.result.Items = append(c.result.Items, RecordCopyItem{
 			Action:     action,
 			Identifier: recordIdentifier(payload),
@@ -281,7 +484,11 @@ func (c *recordCopier) copyRecords(ctx context.Context, sourceChannel string, ta
 		}
 		c.remapPendingSelfRefs(item.fields, info.selfRefs)
 		if err := c.updateRecord(ctx, item.channel, item.targetID, item.fields); err != nil {
-			if c.options.AllowErrors && isRecoverableRecordError(err) {
+			if isRecoverableRecordError(err) {
+				warnings = append(warnings, fmt.Sprintf("%s self-ref update %s: %v", item.channel, item.targetID, err))
+				continue
+			}
+			if c.options.AllowErrors {
 				warnings = append(warnings, fmt.Sprintf("%s self-ref update %s: %v", item.channel, item.targetID, err))
 				continue
 			}
@@ -291,10 +498,20 @@ func (c *recordCopier) copyRecords(ctx context.Context, sourceChannel string, ta
 	return mapped, warnings, nil
 }
 
-func (c *recordCopier) upsertRecord(ctx context.Context, targetChannel string, payload map[string]any) (string, string, error) {
-	existingID, err := c.findExistingID(ctx, targetChannel, payload)
-	if err != nil {
-		return "", "", err
+func (c *recordCopier) upsertRecord(ctx context.Context, targetChannel string, sourceID string, payload map[string]any) (string, string, error) {
+	// Check pre-matched entries first (avoids per-record API query)
+	existingID := ""
+	if sourceID != "" {
+		if id, ok := c.lookupPreMatched(targetChannel, sourceID); ok {
+			existingID = id
+		}
+	}
+	if existingID == "" {
+		var err error
+		existingID, err = c.findExistingID(ctx, targetChannel, payload)
+		if err != nil {
+			return "", "", err
+		}
 	}
 	if c.options.DryRun {
 		action := "create"
@@ -395,8 +612,13 @@ func (c *recordCopier) findExistingID(ctx context.Context, targetChannel string,
 
 func (c *recordCopier) prepareAttachments(ctx context.Context, payload map[string]any, info schemaInfo) error {
 	for _, field := range info.fileFields {
-		file, ok := payload[field.Name].(map[string]any)
+		raw := payload[field.Name]
+		if raw == nil {
+			continue
+		}
+		file, ok := raw.(map[string]any)
 		if !ok {
+			emitWarning(ctx, fmt.Sprintf("%s.%s: unexpected file format %T, skipping attachment", info.resource, field.Name, raw))
 			continue
 		}
 		if err := c.embedFile(ctx, file); err != nil {
@@ -404,10 +626,16 @@ func (c *recordCopier) prepareAttachments(ctx context.Context, payload map[strin
 		}
 	}
 	for _, field := range info.galleryFields {
-		gallery, ok := payload[field.Name].(map[string]any)
-		if !ok {
+		raw := payload[field.Name]
+		if raw == nil {
 			continue
 		}
+		gallery, ok := raw.(map[string]any)
+		if !ok {
+			emitWarning(ctx, fmt.Sprintf("%s.%s: unexpected gallery format %T, skipping", info.resource, field.Name, raw))
+			continue
+		}
+		gallery["__type"] = "Gallery"
 		images, ok := gallery["images"].([]any)
 		if !ok {
 			continue
@@ -417,6 +645,7 @@ func (c *recordCopier) prepareAttachments(ctx context.Context, payload map[strin
 			if !ok {
 				continue
 			}
+			image["__type"] = "GalleryImage"
 			delete(image, "id")
 			file, ok := image["file"].(map[string]any)
 			if !ok {
@@ -451,12 +680,13 @@ func embedFileFromClient(ctx context.Context, client *api.Client, file map[strin
 		return err
 	}
 	file["attachment"] = base64.StdEncoding.EncodeToString(data)
+	file["__type"] = "File"
 	delete(file, "url")
 	delete(file, "public_url")
 	return nil
 }
 
-func (c *recordCopier) remapReferences(payload map[string]any, info schemaInfo) {
+func (c *recordCopier) remapReferences(payload map[string]any, info schemaInfo, identifier string) {
 	for _, field := range info.referenceFields {
 		value := payload[field.Name]
 		if value == nil {
@@ -464,30 +694,37 @@ func (c *recordCopier) remapReferences(payload map[string]any, info schemaInfo) 
 		}
 		switch field.Type {
 		case "belongs_to", "customer":
-			if ref, ok := value.(map[string]any); ok {
-				if targetID, ok := c.lookupMappedID(referenceClass(field), stringValue(ref["id"])); ok {
-					ref["id"] = targetID
-					delete(ref, "slug")
-				}
+			sourceID := refSourceID(value)
+			if sourceID == "" {
+				continue
+			}
+			if targetID, ok := c.lookupMappedID(referenceClass(field), sourceID); ok {
+				payload[field.Name] = targetID
+			} else {
+				delete(payload, field.Name)
+				c.trackUnresolved(info.resource, identifier, "", field, sourceID)
 			}
 		case "belongs_to_many":
-			collection, ok := value.(map[string]any)
-			if !ok {
+			sourceIDs := refSourceIDs(value)
+			if len(sourceIDs) == 0 {
 				continue
 			}
-			objects, ok := collection["objects"].([]any)
-			if !ok {
-				continue
+			var kept []string
+			var unresolved bool
+			for _, sid := range sourceIDs {
+				if targetID, ok := c.lookupMappedID(referenceClass(field), sid); ok {
+					kept = append(kept, targetID)
+				} else if sid != "" {
+					unresolved = true
+				}
 			}
-			for _, rawObject := range objects {
-				ref, ok := rawObject.(map[string]any)
-				if !ok {
-					continue
-				}
-				if targetID, ok := c.lookupMappedID(referenceClass(field), stringValue(ref["id"])); ok {
-					ref["id"] = targetID
-					delete(ref, "slug")
-				}
+			if len(kept) > 0 {
+				payload[field.Name] = kept
+			} else {
+				delete(payload, field.Name)
+			}
+			if unresolved {
+				c.trackUnresolved(info.resource, identifier, "", field, "")
 			}
 		}
 	}
@@ -500,35 +737,195 @@ func (c *recordCopier) remapReferences(payload map[string]any, info schemaInfo) 
 	}
 }
 
+// refSourceID extracts the source ID from a belongs_to value.
+// Handles plain string ID (API default) and rich Reference object (client-version 2).
+func refSourceID(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case map[string]any:
+		return stringValue(v["id"])
+	}
+	return ""
+}
+
+// refSourceIDs extracts source IDs from a belongs_to_many value.
+// Handles plain []string/[]any (API default) and rich Relation object (client-version 2).
+func refSourceIDs(value any) []string {
+	switch v := value.(type) {
+	case []any:
+		ids := make([]string, 0, len(v))
+		for _, item := range v {
+			switch it := item.(type) {
+			case string:
+				ids = append(ids, it)
+			case map[string]any:
+				if id := stringValue(it["id"]); id != "" {
+					ids = append(ids, id)
+				}
+			}
+		}
+		return ids
+	case map[string]any:
+		// Relation wrapper: {__type: "Relation", objects: [...]}
+		if objs, ok := v["objects"].([]any); ok {
+			return refSourceIDs(objs)
+		}
+	}
+	return nil
+}
+
+func (c *recordCopier) trackUnresolved(channel, identifier, targetID string, field api.CustomField, sourceRefID string) {
+	c.unresolvedRefs = append(c.unresolvedRefs, unresolvedRef{
+		Channel:    channel,
+		Entry:      identifier,
+		TargetID:   targetID,
+		Field:      field.Name,
+		FieldType:  field.Type,
+		RefChannel: referenceClass(field),
+	})
+}
+
+// UnresolvedWarnings formats unresolved references as human-readable warnings.
+func (c *recordCopier) UnresolvedWarnings() []string {
+	if len(c.unresolvedRefs) == 0 {
+		return nil
+	}
+	var warnings []string
+	for _, ref := range c.unresolvedRefs {
+		w := fmt.Sprintf("channel=%s entry=%s field=%s: unresolved %s reference to %s",
+			ref.Channel, ref.Entry, ref.Field, ref.FieldType, ref.RefChannel)
+		if ref.TargetID != "" {
+			w += fmt.Sprintf(" (targetID=%s)", ref.TargetID)
+		}
+		warnings = append(warnings, w)
+	}
+	return warnings
+}
+
 func (c *recordCopier) remapPendingSelfRefs(payload map[string]any, selfRefs []api.CustomField) {
 	for _, field := range selfRefs {
 		value := payload[field.Name]
 		if value == nil {
 			continue
 		}
-		if ref, ok := value.(map[string]any); ok {
-			if targetID, ok := c.lookupMappedID(referenceClass(field), stringValue(ref["id"])); ok {
-				ref["id"] = targetID
-				delete(ref, "slug")
-			}
-			continue
-		}
-		collection, ok := value.(map[string]any)
-		if !ok {
-			continue
-		}
-		objects, ok := collection["objects"].([]any)
-		if !ok {
-			continue
-		}
-		for _, rawObject := range objects {
-			ref, ok := rawObject.(map[string]any)
-			if !ok {
+		switch field.Type {
+		case "belongs_to", "customer":
+			sourceID := refSourceID(value)
+			if sourceID == "" {
 				continue
 			}
-			if targetID, ok := c.lookupMappedID(referenceClass(field), stringValue(ref["id"])); ok {
-				ref["id"] = targetID
-				delete(ref, "slug")
+			if targetID, ok := c.lookupMappedID(referenceClass(field), sourceID); ok {
+				payload[field.Name] = targetID
+			} else {
+				delete(payload, field.Name)
+			}
+		case "belongs_to_many":
+			sourceIDs := refSourceIDs(value)
+			if len(sourceIDs) == 0 {
+				continue
+			}
+			var kept []string
+			for _, sid := range sourceIDs {
+				if targetID, ok := c.lookupMappedID(referenceClass(field), sid); ok {
+					kept = append(kept, targetID)
+				}
+			}
+			if len(kept) > 0 {
+				payload[field.Name] = kept
+			} else {
+				delete(payload, field.Name)
+			}
+		}
+	}
+}
+
+// extractDeferredRefs removes reference fields pointing to channels not yet in the mapping.
+// These will be resolved after all channels are copied.
+func (c *recordCopier) extractDeferredRefs(payload map[string]any, info schemaInfo) map[string]any {
+	deferred := map[string]any{}
+	for _, field := range info.referenceFields {
+		refChannel := referenceClass(field)
+		if refChannel == info.resource || refChannel == "customers" {
+			continue
+		}
+		if _, hasMappings := c.mapping[refChannel]; hasMappings {
+			continue
+		}
+		if v, ok := payload[field.Name]; ok && v != nil {
+			deferred[field.Name] = v
+			delete(payload, field.Name)
+		}
+	}
+	return deferred
+}
+
+// resolveDeferredRefs remaps and updates all deferred cross-channel references.
+func (c *recordCopier) resolveDeferredRefs(ctx context.Context) ([]string, error) {
+	var warnings []string
+	for _, d := range c.deferredRefs {
+		if d.targetID == "" || len(d.fields) == 0 {
+			continue
+		}
+		c.remapDeferredFields(d.channel, d.targetID, d.fields, d.refFields)
+		if len(d.fields) == 0 {
+			continue // all fields were unresolved and removed
+		}
+		if err := c.updateRecord(ctx, d.channel, d.targetID, d.fields); err != nil {
+			if isRecoverableRecordError(err) {
+				warnings = append(warnings, fmt.Sprintf("%s deferred-ref update %s: %v", d.channel, d.targetID, err))
+				continue
+			}
+			if c.options.AllowErrors {
+				warnings = append(warnings, fmt.Sprintf("%s deferred-ref update %s: %v", d.channel, d.targetID, err))
+				continue
+			}
+			return warnings, err
+		}
+	}
+	return warnings, nil
+}
+
+// remapDeferredFields remaps reference IDs in a deferred payload using the now-complete mapping.
+func (c *recordCopier) remapDeferredFields(channel, targetID string, payload map[string]any, refFields []api.CustomField) {
+	for _, field := range refFields {
+		value := payload[field.Name]
+		if value == nil {
+			continue
+		}
+		switch field.Type {
+		case "belongs_to", "customer":
+			sourceID := refSourceID(value)
+			if sourceID == "" {
+				continue
+			}
+			if mappedID, ok := c.lookupMappedID(referenceClass(field), sourceID); ok {
+				payload[field.Name] = mappedID
+			} else {
+				delete(payload, field.Name)
+				c.trackUnresolved(channel, targetID, targetID, field, sourceID)
+			}
+		case "belongs_to_many":
+			sourceIDs := refSourceIDs(value)
+			if len(sourceIDs) == 0 {
+				continue
+			}
+			var kept []string
+			var unresolved bool
+			for _, sid := range sourceIDs {
+				if mappedID, ok := c.lookupMappedID(referenceClass(field), sid); ok {
+					kept = append(kept, mappedID)
+				} else if sid != "" {
+					unresolved = true
+				}
+			}
+			if len(kept) > 0 {
+				payload[field.Name] = kept
+			} else {
+				delete(payload, field.Name)
+			}
+			if unresolved {
+				c.trackUnresolved(channel, targetID, targetID, field, "")
 			}
 		}
 	}
@@ -856,6 +1253,19 @@ func contains(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// countActions counts synced (create/update) and skipped items.
+func countActions(items []RecordCopyItem) (synced, skipped int) {
+	for _, item := range items {
+		switch item.Action {
+		case "skip":
+			skipped++
+		case "create", "update":
+			synced++
+		}
+	}
+	return synced, skipped
 }
 
 func max(a, b int) int {

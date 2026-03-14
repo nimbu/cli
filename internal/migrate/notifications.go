@@ -25,13 +25,14 @@ type NotificationCopyResult struct {
 }
 
 // CopyNotifications copies notification templates between sites.
-func CopyNotifications(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, query string, media *MediaRewritePlan) (NotificationCopyResult, error) {
+func CopyNotifications(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, query string, media *MediaRewritePlan, dryRun bool) (NotificationCopyResult, error) {
 	notifications, err := listNotifications(ctx, fromClient, query)
 	if err != nil {
 		return NotificationCopyResult{From: fromRef, To: toRef, Query: query}, err
 	}
 	result := NotificationCopyResult{From: fromRef, To: toRef, Query: query}
-	for _, n := range notifications {
+	for i, n := range notifications {
+		emitStageItem(ctx, "Notifications", n.Slug, int64(i+1), int64(len(notifications)))
 		slug := n.Slug
 		if slug == "" {
 			continue
@@ -59,15 +60,21 @@ func CopyNotifications(ctx context.Context, fromClient, toClient *api.Client, fr
 		err := toClient.Get(ctx, path, &existing)
 		switch {
 		case err == nil:
-			if err := toClient.Put(ctx, path, payload, &existing); err != nil {
+			action := "update"
+			if dryRun {
+				action = "dry-run:" + action
+			} else if err := toClient.Put(ctx, path, payload, &existing); err != nil {
 				return result, fmt.Errorf("update notification %s: %w", slug, err)
 			}
-			result.Items = append(result.Items, NotificationCopyItem{Slug: slug, Name: n.Name, Action: "update"})
+			result.Items = append(result.Items, NotificationCopyItem{Slug: slug, Name: n.Name, Action: action})
 		case api.IsNotFound(err):
-			if err := toClient.Post(ctx, "/notifications", payload, &existing); err != nil {
+			action := "create"
+			if dryRun {
+				action = "dry-run:" + action
+			} else if err := toClient.Post(ctx, "/notifications", payload, &existing); err != nil {
 				return result, fmt.Errorf("create notification %s: %w", slug, err)
 			}
-			result.Items = append(result.Items, NotificationCopyItem{Slug: slug, Name: n.Name, Action: "create"})
+			result.Items = append(result.Items, NotificationCopyItem{Slug: slug, Name: n.Name, Action: action})
 		default:
 			return result, err
 		}

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/nimbu/cli/internal/migrate"
 	"github.com/nimbu/cli/internal/output"
@@ -37,11 +38,19 @@ func (c *CollectionsCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	ctx, tl := copyWithTimeline(ctx, "Collections", fromRef.Site, toRef.Site, false)
+	if tl != nil {
+		defer tl.Close()
+	}
 	result, err := migrate.CopyCollections(ctx, fromClient, toClient, fromRef, toRef, migrate.CollectionCopyOptions{
 		AllowErrors: c.AllowErrors,
 	})
 	if err != nil {
-		return err
+		return finishCopyTimelineError(tl, err)
+	}
+	finishCopyTimeline(tl, "Collections", fmt.Sprintf("%d synced", len(result.Items)))
+	if tl != nil {
+		return nil
 	}
 	mode := output.FromContext(ctx)
 	if mode.JSON {

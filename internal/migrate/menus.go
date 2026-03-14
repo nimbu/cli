@@ -24,14 +24,15 @@ type MenuCopyResult struct {
 }
 
 // CopyMenus copies nested menu documents. When overwriteExisting is false, existing menus are skipped.
-func CopyMenus(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, query string, overwriteExisting bool, media *MediaRewritePlan) (MenuCopyResult, error) {
+func CopyMenus(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, query string, overwriteExisting bool, media *MediaRewritePlan, dryRun bool) (MenuCopyResult, error) {
 	menus, err := listMenuDocuments(ctx, fromClient, query)
 	if err != nil {
 		return MenuCopyResult{From: fromRef, To: toRef, Query: query}, err
 	}
 	result := MenuCopyResult{From: fromRef, To: toRef, Query: query}
-	for _, menu := range menus {
+	for i, menu := range menus {
 		slug := api.MenuDocumentSlug(menu)
+		emitStageItem(ctx, "Menus", slug, int64(i+1), int64(len(menus)))
 		if slug == "" {
 			continue
 		}
@@ -46,15 +47,21 @@ func CopyMenus(ctx context.Context, fromClient, toClient *api.Client, fromRef, t
 			if !overwriteExisting {
 				return result, fmt.Errorf("menu %s already exists; rerun with --force to overwrite", slug)
 			}
-			if _, err := api.PatchMenuDocument(ctx, toClient, slug, menu); err != nil {
+			action := "update"
+			if dryRun {
+				action = "dry-run:" + action
+			} else if _, err := api.PatchMenuDocument(ctx, toClient, slug, menu); err != nil {
 				return result, fmt.Errorf("update menu %s: %w", slug, err)
 			}
-			result.Items = append(result.Items, MenuCopyItem{Slug: slug, Action: "update"})
+			result.Items = append(result.Items, MenuCopyItem{Slug: slug, Action: action})
 		case api.IsNotFound(err):
-			if err := toClient.Post(ctx, "/menus", menu, &existing); err != nil {
+			action := "create"
+			if dryRun {
+				action = "dry-run:" + action
+			} else if err := toClient.Post(ctx, "/menus", menu, &existing); err != nil {
 				return result, fmt.Errorf("create menu %s: %w", slug, err)
 			}
-			result.Items = append(result.Items, MenuCopyItem{Slug: slug, Action: "create"})
+			result.Items = append(result.Items, MenuCopyItem{Slug: slug, Action: action})
 		default:
 			return result, err
 		}

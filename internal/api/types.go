@@ -657,7 +657,7 @@ type JobRunResult struct {
 // Translation represents a translation entry.
 type Translation struct {
 	Key    string            `json:"key"`
-	Value  string            `json:"value"`
+	Value  string            `json:"value,omitempty"`
 	Locale string            `json:"locale,omitempty"`
 	Values map[string]string `json:"values,omitempty"`
 }

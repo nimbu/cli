@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/themes"
@@ -11,6 +12,7 @@ import (
 type SiteCopyOptions struct {
 	AllowErrors   bool
 	CopyCustomers bool
+	DryRun        bool
 	Include       []string
 	Only          []string
 	Recursive     bool
@@ -22,6 +24,7 @@ type SiteCopyOptions struct {
 type SiteCopyResult struct {
 	From           SiteRef                 `json:"from"`
 	To             SiteRef                 `json:"to"`
+	DryRun         bool                    `json:"dry_run,omitempty"`
 	Uploads        UploadCopyResult        `json:"uploads"`
 	Channels       ChannelCopyResult       `json:"channels"`
 	ChannelEntries []RecordCopyResult      `json:"channel_entries,omitempty"`
@@ -42,67 +45,90 @@ type SiteCopyResult struct {
 
 // CopySite orchestrates a broad site migration.
 func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, opts SiteCopyOptions) (SiteCopyResult, error) {
-	result := SiteCopyResult{From: fromRef, To: toRef}
+	result := SiteCopyResult{From: fromRef, To: toRef, DryRun: opts.DryRun}
 
-	channelsResult, err := CopyAllChannels(ctx, fromClient, toClient, fromRef, toRef)
+	emitStageStart(ctx, "Channels")
+	channelsResult, err := CopyAllChannels(ctx, fromClient, toClient, fromRef, toRef, opts.DryRun)
 	if err != nil {
 		return result, err
 	}
 	result.Channels = channelsResult
+	emitStageDone(ctx, "Channels", fmt.Sprintf("%d synced", len(channelsResult.Items)))
 
-	uploadsResult, media, err := CopyUploads(ctx, fromClient, toClient, fromRef, toRef)
+	emitStageStart(ctx, "Uploads")
+	uploadsResult, media, err := CopyUploads(ctx, fromClient, toClient, fromRef, toRef, opts.DryRun)
 	if err != nil {
 		return result, err
 	}
 	result.Uploads = uploadsResult
 	result.Warnings = append(result.Warnings, uploadsResult.Warnings...)
+	emitStageDone(ctx, "Uploads", fmt.Sprintf("%d files", len(uploadsResult.Items)))
+	for _, w := range uploadsResult.Warnings {
+		emitWarning(ctx, w)
+	}
 
 	recordOpts := RecordCopyOptions{
 		AllowErrors:    opts.AllowErrors,
 		CopyCustomers:  opts.CopyCustomers,
+		DryRun:         opts.DryRun,
 		Media:          media,
 		Only:           opts.Only,
 		PasswordLength: 12,
 		Recursive:      opts.Recursive,
 		Upsert:         opts.Upsert,
 	}
-	for _, channel := range opts.Include {
-		recordResult, err := CopyChannelEntries(ctx, fromClient, toClient, ChannelRef{SiteRef: fromRef, Channel: channel}, ChannelRef{SiteRef: toRef, Channel: channel}, recordOpts)
+	emitStageStart(ctx, "Channel Entries")
+	if len(opts.Include) == 0 {
+		emitStageSkip(ctx, "Channel Entries", "no channels specified")
+	} else {
+		entryResults, err := CopySiteEntries(ctx, fromClient, toClient, fromRef, toRef, opts.Include, recordOpts)
 		if err != nil {
 			return result, err
 		}
-		result.ChannelEntries = append(result.ChannelEntries, recordResult)
+		result.ChannelEntries = entryResults
+		emitStageDone(ctx, "Channel Entries", fmt.Sprintf("%d channels", len(entryResults)))
 	}
 
-	customerConfig, err := CopyCustomizations(ctx, CustomizationService{Kind: CustomizationCustomers}, fromClient, toClient, fromRef, toRef)
+	emitStageStart(ctx, "Customer Config")
+	customerConfig, err := CopyCustomizations(ctx, CustomizationService{Kind: CustomizationCustomers}, fromClient, toClient, fromRef, toRef, opts.DryRun)
 	if err != nil {
 		return result, err
 	}
 	result.CustomerConfig = customerConfig
+	emitStageDone(ctx, "Customer Config", fmt.Sprintf("%d fields", customerConfig.FieldCount))
 
-	productConfig, err := CopyCustomizations(ctx, CustomizationService{Kind: CustomizationProducts}, fromClient, toClient, fromRef, toRef)
+	emitStageStart(ctx, "Product Config")
+	productConfig, err := CopyCustomizations(ctx, CustomizationService{Kind: CustomizationProducts}, fromClient, toClient, fromRef, toRef, opts.DryRun)
 	if err != nil {
 		return result, err
 	}
 	result.ProductConfig = productConfig
+	emitStageDone(ctx, "Product Config", fmt.Sprintf("%d fields", productConfig.FieldCount))
 
-	rolesResult, err := CopyRoles(ctx, fromClient, toClient, fromRef, toRef)
+	emitStageStart(ctx, "Roles")
+	rolesResult, err := CopyRoles(ctx, fromClient, toClient, fromRef, toRef, opts.DryRun)
 	if err != nil {
 		return result, err
 	}
 	result.Roles = rolesResult
+	emitStageDone(ctx, "Roles", fmt.Sprintf("%d synced", len(rolesResult.Items)))
 
+	emitStageStart(ctx, "Products")
 	productsResult, productMapping, err := CopyProducts(ctx, fromClient, toClient, fromRef, toRef, ProductCopyOptions{
 		AllowErrors: opts.AllowErrors,
+		DryRun:      opts.DryRun,
 		Media:       media,
 	})
 	if err != nil {
 		return result, err
 	}
 	result.Products = productsResult
+	emitStageDone(ctx, "Products", fmt.Sprintf("%d synced", len(productsResult.Items)))
 
+	emitStageStart(ctx, "Collections")
 	collectionsResult, err := CopyCollections(ctx, fromClient, toClient, fromRef, toRef, CollectionCopyOptions{
 		AllowErrors:    opts.AllowErrors,
+		DryRun:         opts.DryRun,
 		Media:          media,
 		ProductMapping: productMapping,
 	})
@@ -110,73 +136,98 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 		return result, err
 	}
 	result.Collections = collectionsResult
+	emitStageDone(ctx, "Collections", fmt.Sprintf("%d synced", len(collectionsResult.Items)))
 
-	sourceTheme, err := activeThemeName(ctx, fromClient)
+	emitStageStart(ctx, "Theme")
+	sourceTheme, err := activeThemeID(ctx, fromClient)
 	if err != nil {
-		return result, err
+		msg := fmt.Sprintf("resolve source theme: %v", err)
+		result.Warnings = append(result.Warnings, msg)
+		emitStageSkip(ctx, "Theme", msg)
+	} else if targetTheme, err := activeThemeID(ctx, toClient); err != nil {
+		msg := fmt.Sprintf("resolve target theme: %v", err)
+		result.Warnings = append(result.Warnings, msg)
+		emitStageSkip(ctx, "Theme", msg)
+	} else if themeResult, err := themes.RunCopy(ctx, fromClient, themes.CopyRef{BaseURL: fromRef.BaseURL, Site: fromRef.Site, Theme: sourceTheme}, toClient, themes.CopyRef{BaseURL: toRef.BaseURL, Site: toRef.Site, Theme: targetTheme}, themes.CopyOptions{DryRun: opts.DryRun, Force: opts.Force}); err != nil {
+		msg := fmt.Sprintf("%v", err)
+		result.Warnings = append(result.Warnings, msg)
+		emitStageSkip(ctx, "Theme", msg)
+	} else {
+		result.Theme = themeResult
+		emitStageDone(ctx, "Theme", fmt.Sprintf("%d assets", len(themeResult.Items)))
 	}
-	targetTheme, err := activeThemeName(ctx, toClient)
-	if err != nil {
-		return result, err
-	}
-	themeResult, err := themes.RunCopy(ctx, fromClient, themes.CopyRef{BaseURL: fromRef.BaseURL, Site: fromRef.Site, Theme: sourceTheme}, toClient, themes.CopyRef{BaseURL: toRef.BaseURL, Site: toRef.Site, Theme: targetTheme}, themes.CopyOptions{Force: opts.Force})
-	if err != nil {
-		return result, err
-	}
-	result.Theme = themeResult
 
-	pagesResult, err := CopyPages(ctx, fromClient, toClient, fromRef, toRef, "*", media)
+	emitStageStart(ctx, "Pages")
+	pagesResult, err := CopyPages(ctx, fromClient, toClient, fromRef, toRef, "*", media, opts.DryRun)
 	if err != nil {
 		return result, err
 	}
 	result.Pages = pagesResult
+	emitStageDone(ctx, "Pages", fmt.Sprintf("%d synced", len(pagesResult.Items)))
+	for _, w := range pagesResult.Warnings {
+		emitWarning(ctx, w)
+	}
+	result.Warnings = append(result.Warnings, pagesResult.Warnings...)
 
-	menusResult, err := CopyMenus(ctx, fromClient, toClient, fromRef, toRef, "*", opts.Force, media)
+	emitStageStart(ctx, "Menus")
+	menusResult, err := CopyMenus(ctx, fromClient, toClient, fromRef, toRef, "*", opts.Force, media, opts.DryRun)
 	if err != nil {
 		return result, err
 	}
 	result.Menus = menusResult
+	emitStageDone(ctx, "Menus", fmt.Sprintf("%d synced", len(menusResult.Items)))
 
-	blogsResult, err := CopyBlogs(ctx, fromClient, toClient, fromRef, toRef, "*", media)
+	emitStageStart(ctx, "Blogs")
+	blogsResult, err := CopyBlogs(ctx, fromClient, toClient, fromRef, toRef, "*", media, opts.DryRun)
 	if err != nil {
 		return result, err
 	}
 	result.Blogs = blogsResult
+	emitStageDone(ctx, "Blogs", fmt.Sprintf("%d synced", len(blogsResult.Items)))
 
-	notificationsResult, err := CopyNotifications(ctx, fromClient, toClient, fromRef, toRef, "*", media)
+	emitStageStart(ctx, "Notifications")
+	notificationsResult, err := CopyNotifications(ctx, fromClient, toClient, fromRef, toRef, "*", media, opts.DryRun)
 	if err != nil {
 		return result, err
 	}
 	result.Notifications = notificationsResult
+	emitStageDone(ctx, "Notifications", fmt.Sprintf("%d synced", len(notificationsResult.Items)))
 
-	redirectsResult, err := CopyRedirects(ctx, fromClient, toClient, fromRef, toRef)
+	emitStageStart(ctx, "Redirects")
+	redirectsResult, err := CopyRedirects(ctx, fromClient, toClient, fromRef, toRef, opts.DryRun)
 	if err != nil {
 		return result, err
 	}
 	result.Redirects = redirectsResult
+	emitStageDone(ctx, "Redirects", fmt.Sprintf("%d synced", len(redirectsResult.Items)))
 
-	translationsResult, err := CopyTranslations(ctx, fromClient, toClient, fromRef, toRef, TranslationCopyOptions{Query: "*", Media: media})
+	emitStageStart(ctx, "Translations")
+	translationsResult, err := CopyTranslations(ctx, fromClient, toClient, fromRef, toRef, TranslationCopyOptions{DryRun: opts.DryRun, Query: "*", Media: media})
 	if err != nil {
 		return result, err
 	}
 	result.Translations = translationsResult
+	emitStageDone(ctx, "Translations", fmt.Sprintf("%d synced", len(translationsResult.Items)))
+	for _, w := range media.Warnings() {
+		emitWarning(ctx, w)
+	}
 	result.Warnings = append(result.Warnings, media.Warnings()...)
 
 	return result, nil
 }
 
-func activeThemeName(ctx context.Context, client *api.Client) (string, error) {
+func activeThemeID(ctx context.Context, client *api.Client) (string, error) {
 	items, err := api.List[api.Theme](ctx, client, "/themes")
 	if err != nil {
 		return "", err
 	}
 	for _, item := range items {
-		if item.Active && item.Name != "" {
-			return item.Name, nil
+		if item.Active && item.ID != "" {
+			return item.ID, nil
 		}
 	}
-	if len(items) > 0 && items[0].Name != "" {
-		return items[0].Name, nil
+	if len(items) > 0 && items[0].ID != "" {
+		return items[0].ID, nil
 	}
-	return "default-theme", nil
+	return "", fmt.Errorf("no themes found")
 }

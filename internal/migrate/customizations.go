@@ -69,22 +69,27 @@ func (s CustomizationService) Write(ctx context.Context, client *api.Client, fie
 }
 
 // CopyCustomizations copies one schema between sites.
-func CopyCustomizations(ctx context.Context, service CustomizationService, fromClient, toClient *api.Client, fromRef, toRef SiteRef) (CustomizationCopyResult, error) {
+func CopyCustomizations(ctx context.Context, service CustomizationService, fromClient, toClient *api.Client, fromRef, toRef SiteRef, dryRun bool) (CustomizationCopyResult, error) {
 	fields, err := service.Load(ctx, fromClient)
 	if err != nil {
 		return CustomizationCopyResult{Kind: service.Kind, From: fromRef, To: toRef}, err
+	}
+	for i, field := range fields {
+		emitStageItem(ctx, "Customizations", field.Name, int64(i+1), int64(len(fields)))
 	}
 	target, err := service.Load(ctx, toClient)
 	if err != nil && !api.IsNotFound(err) {
 		return CustomizationCopyResult{Kind: service.Kind, From: fromRef, To: toRef}, err
 	}
 	replace := len(target) > 0
-	if err := service.Write(ctx, toClient, fields, replace); err != nil {
-		return CustomizationCopyResult{Kind: service.Kind, From: fromRef, To: toRef}, err
-	}
 	action := "create"
 	if replace {
 		action = "replace"
+	}
+	if dryRun {
+		action = "dry-run:" + action
+	} else if err := service.Write(ctx, toClient, fields, replace); err != nil {
+		return CustomizationCopyResult{Kind: service.Kind, From: fromRef, To: toRef}, err
 	}
 	return CustomizationCopyResult{
 		Kind:       service.Kind,

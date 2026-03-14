@@ -105,9 +105,12 @@ func TestDownloadPageAssets(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	count, err := DownloadPageAssets(context.Background(), New(srv.URL, ""), doc, dir)
+	count, warnings, err := DownloadPageAssets(context.Background(), New(srv.URL, ""), doc, dir)
 	if err != nil {
 		t.Fatalf("download assets: %v", err)
+	}
+	if len(warnings) > 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
 	}
 	if count != 1 {
 		t.Fatalf("expected 1 download, got %d", count)
@@ -179,9 +182,12 @@ func TestDownloadPageAssetsKeepsDistinctAttachmentPaths(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	count, err := DownloadPageAssets(context.Background(), New(srv.URL, ""), doc, dir)
+	count, warnings, err := DownloadPageAssets(context.Background(), New(srv.URL, ""), doc, dir)
 	if err != nil {
 		t.Fatalf("download assets: %v", err)
+	}
+	if len(warnings) > 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
 	}
 	if count != 3 {
 		t.Fatalf("expected 3 downloads, got %d", count)
@@ -254,9 +260,15 @@ func TestDownloadPageAssetsRemovesPartialFileOnCopyError(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	_, err := DownloadPageAssets(context.Background(), client, doc, dir)
-	if err == nil {
-		t.Fatal("expected download error")
+	count, warnings, err := DownloadPageAssets(context.Background(), client, doc, dir)
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 downloads, got %d", count)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d: %v", len(warnings), warnings)
 	}
 	entries, readErr := os.ReadDir(dir)
 	if readErr != nil {

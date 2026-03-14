@@ -36,8 +36,12 @@ func (c *PagesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get page: %w", err)
 	}
 	if c.DownloadAssets != "" {
-		if _, err := api.DownloadPageAssets(ctx, client, page, c.DownloadAssets); err != nil {
+		_, warnings, err := api.DownloadPageAssets(ctx, client, page, c.DownloadAssets)
+		if err != nil {
 			return fmt.Errorf("download page assets: %w", err)
+		}
+		for _, w := range warnings {
+			_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Err, "warning: %s\n", w)
 		}
 	}
 

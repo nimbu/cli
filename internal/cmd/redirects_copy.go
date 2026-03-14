@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/nimbu/cli/internal/migrate"
 	"github.com/nimbu/cli/internal/output"
@@ -36,21 +37,31 @@ func (c *RedirectsCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	result, err := migrate.CopyRedirects(ctx, fromClient, toClient, fromRef, toRef)
-	if err != nil {
-		return err
+	ctx, tl := copyWithTimeline(ctx, "Redirects", fromRef.Site, toRef.Site, false)
+	if tl != nil {
+		defer tl.Close()
 	}
+	result, err := migrate.CopyRedirects(ctx, fromClient, toClient, fromRef, toRef, false)
+	if err != nil {
+		return finishCopyTimelineError(tl, err)
+	}
+	finishCopyTimeline(tl, "Redirects", fmt.Sprintf("%d synced", len(result.Items)))
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, result)
 	}
-	for _, item := range result.Items {
-		if mode.Plain {
+	if mode.Plain {
+		for _, item := range result.Items {
 			if err := printLine(ctx, "%s\t%s\n", item.Action, item.Source); err != nil {
 				return err
 			}
-			continue
 		}
+		return nil
+	}
+	if tl != nil {
+		return nil
+	}
+	for _, item := range result.Items {
 		if err := printLine(ctx, "%s %s\n", item.Action, item.Source); err != nil {
 			return err
 		}

@@ -90,16 +90,24 @@ func runCustomizationCopy(ctx context.Context, flags *RootFlags, service migrate
 			return fmt.Errorf("aborted")
 		}
 	}
-	result, err := migrate.CopyCustomizations(ctx, service, fromClient, toClient, fromRef, toRef)
-	if err != nil {
-		return err
+	ctx, tl := copyWithTimeline(ctx, "Customizations", fromRef.Site, toRef.Site, false)
+	if tl != nil {
+		defer tl.Close()
 	}
+	result, err := migrate.CopyCustomizations(ctx, service, fromClient, toClient, fromRef, toRef, false)
+	if err != nil {
+		return finishCopyTimelineError(tl, err)
+	}
+	finishCopyTimeline(tl, "Customizations", fmt.Sprintf("%s %d fields", result.Action, result.FieldCount))
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, result)
 	}
 	if mode.Plain {
 		return printLine(ctx, "%s\t%s\t%d\n", result.Action, result.Kind, result.FieldCount)
+	}
+	if tl != nil {
+		return nil
 	}
 	return printLine(ctx, "%s %s customizations (%d fields)\n", result.Action, result.Kind, result.FieldCount)
 }

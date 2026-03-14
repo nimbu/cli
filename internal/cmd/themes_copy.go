@@ -42,13 +42,18 @@ func (c *ThemeCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
+	ctx, tl := copyWithTimeline(ctx, "Theme", fromRef.Site, toRef.Site, false)
+	if tl != nil {
+		defer tl.Close()
+	}
 	result, err := themes.RunCopy(ctx, fromClient, fromRef, toClient, toRef, themes.CopyOptions{
 		Force:      flags != nil && flags.Force,
 		LiquidOnly: c.LiquidOnly,
 	})
 	if err != nil {
-		return err
+		return finishCopyTimelineError(tl, err)
 	}
+	finishCopyTimeline(tl, "Theme", fmt.Sprintf("%d assets", len(result.Items)))
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
@@ -58,6 +63,9 @@ func (c *ThemeCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		for _, item := range result.Items {
 			fmt.Println(item.DisplayPath)
 		}
+		return nil
+	}
+	if tl != nil {
 		return nil
 	}
 	for _, item := range result.Items {

@@ -30,6 +30,46 @@ func TestCustomFieldUnmarshalPreservesExtra(t *testing.T) {
 	}
 }
 
+func TestCustomFieldMarshalRoundTrip(t *testing.T) {
+	input := `{
+		"id":"f1",
+		"name":"status",
+		"label":"Status",
+		"type":"select",
+		"required":true,
+		"position":3,
+		"default_value":"draft"
+	}`
+	var field CustomField
+	if err := json.Unmarshal([]byte(input), &field); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if field.Type != "select" {
+		t.Fatalf("expected type=select, got %q", field.Type)
+	}
+	if field.Extra["position"] != float64(3) {
+		t.Fatalf("expected Extra[position]=3, got %v", field.Extra["position"])
+	}
+
+	data, err := json.Marshal(field)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("re-unmarshal: %v", err)
+	}
+	if raw["type"] != "select" {
+		t.Fatalf("round-trip lost type: %v", raw["type"])
+	}
+	if raw["position"] != float64(3) {
+		t.Fatalf("round-trip lost Extra position: %v", raw["position"])
+	}
+	if raw["default_value"] != "draft" {
+		t.Fatalf("round-trip lost Extra default_value: %v", raw["default_value"])
+	}
+}
+
 func TestBuildChannelDependencyGraph(t *testing.T) {
 	channels := []ChannelDetail{
 		{

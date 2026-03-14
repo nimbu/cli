@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/nimbu/cli/internal/migrate"
 	"github.com/nimbu/cli/internal/output"
@@ -42,6 +43,10 @@ func (c *CustomersCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	ctx, tl := copyWithTimeline(ctx, "Customers", fromRef.Site, toRef.Site, false)
+	if tl != nil {
+		defer tl.Close()
+	}
 	result, err := migrate.CopyCustomers(ctx, fromClient, toClient, fromRef, toRef, migrate.RecordCopyOptions{
 		AllowErrors:    c.AllowErrors,
 		PasswordLength: c.PasswordLength,
@@ -51,19 +56,30 @@ func (c *CustomersCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		Where:          c.Where,
 	})
 	if err != nil {
-		return err
+		return finishCopyTimelineError(tl, err)
 	}
+	finishCopyTimeline(tl, "Customers", fmt.Sprintf("%d synced", len(result.Items)))
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, result)
 	}
-	for _, item := range result.Items {
-		if mode.Plain {
+	if mode.Plain {
+		for _, item := range result.Items {
 			if err := printLine(ctx, "%s\t%s\t%s\t%s\n", item.Action, item.Resource, item.Identifier, item.TargetID); err != nil {
 				return err
 			}
-			continue
 		}
+		for _, warning := range result.Warnings {
+			if err := printLine(ctx, "warning: %s\n", warning); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if tl != nil {
+		return nil
+	}
+	for _, item := range result.Items {
 		if err := printLine(ctx, "%s %s\n", item.Action, item.Identifier); err != nil {
 			return err
 		}

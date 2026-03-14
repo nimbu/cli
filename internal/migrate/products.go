@@ -25,6 +25,7 @@ type ProductCopyResult struct {
 // ProductCopyOptions controls product copy behavior.
 type ProductCopyOptions struct {
 	AllowErrors bool
+	DryRun      bool
 	Media       *MediaRewritePlan
 	Upsert      string
 }
@@ -56,7 +57,8 @@ func CopyProducts(ctx context.Context, fromClient, toClient *api.Client, fromRef
 		}
 	}
 
-	for _, src := range srcProducts {
+	for i, src := range srcProducts {
+		emitStageItem(ctx, "Products", stringValue(src["slug"]), int64(i+1), int64(len(srcProducts)))
 		sourceID := stringValue(src["id"])
 		slug := stringValue(src["slug"])
 		name := stringValue(src["name"])
@@ -81,30 +83,40 @@ func CopyProducts(ctx context.Context, fromClient, toClient *api.Client, fromRef
 
 		if existing, ok := targetBySlug[slug]; ok {
 			targetID := stringValue(existing["id"])
-			path := "/products/" + url.PathEscape(targetID)
-			if err := toClient.Put(ctx, path, payload, nil); err != nil {
-				if opts.AllowErrors {
-					continue
+			action := "update"
+			if opts.DryRun {
+				action = "dry-run:" + action
+			} else {
+				path := "/products/" + url.PathEscape(targetID)
+				if err := toClient.Put(ctx, path, payload, nil); err != nil {
+					if opts.AllowErrors {
+						continue
+					}
+					return result, idMapping, fmt.Errorf("update product %s: %w", slug, err)
 				}
-				return result, idMapping, fmt.Errorf("update product %s: %w", slug, err)
 			}
 			if sourceID != "" && targetID != "" {
 				idMapping[sourceID] = targetID
 			}
-			result.Items = append(result.Items, ProductCopyItem{Slug: slug, Name: name, Action: "update"})
+			result.Items = append(result.Items, ProductCopyItem{Slug: slug, Name: name, Action: action})
 		} else {
-			var created map[string]any
-			if err := toClient.Post(ctx, "/products", payload, &created); err != nil {
-				if opts.AllowErrors {
-					continue
+			action := "create"
+			if opts.DryRun {
+				action = "dry-run:" + action
+			} else {
+				var created map[string]any
+				if err := toClient.Post(ctx, "/products", payload, &created); err != nil {
+					if opts.AllowErrors {
+						continue
+					}
+					return result, idMapping, fmt.Errorf("create product %s: %w", slug, err)
 				}
-				return result, idMapping, fmt.Errorf("create product %s: %w", slug, err)
+				targetID := stringValue(created["id"])
+				if sourceID != "" && targetID != "" {
+					idMapping[sourceID] = targetID
+				}
 			}
-			targetID := stringValue(created["id"])
-			if sourceID != "" && targetID != "" {
-				idMapping[sourceID] = targetID
-			}
-			result.Items = append(result.Items, ProductCopyItem{Slug: slug, Name: name, Action: "create"})
+			result.Items = append(result.Items, ProductCopyItem{Slug: slug, Name: name, Action: action})
 		}
 	}
 
