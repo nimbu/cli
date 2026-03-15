@@ -260,7 +260,7 @@ func emitInitResult(ctx context.Context, result initResult) error {
 	case mode.Plain:
 		return output.Plain(ctx, result.Path, result.Site, result.Theme, result.Source)
 	default:
-		_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Out, "Initialized %s for site %s and theme %s\n", result.Path, result.Site, result.Theme)
+		_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Out, "Initialized %s\n\n  cd %s\n\n", result.Path, filepath.Base(result.Path))
 		return nil
 	}
 }

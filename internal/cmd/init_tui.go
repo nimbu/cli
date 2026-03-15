@@ -34,6 +34,7 @@ const (
 	initTeaPhaseLoading initTeaPhase = "loading"
 	initTeaPhasePrompt  initTeaPhase = "prompt"
 	initTeaPhaseApply   initTeaPhase = "apply"
+	initTeaPhaseDone    initTeaPhase = "done"
 )
 
 type initTeaStep string
@@ -144,7 +145,8 @@ func (c *InitCmd) runInteractiveTTY(ctx context.Context, flags *RootFlags) error
 	if model.err != nil {
 		return model.err
 	}
-	return emitInitResult(ctx, model.result)
+	_, _ = fmt.Fprintf(writer.Err, "\n  cd %s\n\n", filepath.Base(model.result.Path))
+	return nil
 }
 
 func newInitTeaModel(ctx context.Context, cmd *InitCmd, flags *RootFlags) *initTeaModel {
@@ -309,6 +311,7 @@ func (m *initTeaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case initTeaBootstrapDoneMsg:
 		m.result = typed.result
+		m.phase = initTeaPhaseDone
 		return m, tea.Quit
 	case initTeaErrMsg:
 		m.err = typed.err
@@ -383,22 +386,44 @@ func (m *initTeaModel) handleConfirmKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *initTeaModel) isFilterableStep() bool {
+	return m.step == initTeaStepSite || m.step == initTeaStepTheme || m.step == initTeaStepRepeatables
+}
+
 func (m *initTeaModel) handleListKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filterable := m.isFilterableStep()
+
 	switch key.String() {
 	case "ctrl+c", "esc":
 		m.err = fmt.Errorf("init cancelled")
 		return m, tea.Quit
-	case "up", "k":
+	case "up":
 		m.moveCursor(-1)
-	case "down", "j":
+		return m, nil
+	case "down":
 		m.moveCursor(1)
+		return m, nil
+	case "k":
+		if !filterable {
+			m.moveCursor(-1)
+			return m, nil
+		}
+	case "j":
+		if !filterable {
+			m.moveCursor(1)
+			return m, nil
+		}
 	case " ":
 		if m.isMultiSelectStep() {
 			m.toggleCurrentOption()
+			return m, nil
 		}
 	case "enter":
 		return m.confirmCurrentSelection()
-	default:
+	}
+
+	// Delegate remaining keys to filter input
+	if filterable {
 		var cmd tea.Cmd
 		m.filterInput, cmd = m.filterInput.Update(key)
 		m.clampCursor()

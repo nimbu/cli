@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/bootstrap"
 	"github.com/nimbu/cli/internal/config"
@@ -495,6 +497,90 @@ func TestInitTeaViewUsesConfiguredBannerTheme(t *testing.T) {
 	}
 	if !strings.Contains(rainbowView, "\x1b[") {
 		t.Fatalf("expected themed banner to use ANSI colors, got:\n%s", rainbowView)
+	}
+}
+
+func TestInitTeaFilterableStepPassesJKToFilterInput(t *testing.T) {
+	model := newInitTeaTestModel(initPromptModel{
+		Sites: []initSiteChoice{
+			{Label: "Zorgpoort (zorgpoort)"},
+			{Label: "Zenjoy (zenjoy)"},
+		},
+	})
+	model.width = 84
+	model.height = 24
+	model.phase = initTeaPhasePrompt
+	model.step = initTeaStepSite
+
+	// Typing "j" should go to filter, not move cursor
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	model = updated.(*initTeaModel)
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	model = updated.(*initTeaModel)
+
+	if got := model.filterInput.Value(); got != "jk" {
+		t.Fatalf("expected filter to contain %q, got %q", "jk", got)
+	}
+	if model.cursor != 0 {
+		t.Fatalf("expected cursor to stay at 0, got %d", model.cursor)
+	}
+
+	// Arrow down should still navigate (clear filter first so both options are visible)
+	model.filterInput.SetValue("")
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(*initTeaModel)
+
+	if model.cursor != 1 {
+		t.Fatalf("expected cursor at 1 after arrow down, got %d", model.cursor)
+	}
+}
+
+func TestInitTeaNonFilterableStepUsesJKForNavigation(t *testing.T) {
+	// RepeatableMode has 3 hardcoded options (none/all/select) via allOptions()
+	model := newInitTeaTestModel(initPromptModel{})
+	model.width = 84
+	model.height = 24
+	model.phase = initTeaPhasePrompt
+	model.step = initTeaStepRepeatableMode
+
+	// "j" should move cursor down in non-filterable step
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	model = updated.(*initTeaModel)
+
+	if model.cursor != 1 {
+		t.Fatalf("expected cursor at 1 after j, got %d", model.cursor)
+	}
+
+	// "k" should move cursor back up
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	model = updated.(*initTeaModel)
+
+	if model.cursor != 0 {
+		t.Fatalf("expected cursor at 0 after k, got %d", model.cursor)
+	}
+}
+
+func TestInitTeaDonePhaseShowsFooter(t *testing.T) {
+	model := newInitTeaTestModel(initPromptModel{})
+	model.width = 84
+	model.height = 24
+	model.phase = initTeaPhaseDone
+	model.transcript = []initTranscriptEntry{
+		{Label: "Template", Value: "Starterskit"},
+		{Label: "Site", Value: "Zenjoy (zenjoy)"},
+		{Label: "Directory", Value: "theme-zenjoy"},
+	}
+
+	view := model.View()
+
+	for _, needle := range []string{"Done!", "Your project is ready."} {
+		if !strings.Contains(view, needle) {
+			t.Fatalf("expected done footer containing %q, got:\n%s", needle, view)
+		}
+	}
+	if strings.Contains(view, "Creating project") {
+		t.Fatalf("done phase should not show loading spinner, got:\n%s", view)
 	}
 }
 

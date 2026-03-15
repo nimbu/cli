@@ -99,6 +99,11 @@ func renderInitTeaTimeline(model *initTeaModel, width int) string {
 		entries = append(entries, renderTimelineEntry(model, initTimelineActive, activeLines)...)
 	}
 
+	if model.phase == initTeaPhaseDone {
+		entries = append(entries, renderTimelineConnector(model))
+		entries = append(entries, renderInitTeaDoneFooter(model))
+	}
+
 	for len(entries) > 0 && entries[len(entries)-1] == renderTimelineConnector(model) {
 		entries = entries[:len(entries)-1]
 	}
@@ -168,6 +173,18 @@ func activeTimelineLines(model *initTeaModel, width int) []string {
 	default:
 		return nil
 	}
+}
+
+func renderInitTeaDoneFooter(model *initTeaModel) string {
+	corner := "└"
+	label := "Done!"
+	text := "Your project is ready."
+	if model.useColor {
+		corner = initTeaDimStyle(model).Render(corner)
+		label = initTeaStyle(model).Bold(true).Foreground(lipgloss.Color("#22c55e")).Render(label)
+		text = initTeaDimStyle(model).Render(text)
+	}
+	return corner + " " + label + "  " + text
 }
 
 func promptTimelineLines(model *initTeaModel, width int) []string {
