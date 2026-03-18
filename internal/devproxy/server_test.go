@@ -40,8 +40,41 @@ func TestLoggingMiddlewareDisablesANSIForEventsJSON(t *testing.T) {
 	if strings.Contains(output, "\x1b[") {
 		t.Fatalf("expected plain request log, got ANSI: %q", output)
 	}
+	if strings.HasPrefix(output, "\n") {
+		t.Fatalf("did not expect spacer line for events-json output, got: %q", output)
+	}
 	if !strings.Contains(output, "GET /ons-werk (200)") {
 		t.Fatalf("unexpected request log output: %q", output)
+	}
+}
+
+func TestLoggingMiddlewarePrintsSingleSpacerBeforeFirstRequest(t *testing.T) {
+	server := &Server{config: Config{UseColor: false}}
+	handler := server.loggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+
+	output := captureStdout(t, func() {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://example.com/first", nil))
+
+		rec = httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://example.com/second", nil))
+	})
+
+	lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected spacer plus two request logs, got %d lines: %q", len(lines), output)
+	}
+	if lines[0] != "" {
+		t.Fatalf("expected first line to be blank spacer, got: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "GET /first (200)") {
+		t.Fatalf("unexpected first request log: %q", lines[1])
+	}
+	if !strings.Contains(lines[2], "GET /second (200)") {
+		t.Fatalf("unexpected second request log: %q", lines[2])
 	}
 }
 
