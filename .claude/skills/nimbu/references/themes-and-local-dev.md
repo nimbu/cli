@@ -37,20 +37,34 @@ sync:
 | `nimbu themes sync` | Yes     | Only with `--prune` | Git-changed + generated |
 | `nimbu themes pull` | N/A     | N/A            | Downloads all remote    |
 
-Without `--all`, push and sync use **git-based change detection**: `git diff --name-status HEAD` plus `git ls-files --others --exclude-standard`. Files matching `sync.generated` patterns are always included (default: `javascripts/**`, `stylesheets/**`, `snippets/webpack_*.liquid`). If the project is not a git repo or has no HEAD commit, all files are uploaded.
+By default, push and sync use **git-based change detection**: `git diff --name-status HEAD` plus `git ls-files --others --exclude-standard`. Files matching `sync.generated` patterns are always included (default: `javascripts/**`, `stylesheets/**`, `snippets/webpack_*.liquid`). If the project is not a git repo or has no HEAD commit, all files are uploaded.
+
+**Selection flags bypass git detection.** When `--only` or any category filter (`--liquid-only`, `--css-only`, etc.) is used without `--since`, the CLI pushes all matching files regardless of git status. This means `nimbu themes push --only templates/page.liquid` always pushes that file, even if it has no uncommitted changes.
+
+The `--since` flag changes the git comparison ref. When combined with a category filter, it intersects: `--css-only --since origin/main` pushes only CSS files changed since origin/main.
+
+| Flags | Scope | Behavior |
+|-------|-------|----------|
+| *(none)* | git diff HEAD | Push uncommitted changes |
+| `--since <ref>` | git diff REF | Push changes since ref (e.g. committed but not pushed) |
+| `--all` | all files | Push everything |
+| `--only <path>` | all files | Push specific files (bypasses git) |
+| `--css-only` | all files | Push all CSS files (bypasses git) |
+| `--css-only --since <ref>` | git diff REF | Push CSS files changed since ref |
 
 ### Key flags (push and sync)
 
 - `--all` -- upload every managed local file, ignore git status
 - `--build` -- run `sync.build.command` before collecting files
 - `--dry-run` -- print planned operations without executing
-- `--only <path>` -- restrict to specific project-relative files (repeatable); path must be inside a managed root
+- `--since <ref>` -- compare against this git ref instead of HEAD (e.g. `origin/main`); useful for pushing committed-but-not-pushed changes
+- `--only <path>` -- push specific project-relative files (repeatable); bypasses git change detection; path must be inside a managed root. Note: `--since` is ignored when `--only` is set
 - `--theme <id>` -- override theme from `nimbu.yml`
 - `--force` -- skip confirmation prompts (from global `--force`)
 
 ### Filter flags (push, sync, pull, copy)
 
-Category filters restrict operations to subsets of resources. Multiple filters combine (OR logic across asset categories):
+Category filters restrict operations to subsets of resources. Multiple filters combine (OR logic across asset categories). **On push/sync, category filters bypass git detection** and push all matching files unless `--since` is also set, in which case they filter the git diff results.
 
 - `--liquid-only` -- layouts, templates, snippets only (no assets)
 - `--css-only` -- assets matching `*.css, *.scss, *.sass, *.less`
