@@ -559,15 +559,15 @@ func proxyHint(proxyURL string, primaryURL string) string {
 	proxy := parseServerEndpoint(proxyURL)
 	if !proxy.ok {
 		if display := displayServerURL(proxyURL); display != "" {
-			return "proxy -> " + display
+			return "-> " + display
 		}
 		return ""
 	}
 	primary := parseServerEndpoint(primaryURL)
 	if !primary.ok || sameDisplayHost(proxy, primary) {
-		return "proxy -> :" + proxy.port
+		return "-> :" + proxy.port
 	}
-	return "proxy -> " + displayServerURL(proxyURL)
+	return "-> " + displayServerURL(proxyURL)
 }
 
 func siteHostFromAPI(baseURL string, subdomain string) string {

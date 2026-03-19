@@ -33,14 +33,14 @@ func TestServerPresenterPrintSummary(t *testing.T) {
 		"nimbu",
 		"+",
 		"██╗",
-		"dev server: http://localhost:3456 (proxy -> :4568)",
+		"dev server: http://localhost:3456 (-> :4568)",
 		"live site: https://demo.nimbu.io",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected %q in output, got: %s", want, got)
 		}
 	}
-	if !strings.Contains(got, "\ndev server: http://localhost:3456 (proxy -> :4568)\n live site: https://demo.nimbu.io\n") {
+	if !strings.Contains(got, "\ndev server: http://localhost:3456 (-> :4568)\n live site: https://demo.nimbu.io\n") {
 		t.Fatalf("expected outlined two-line summary, got: %s", got)
 	}
 	for _, unwanted := range []string{"Ready", "api.nimbu.io", "yarn dev:server", "SiteDisplay"} {
@@ -67,7 +67,7 @@ func TestServerPresenterPrintSummaryShowsNonDefaultAPI(t *testing.T) {
 	})
 
 	got := buf.String()
-	for _, want := range []string{"dev server: http://localhost:3456 (proxy -> :4568)", "live site: https://demo.nimbu.be", "API", "staging-api.nimbu.io"} {
+	for _, want := range []string{"dev server: http://localhost:3456 (-> :4568)", "live site: https://demo.nimbu.be", "API", "staging-api.nimbu.io"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected %q in output, got: %s", want, got)
 		}
@@ -87,7 +87,7 @@ func TestServerPresenterPrintSummaryShowsHostForNonLocalPorts(t *testing.T) {
 	})
 
 	got := buf.String()
-	for _, want := range []string{"dev server: http://10.0.0.12:3456 (proxy -> :4568)", "live site: https://demo.nimbu.io"} {
+	for _, want := range []string{"dev server: http://10.0.0.12:3456 (-> :4568)", "live site: https://demo.nimbu.io"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected %q in output, got: %s", want, got)
 		}
@@ -107,7 +107,7 @@ func TestServerPresenterPrintSummaryShowsFullProxyHintWhenHostsDiffer(t *testing
 	})
 
 	got := buf.String()
-	for _, want := range []string{"dev server: http://10.0.0.12:3456 (proxy -> http://localhost:4568)", "live site: https://demo.nimbu.io"} {
+	for _, want := range []string{"dev server: http://10.0.0.12:3456 (-> http://localhost:4568)", "live site: https://demo.nimbu.io"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected %q in mixed-host output, got: %s", want, got)
 		}
@@ -150,7 +150,7 @@ func TestServerPresenterPrintSummaryShowsShortcutHint(t *testing.T) {
 	presenter.PrintSummary(summary)
 
 	got := buf.String()
-	if !strings.Contains(got, "dev server: http://localhost:3456 (proxy -> :4568 -> demo)") {
+	if !strings.Contains(got, "dev server: http://localhost:3456 (-> :4568 -> demo)") {
 		t.Fatalf("expected compact dev/proxy/site line, got: %s", got)
 	}
 	if strings.Contains(got, "live site:") {
@@ -176,13 +176,13 @@ func TestServerPresenterPrintSummaryKeepsLiveSiteForCustomHost(t *testing.T) {
 	presenter.PrintSummary(summary)
 
 	got := buf.String()
-	if !strings.Contains(got, "dev server: http://localhost:3456 (proxy -> :4568)") {
+	if !strings.Contains(got, "dev server: http://localhost:3456 (-> :4568)") {
 		t.Fatalf("expected compact dev/proxy line, got: %s", got)
 	}
 	if !strings.Contains(got, "live site: https://preview.custom.example.com") {
 		t.Fatalf("expected separate live site line, got: %s", got)
 	}
-	if strings.Contains(got, "proxy -> :4568 -> preview") {
+	if strings.Contains(got, "-> :4568 -> preview") {
 		t.Fatalf("did not expect inline custom host label, got: %s", got)
 	}
 }
