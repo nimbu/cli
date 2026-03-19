@@ -258,6 +258,7 @@ func (c *Channel) UnmarshalJSON(data []byte) error {
 type Theme struct {
 	ID           string    `json:"id"`
 	Name         string    `json:"name"`
+	Short        string    `json:"short,omitempty"`
 	CDNBasePath  string    `json:"cdn_base_path,omitempty"`
 	CDNHost      string    `json:"cdn_host,omitempty"`
 	CDNRoot      string    `json:"cdn_root,omitempty"`

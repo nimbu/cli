@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -100,7 +101,9 @@ func renderInitTeaTimeline(model *initTeaModel, width int) string {
 	}
 
 	if model.phase == initTeaPhaseDone {
-		entries = append(entries, renderTimelineConnector(model))
+		// Footer maintains frame height so Bubble Tea's inline renderer doesn't
+		// swallow the last transcript entry. The footer itself gets swallowed on
+		// quit, so runInteractiveTTY reprints it after the program exits.
 		entries = append(entries, renderInitTeaDoneFooter(model))
 	}
 
@@ -178,13 +181,41 @@ func activeTimelineLines(model *initTeaModel, width int) []string {
 func renderInitTeaDoneFooter(model *initTeaModel) string {
 	corner := "└"
 	label := "Done!"
-	text := "Your project is ready."
+	dirname := filepath.Base(model.result.Path)
+	hint := "To start working, run:"
+	command := "cd " + dirname
+	if install := detectInstallCommand(model.result.Path); install != "" {
+		command += " && " + install
+	}
+
 	if model.useColor {
 		corner = initTeaDimStyle(model).Render(corner)
 		label = initTeaStyle(model).Bold(true).Foreground(lipgloss.Color("#22c55e")).Render(label)
-		text = initTeaDimStyle(model).Render(text)
+		hint = initTeaDimStyle(model).Render(hint)
+		command = initTeaBrightText(model, command)
 	}
-	return corner + " " + label + "  " + text
+	return corner + " " + label + " " + hint + " " + command
+}
+
+func detectInstallCommand(projectPath string) string {
+	if _, err := os.Stat(filepath.Join(projectPath, "package.json")); err != nil {
+		return ""
+	}
+	switch {
+	case fileExists(filepath.Join(projectPath, "pnpm-lock.yaml")):
+		return "pnpm install"
+	case fileExists(filepath.Join(projectPath, "yarn.lock")):
+		return "yarn"
+	case fileExists(filepath.Join(projectPath, "bun.lockb")) || fileExists(filepath.Join(projectPath, "bun.lock")):
+		return "bun install"
+	default:
+		return "npm install"
+	}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func promptTimelineLines(model *initTeaModel, width int) []string {

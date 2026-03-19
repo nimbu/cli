@@ -260,7 +260,12 @@ func emitInitResult(ctx context.Context, result initResult) error {
 	case mode.Plain:
 		return output.Plain(ctx, result.Path, result.Site, result.Theme, result.Source)
 	default:
-		_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Out, "Initialized %s\n\n  cd %s\n\n", result.Path, filepath.Base(result.Path))
+		dirname := filepath.Base(result.Path)
+		command := "cd " + dirname
+		if install := detectInstallCommand(result.Path); install != "" {
+			command += " && " + install
+		}
+		_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Out, "Done! To start working, run: %s\n", command)
 		return nil
 	}
 }
@@ -501,7 +506,9 @@ func initThemeChoices(themes []api.Theme) []initThemeChoice {
 		if label == "" {
 			label = theme.ID
 		}
-		if theme.ID != "" {
+		if theme.Short != "" {
+			label += " (" + theme.Short + ")"
+		} else if theme.ID != "" {
 			label += " (" + theme.ID + ")"
 		}
 		out = append(out, initThemeChoice{Label: label, Theme: theme})

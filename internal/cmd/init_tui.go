@@ -145,7 +145,8 @@ func (c *InitCmd) runInteractiveTTY(ctx context.Context, flags *RootFlags) error
 	if model.err != nil {
 		return model.err
 	}
-	_, _ = fmt.Fprintf(writer.Err, "\n  cd %s\n\n", filepath.Base(model.result.Path))
+	footer := renderInitTeaDoneFooter(model)
+	_, _ = fmt.Fprintf(writer.Err, "%s\n", footer)
 	return nil
 }
 

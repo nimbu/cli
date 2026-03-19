@@ -566,19 +566,23 @@ func TestInitTeaDonePhaseShowsFooter(t *testing.T) {
 	model.width = 84
 	model.height = 24
 	model.phase = initTeaPhaseDone
+	model.result = initResult{Path: "/tmp/theme-zenjoy"}
 	model.transcript = []initTranscriptEntry{
 		{Label: "Template", Value: "Starterskit"},
 		{Label: "Site", Value: "Zenjoy (zenjoy)"},
 		{Label: "Directory", Value: "theme-zenjoy"},
 	}
 
-	view := model.View()
-
-	for _, needle := range []string{"Done!", "Your project is ready."} {
-		if !strings.Contains(view, needle) {
-			t.Fatalf("expected done footer containing %q, got:\n%s", needle, view)
+	// Footer is rendered outside the TUI (in runInteractiveTTY) to guarantee
+	// visibility after Bubble Tea exits. Verify it renders correctly.
+	footer := renderInitTeaDoneFooter(model)
+	for _, needle := range []string{"Done!", "To start working, run:", "cd theme-zenjoy"} {
+		if !strings.Contains(footer, needle) {
+			t.Fatalf("expected done footer containing %q, got:\n%s", needle, footer)
 		}
 	}
+
+	view := model.View()
 	if strings.Contains(view, "Creating project") {
 		t.Fatalf("done phase should not show loading spinner, got:\n%s", view)
 	}
