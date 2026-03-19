@@ -134,6 +134,81 @@ func TestServerPresenterPrintSummaryShowsChildForExceptionalSetup(t *testing.T) 
 	}
 }
 
+func TestServerPresenterPrintSummaryShowsShortcutHint(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := output.WithMode(context.Background(), output.Mode{})
+	ctx = output.WithWriter(ctx, &output.Writer{Out: &buf, Err: &buf, Color: "never"})
+
+	presenter := newServerPresenter(ctx, false)
+	summary := serverSummary{
+		ProxyURL:  "http://127.0.0.1:4568",
+		ReadyURL:  "http://127.0.0.1:3456",
+		SiteHost:  "demo.nimbu.io",
+		SiteLabel: "demo",
+	}
+	summary.Shortcuts = serverShortcutLinksFromSummary(summary)
+	presenter.PrintSummary(summary)
+
+	got := buf.String()
+	if !strings.Contains(got, "dev server: http://localhost:3456 (proxy -> :4568 -> demo)") {
+		t.Fatalf("expected compact dev/proxy/site line, got: %s", got)
+	}
+	if strings.Contains(got, "live site:") {
+		t.Fatalf("did not expect separate live site line, got: %s", got)
+	}
+	if !strings.Contains(got, "[o] open dev  [l] open live  [b] open admin") {
+		t.Fatalf("expected shortcut hint in output, got: %s", got)
+	}
+}
+
+func TestServerPresenterPrintSummaryKeepsLiveSiteForCustomHost(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := output.WithMode(context.Background(), output.Mode{})
+	ctx = output.WithWriter(ctx, &output.Writer{Out: &buf, Err: &buf, Color: "never"})
+
+	presenter := newServerPresenter(ctx, false)
+	summary := serverSummary{
+		ProxyURL: "http://127.0.0.1:4568",
+		ReadyURL: "http://127.0.0.1:3456",
+		SiteHost: "preview.custom.example.com",
+	}
+	summary.Shortcuts = serverShortcutLinksFromSummary(summary)
+	presenter.PrintSummary(summary)
+
+	got := buf.String()
+	if !strings.Contains(got, "dev server: http://localhost:3456 (proxy -> :4568)") {
+		t.Fatalf("expected compact dev/proxy line, got: %s", got)
+	}
+	if !strings.Contains(got, "live site: https://preview.custom.example.com") {
+		t.Fatalf("expected separate live site line, got: %s", got)
+	}
+	if strings.Contains(got, "proxy -> :4568 -> preview") {
+		t.Fatalf("did not expect inline custom host label, got: %s", got)
+	}
+}
+
+func TestServerPresenterPrintSummaryHidesDevShortcutWithoutReadyURL(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := output.WithMode(context.Background(), output.Mode{})
+	ctx = output.WithWriter(ctx, &output.Writer{Out: &buf, Err: &buf, Color: "never"})
+
+	presenter := newServerPresenter(ctx, false)
+	summary := serverSummary{
+		ProxyURL: "http://127.0.0.1:4568",
+		SiteHost: "demo.nimbu.io",
+	}
+	summary.Shortcuts = serverShortcutLinksFromSummary(summary)
+	presenter.PrintSummary(summary)
+
+	got := buf.String()
+	if strings.Contains(got, "[o] open dev") {
+		t.Fatalf("did not expect dev shortcut in output, got: %s", got)
+	}
+	if !strings.Contains(got, "[l] open live  [b] open admin") {
+		t.Fatalf("expected live/admin shortcuts in output, got: %s", got)
+	}
+}
+
 func TestServerPresenterDisabledForMachineModes(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -194,6 +269,18 @@ func TestDisplaySiteURL(t *testing.T) {
 	}
 	if got := displaySiteURL("https://demo.nimbu.io"); got != "https://demo.nimbu.io" {
 		t.Fatalf("unexpected passthrough site url: %q", got)
+	}
+}
+
+func TestCompactSiteLabel(t *testing.T) {
+	if got := compactSiteLabel("demo"); got != "demo" {
+		t.Fatalf("unexpected simple site label: %q", got)
+	}
+	if got := compactSiteLabel("demo.nimbu.io"); got != "" {
+		t.Fatalf("expected qualified host to be excluded, got: %q", got)
+	}
+	if got := compactSiteLabel(""); got != "" {
+		t.Fatalf("expected empty site label, got: %q", got)
 	}
 }
 

@@ -55,6 +55,8 @@ type serverSummary struct {
 	ProxyURL     string
 	ReadyURL     string
 	SiteHost     string
+	SiteLabel    string
+	Shortcuts    serverShortcutLinks
 }
 
 type serverSummarySegment struct {
@@ -160,6 +162,9 @@ func (p *serverPresenter) PrintSummary(summary serverSummary) {
 		if child := compactChildInfo(summary, unusual); child != "" {
 			_, _ = fmt.Fprintln(p.out, p.summaryRow("Child", child))
 		}
+		if hint := summary.Shortcuts.Hint(); hint != "" {
+			_, _ = fmt.Fprintln(p.out, p.shortcutHint(hint))
+		}
 		_, _ = fmt.Fprintln(p.out)
 		return
 	}
@@ -172,6 +177,9 @@ func (p *serverPresenter) PrintSummary(summary serverSummary) {
 	}
 	if child := compactChildInfo(summary, unusual); child != "" {
 		_, _ = fmt.Fprintln(p.out, p.summaryRow("Child", child))
+	}
+	if hint := summary.Shortcuts.Hint(); hint != "" {
+		_, _ = fmt.Fprintln(p.out, p.shortcutHint(hint))
 	}
 	_, _ = fmt.Fprintln(p.out)
 }
@@ -188,6 +196,24 @@ func (p *serverPresenter) PrintGoodbye() {
 		return
 	}
 	_, _ = fmt.Fprintln(p.out, p.accent(randomServerGoodbye()))
+}
+
+func (p *serverPresenter) PrintShortcutPending() {
+	if !p.Enabled() {
+		return
+	}
+	_, _ = fmt.Fprintln(p.out, p.shortcutHint("shortcuts available after ready"))
+}
+
+func (p *serverPresenter) PrintShortcutError(message string) {
+	if strings.TrimSpace(message) == "" {
+		return
+	}
+	if p.Enabled() {
+		_, _ = fmt.Fprintln(p.out, p.shortcutHint(message))
+		return
+	}
+	_, _ = fmt.Fprintln(p.out, message)
 }
 
 func (p *serverPresenter) bannerLine(line string, idx int) string {
@@ -244,6 +270,13 @@ func (p *serverPresenter) summaryInline(segments []serverSummarySegment, index i
 		b.WriteString(segment.text)
 	}
 	return b.String()
+}
+
+func (p *serverPresenter) shortcutHint(value string) string {
+	if p.useColor {
+		value = p.termOut.String(value).Foreground(p.termOut.Color("#94a3b8")).String()
+	}
+	return "  " + value
 }
 
 func (p *serverPresenter) border(value string) string {
@@ -401,16 +434,24 @@ func compactPrimarySummary(summary serverSummary) ([][]serverSummarySegment, boo
 	lines := make([][]serverSummarySegment, 0, 2)
 	primaryURL := displayServerURL(summary.ReadyURL)
 	if primaryURL != "" {
-		segments := make([]serverSummarySegment, 0, 4)
+		segments := make([]serverSummarySegment, 0, 6)
 		segments = append(segments,
 			serverSummarySegment{dim: true, text: "dev server: "},
 			serverSummarySegment{text: primaryURL},
 		)
 		if hint := proxyHint(summary.ProxyURL, summary.ReadyURL); hint != "" {
-			segments = append(segments, serverSummarySegment{dim: true, text: " (" + hint + ")"})
+			if summary.SiteLabel != "" {
+				segments = append(segments,
+					serverSummarySegment{dim: true, text: " (" + hint + " -> "},
+					serverSummarySegment{text: summary.SiteLabel},
+					serverSummarySegment{dim: true, text: ")"},
+				)
+			} else {
+				segments = append(segments, serverSummarySegment{dim: true, text: " (" + hint + ")"})
+			}
 		}
 		lines = append(lines, segments)
-		if summary.SiteHost != "" {
+		if summary.SiteHost != "" && summary.SiteLabel == "" {
 			lines = append(lines, []serverSummarySegment{
 				{dim: true, text: "live site: "},
 				{text: displaySiteURL(summary.SiteHost)},
@@ -555,6 +596,14 @@ func displaySiteURL(siteHost string) string {
 		return siteHost
 	}
 	return "https://" + siteHost
+}
+
+func compactSiteLabel(site string) string {
+	site = strings.TrimSpace(site)
+	if site == "" || strings.Contains(site, ".") {
+		return ""
+	}
+	return site
 }
 
 func compactChildInfo(summary serverSummary, unusual bool) string {

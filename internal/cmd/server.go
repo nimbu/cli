@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/config"
 	"github.com/nimbu/cli/internal/devproxy"
@@ -113,17 +115,36 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		}
 	}
 
+	summary := serverSummary{
+		APIHost:      serverAPIHost(client.BaseURL),
+		ChildCommand: formatServerChildCommand(runtimeCfg.ChildCommand, runtimeCfg.ChildArgs),
+		ProxyURL:     proxy.URL(),
+		ReadyURL:     runtimeCfg.ReadyURL,
+		SiteHost:     siteHostFromAPI(client.BaseURL, siteSubdomain),
+		SiteLabel:    compactSiteLabel(siteSubdomain),
+	}
+	if cwd := displayPathFromRoot(runtimeCfg.ProjectRoot, runtimeCfg.ChildCWD); cwd != "." {
+		summary.ChildCWD = cwd
+	}
+
+	interactiveShortcuts := presenter.Enabled() && term.IsTerminal(int(os.Stdin.Fd()))
+	shortcutLinks := serverShortcutLinksFromSummary(summary)
+	var shortcutListener *serverShortcutListener
+	if interactiveShortcuts && shortcutLinks.Hint() != "" {
+		shortcutListener, err = newServerShortcutListener()
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "warning: shortcut input unavailable: %s\n", err)
+		} else {
+			defer func() {
+				if closeErr := shortcutListener.Close(); closeErr != nil {
+					_, _ = fmt.Fprintf(os.Stderr, "warning: restore shortcut input: %s\n", closeErr)
+				}
+			}()
+			summary.Shortcuts = shortcutLinks
+		}
+	}
+
 	if presenter.Enabled() {
-		summary := serverSummary{
-			APIHost:      serverAPIHost(client.BaseURL),
-			ChildCommand: formatServerChildCommand(runtimeCfg.ChildCommand, runtimeCfg.ChildArgs),
-			ProxyURL:     proxy.URL(),
-			ReadyURL:     runtimeCfg.ReadyURL,
-			SiteHost:     siteHostFromAPI(client.BaseURL, siteSubdomain),
-		}
-		if cwd := displayPathFromRoot(runtimeCfg.ProjectRoot, runtimeCfg.ChildCWD); cwd != "." {
-			summary.ChildCWD = cwd
-		}
 		presenter.PrintSummary(summary)
 	}
 
@@ -142,41 +163,100 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		_ = child.Stop(5 * time.Second)
 	}()
 
-	if err := child.WaitReady(ctx, runtimeCfg.ReadyTimeout); err != nil {
-		_ = child.Stop(5 * time.Second)
-		return err
-	}
-
-	if !presenter.Enabled() {
-		_, _ = fmt.Fprintf(os.Stderr, "proxy ready: %s\n", proxy.URL())
-		if runtimeCfg.ReadyURL != "" {
-			_, _ = fmt.Fprintf(os.Stderr, "dev server ready: %s\n", runtimeCfg.ReadyURL)
-		}
-	}
-
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
 
+	readyCh := make(chan error, 1)
+	go func() {
+		readyCh <- child.WaitReady(ctx, runtimeCfg.ReadyTimeout)
+		close(readyCh)
+	}()
+
+	shortcutReady := false
+	var childExitCh <-chan error
+	var shortcutEvents <-chan byte
+	var shortcutErrors <-chan error
+	if shortcutListener != nil {
+		shortcutEvents = shortcutListener.Events()
+		shortcutErrors = shortcutListener.Errors()
+	}
+
+	shutdown := func(signalName string) error {
+		if presenter.Enabled() {
+			presenter.PrintShutdownNotice()
+		} else if signalName != "" {
+			_, _ = fmt.Fprintf(os.Stderr, "received signal: %s\n", signalName)
+		}
+		_ = child.Stop(5 * time.Second)
+		stopDevProxy(proxy)
+		presenter.PrintGoodbye()
+		return nil
+	}
+
 	for {
 		select {
 		case sig := <-sigCh:
-			if presenter.Enabled() {
-				presenter.PrintShutdownNotice()
-			} else {
-				_, _ = fmt.Fprintf(os.Stderr, "received signal: %s\n", sig.String())
+			return shutdown(sig.String())
+		case err, ok := <-readyCh:
+			if !ok {
+				readyCh = nil
+				continue
 			}
-			_ = child.Stop(5 * time.Second)
-			stopDevProxy(proxy)
-			presenter.PrintGoodbye()
-			return nil
+			readyCh = nil
+			if err != nil {
+				_ = child.Stop(5 * time.Second)
+				return err
+			}
+			shortcutReady = true
+			childExitCh = child.ExitCh()
+			if !presenter.Enabled() {
+				_, _ = fmt.Fprintf(os.Stderr, "proxy ready: %s\n", proxy.URL())
+				if runtimeCfg.ReadyURL != "" {
+					_, _ = fmt.Fprintf(os.Stderr, "dev server ready: %s\n", runtimeCfg.ReadyURL)
+				}
+			}
+		case key, ok := <-shortcutEvents:
+			if !ok {
+				shortcutEvents = nil
+				continue
+			}
+			decision := decideServerShortcut(key, shortcutReady, shortcutLinks)
+			if decision.Action == serverShortcutNone {
+				continue
+			}
+			if decision.Action == serverShortcutLogMarker {
+				if err := writeServerShortcutLogMarker(os.Stdout); err != nil {
+					presenter.PrintShortcutError(fmt.Sprintf("write log marker: %v", err))
+				}
+				continue
+			}
+			if decision.Pending {
+				presenter.PrintShortcutPending()
+				continue
+			}
+			label, target, ok := shortcutLinks.target(decision.Action)
+			if !ok {
+				continue
+			}
+			if err := openServerBrowserURL(target, nil); err != nil {
+				presenter.PrintShortcutError(fmt.Sprintf("open %s: %v", label, err))
+			}
+		case err, ok := <-shortcutErrors:
+			if !ok {
+				shortcutErrors = nil
+				continue
+			}
+			if err != nil {
+				presenter.PrintShortcutError(fmt.Sprintf("shortcut input disabled: %v", err))
+			}
 		case err, ok := <-proxy.Errors():
 			if !ok || err == nil {
 				continue
 			}
 			_ = child.Stop(5 * time.Second)
 			return fmt.Errorf("proxy server crashed: %w", err)
-		case err, ok := <-child.ExitCh():
+		case err, ok := <-childExitCh:
 			if !ok {
 				stopDevProxy(proxy)
 				return fmt.Errorf("child dev server exited")

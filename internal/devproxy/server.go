@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nimbu/cli/internal/api"
@@ -50,6 +51,8 @@ type Server struct {
 
 	httpServer *http.Server
 	listener   net.Listener
+
+	requestLogSpacer sync.Once
 }
 
 func New(config Config, client SimulatorClient) (*Server, error) {
@@ -246,6 +249,11 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		}
 		if req.URL.Path == "/health" {
 			return
+		}
+		if !s.config.EventsJSON {
+			s.requestLogSpacer.Do(func() {
+				_, _ = fmt.Fprintln(os.Stdout)
+			})
 		}
 
 		line := requestLogLine(strings.ToUpper(req.Method), requestPath(req), rec.status, s.config.UseColor && !s.config.EventsJSON)
