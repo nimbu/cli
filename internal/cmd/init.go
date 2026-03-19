@@ -19,7 +19,7 @@ import (
 
 type InitCmd struct {
 	Repo      string `help:"GitHub repo shorthand for the starterskit" default:"zenjoy/theme-starterskit"`
-	Branch    string `help:"Branch to bootstrap from" default:"vite-go-cli"`
+	Branch    string `help:"Branch to bootstrap from" default:"main"`
 	Dir       string `help:"Use a local starterskit directory instead of cloning"`
 	OutputDir string `help:"Parent directory for the new project"`
 }
