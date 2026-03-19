@@ -19,11 +19,16 @@ const ManifestPath = "bootstrap/manifest.yml"
 
 type Manifest struct {
 	Name          string       `yaml:"name,omitempty"`
-	BasePaths     []string     `yaml:"base_paths"`
+	BasePaths     []string     `yaml:"base_paths,omitempty"`
+	Exclude       []string     `yaml:"exclude,omitempty"`
 	GeneratedDirs []string     `yaml:"generated_dirs,omitempty"`
 	Bundles       []Bundle     `yaml:"bundles"`
 	Recipes       []Recipe     `yaml:"recipes"`
 	Repeatables   []Repeatable `yaml:"repeatables"`
+}
+
+func (m Manifest) useExcludeMode() bool {
+	return len(m.BasePaths) == 0
 }
 
 type Bundle struct {
@@ -122,7 +127,7 @@ func BootstrapProject(opts BootstrapOptions) (Result, error) {
 		return Result{}, fmt.Errorf("create output dir: %w", err)
 	}
 
-	selectedBundles, selectedRepeatables, recipeSet, transformList, pathSet, err := opts.Manifest.resolve(opts.BundleIDs, opts.RepeatableIDs)
+	selectedBundles, selectedRepeatables, recipeSet, transformList, pathSet, err := opts.Manifest.resolve(opts.SourceDir, opts.BundleIDs, opts.RepeatableIDs)
 	if err != nil {
 		return Result{}, err
 	}
@@ -164,7 +169,7 @@ func BootstrapProject(opts BootstrapOptions) (Result, error) {
 	}, nil
 }
 
-func (m Manifest) resolve(bundleIDs, repeatableIDs []string) ([]string, []string, map[string]Recipe, []Transform, map[string]struct{}, error) {
+func (m Manifest) resolve(sourceDir string, bundleIDs, repeatableIDs []string) ([]string, []string, map[string]Recipe, []Transform, map[string]struct{}, error) {
 	bundleMap := make(map[string]Bundle, len(m.Bundles))
 	for _, bundle := range m.Bundles {
 		bundleMap[bundle.ID] = bundle
@@ -175,44 +180,37 @@ func (m Manifest) resolve(bundleIDs, repeatableIDs []string) ([]string, []string
 	}
 	recipeMap := m.recipeMap()
 
-	pathSet := make(map[string]struct{}, len(m.BasePaths))
-	for _, path := range m.BasePaths {
-		pathSet[path] = struct{}{}
-	}
-
 	selectedBundleIDs := uniqueStrings(bundleIDs)
 	selectedRepeatableIDs := uniqueStrings(repeatableIDs)
 	selectedRecipes := map[string]Recipe{}
-	var transforms []Transform
 
+	selectedBundles := make([]Bundle, 0, len(selectedBundleIDs))
 	for _, id := range selectedBundleIDs {
 		bundle, ok := bundleMap[id]
 		if !ok {
 			return nil, nil, nil, nil, nil, fmt.Errorf("unknown bundle %q", id)
 		}
-		for _, path := range bundle.Paths {
-			pathSet[path] = struct{}{}
-		}
+		selectedBundles = append(selectedBundles, bundle)
 		for _, recipeID := range bundle.Recipes {
 			selectedRecipes[recipeID] = recipeMap[recipeID]
 		}
 	}
 
 	selectedRepeatableSet := make(map[string]struct{}, len(selectedRepeatableIDs))
+	selectedRepeatables := make([]Repeatable, 0, len(selectedRepeatableIDs))
 	for _, id := range selectedRepeatableIDs {
 		repeatable, ok := repeatableMap[id]
 		if !ok {
 			return nil, nil, nil, nil, nil, fmt.Errorf("unknown repeatable %q", id)
 		}
 		selectedRepeatableSet[id] = struct{}{}
-		for _, path := range repeatable.Paths {
-			pathSet[path] = struct{}{}
-		}
+		selectedRepeatables = append(selectedRepeatables, repeatable)
 		for _, recipeID := range repeatable.Recipes {
 			selectedRecipes[recipeID] = recipeMap[recipeID]
 		}
 	}
 
+	var transforms []Transform
 	for _, repeatable := range m.Repeatables {
 		if _, ok := selectedRepeatableSet[repeatable.ID]; ok {
 			continue
@@ -220,12 +218,98 @@ func (m Manifest) resolve(bundleIDs, repeatableIDs []string) ([]string, []string
 		transforms = append(transforms, repeatable.Transforms...)
 	}
 
+	var pathSet map[string]struct{}
+	if m.useExcludeMode() {
+		var err error
+		pathSet, err = m.resolveExcludePathSet(sourceDir, selectedBundles, selectedRepeatables)
+		if err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+	} else {
+		pathSet = resolveBasePathSet(m.BasePaths, selectedBundles, selectedRepeatables)
+	}
+
 	return selectedBundleIDs, selectedRepeatableIDs, selectedRecipes, transforms, pathSet, nil
 }
 
+func resolveBasePathSet(basePaths []string, selectedBundles []Bundle, selectedRepeatables []Repeatable) map[string]struct{} {
+	pathSet := make(map[string]struct{}, len(basePaths))
+	for _, path := range basePaths {
+		pathSet[path] = struct{}{}
+	}
+	for _, bundle := range selectedBundles {
+		for _, path := range bundle.Paths {
+			pathSet[path] = struct{}{}
+		}
+	}
+	for _, repeatable := range selectedRepeatables {
+		for _, path := range repeatable.Paths {
+			pathSet[path] = struct{}{}
+		}
+	}
+	return pathSet
+}
+
+func (m Manifest) resolveExcludePathSet(sourceDir string, selectedBundles []Bundle, selectedRepeatables []Repeatable) (map[string]struct{}, error) {
+	allFiles, err := gitTrackedFiles(sourceDir)
+	if err != nil {
+		return nil, err
+	}
+
+	patterns := make([]string, 0, len(m.Exclude)+1)
+	patterns = append(patterns, "bootstrap/")
+	patterns = append(patterns, m.Exclude...)
+	matchers, err := compileExcludePatterns(patterns)
+	if err != nil {
+		return nil, err
+	}
+
+	var allConditionalPaths []string
+	for _, bundle := range m.Bundles {
+		allConditionalPaths = append(allConditionalPaths, bundle.Paths...)
+	}
+	for _, repeatable := range m.Repeatables {
+		allConditionalPaths = append(allConditionalPaths, repeatable.Paths...)
+	}
+
+	var selectedPaths []string
+	for _, bundle := range selectedBundles {
+		selectedPaths = append(selectedPaths, bundle.Paths...)
+	}
+	for _, repeatable := range selectedRepeatables {
+		selectedPaths = append(selectedPaths, repeatable.Paths...)
+	}
+
+	pathSet := make(map[string]struct{})
+	for _, file := range allFiles {
+		if excludeMatches(matchers, file) {
+			continue
+		}
+		if pathIsClaimed(file, allConditionalPaths) {
+			continue
+		}
+		pathSet[file] = struct{}{}
+	}
+	// Selected bundle/repeatable paths override exclude patterns. The exclude
+	// list filters the base set, but manifest authors explicitly curate bundle
+	// paths — if they declared it, they intend it to be available when selected.
+	for _, file := range allFiles {
+		if pathIsClaimed(file, selectedPaths) {
+			pathSet[file] = struct{}{}
+		}
+	}
+
+	return pathSet, nil
+}
+
 func (m Manifest) validate() error {
-	if len(m.BasePaths) == 0 {
-		return fmt.Errorf("bootstrap manifest missing base_paths")
+	if len(m.BasePaths) > 0 && len(m.Exclude) > 0 {
+		return fmt.Errorf("bootstrap manifest cannot have both base_paths and exclude")
+	}
+	if len(m.Exclude) > 0 {
+		if _, err := compileExcludePatterns(m.Exclude); err != nil {
+			return fmt.Errorf("invalid exclude pattern: %w", err)
+		}
 	}
 	for _, path := range m.GeneratedDirs {
 		if err := validateManifestPath(path); err != nil {
