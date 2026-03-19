@@ -17,6 +17,7 @@ type ThemePushCmd struct {
 	All        bool     `help:"Upload all managed theme files"`
 	Build      bool     `help:"Run sync.build before collecting files"`
 	DryRun     bool     `help:"Print planned uploads without changing remote state" name:"dry-run"`
+	Since      string   `help:"Compare against this git ref instead of HEAD (e.g. origin/main)"`
 	Theme      string   `help:"Override theme from nimbu.yml"`
 	Only       []string `help:"Only upload these project-relative files" name:"only"`
 	LiquidOnly bool     `help:"Only upload liquid resources" name:"liquid-only"`
@@ -33,6 +34,7 @@ func (c *ThemePushCmd) Run(ctx context.Context, flags *RootFlags) error {
 		Build:      c.Build,
 		DryRun:     c.DryRun,
 		Force:      flags != nil && flags.Force,
+		Since:      c.Since,
 		Only:       c.Only,
 		LiquidOnly: c.LiquidOnly,
 		CSSOnly:    c.CSSOnly,
@@ -48,6 +50,7 @@ type ThemeSyncCmd struct {
 	Build      bool     `help:"Run sync.build before collecting files"`
 	DryRun     bool     `help:"Print planned uploads/deletes without changing remote state" name:"dry-run"`
 	Prune      bool     `help:"Delete managed remote theme files missing locally"`
+	Since      string   `help:"Compare against this git ref instead of HEAD (e.g. origin/main)"`
 	Theme      string   `help:"Override theme from nimbu.yml"`
 	Only       []string `help:"Only sync these project-relative files" name:"only"`
 	LiquidOnly bool     `help:"Only sync liquid resources" name:"liquid-only"`
@@ -65,6 +68,7 @@ func (c *ThemeSyncCmd) Run(ctx context.Context, flags *RootFlags) error {
 		DryRun:     c.DryRun,
 		Force:      flags != nil && flags.Force,
 		Prune:      c.Prune,
+		Since:      c.Since,
 		Only:       c.Only,
 		LiquidOnly: c.LiquidOnly,
 		CSSOnly:    c.CSSOnly,

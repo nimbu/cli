@@ -16,12 +16,17 @@ type GitChanges struct {
 }
 
 // CollectGitChanges returns git-based changed and deleted files for the project.
-func CollectGitChanges(cfg Config) (GitChanges, error) {
+// When since is non-empty it is used as the diff ref instead of HEAD, allowing
+// callers to detect committed-but-not-pushed changes (e.g. "origin/main").
+func CollectGitChanges(cfg Config, since string) (GitChanges, error) {
 	repoRoot, ok := gitRepoRoot(cfg.ProjectRoot)
 	if !ok {
 		return GitChanges{FallbackAll: true}, nil
 	}
 	if !gitHasHead(cfg.ProjectRoot) {
+		if since != "" {
+			return GitChanges{}, fmt.Errorf("--since %s: repository has no commits", since)
+		}
 		return GitChanges{FallbackAll: true}, nil
 	}
 
@@ -29,7 +34,12 @@ func CollectGitChanges(cfg Config) (GitChanges, error) {
 	changedSeen := map[string]struct{}{}
 	deletedSeen := map[string]struct{}{}
 
-	lines, err := runGitLines(cfg.ProjectRoot, "diff", "--name-status", "--find-renames", "HEAD", "--")
+	ref := "HEAD"
+	if since != "" {
+		ref = since
+	}
+
+	lines, err := runGitLines(cfg.ProjectRoot, "diff", "--name-status", "--find-renames", ref, "--")
 	if err != nil {
 		return GitChanges{}, err
 	}

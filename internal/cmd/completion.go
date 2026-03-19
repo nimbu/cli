@@ -120,7 +120,7 @@ _nimbu_completions() {
                 COMPREPLY=($(compgen -W "--from --to --from-host --to-host --liquid-only" -- "${cur}"))
                 ;;
             push|sync)
-                COMPREPLY=($(compgen -W "--all --build --dry-run --theme --only --liquid-only --css-only --js-only --images-only --fonts-only --prune" -- "${cur}"))
+                COMPREPLY=($(compgen -W "--all --build --dry-run --since --theme --only --liquid-only --css-only --js-only --images-only --fonts-only --prune" -- "${cur}"))
                 ;;
             layouts|templates|snippets|assets)
                 COMPREPLY=($(compgen -W "list get create delete" -- "${cur}"))

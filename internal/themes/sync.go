@@ -3,6 +3,7 @@ package themes
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 
 	"github.com/nimbu/cli/internal/api"
@@ -75,7 +76,11 @@ func planOperations(ctx context.Context, client *api.Client, cfg Config, opts Op
 	uploadMap := map[resourceKey]Resource{}
 	deleteMap := map[resourceKey]Resource{}
 
-	if opts.All {
+	if len(opts.Only) > 0 && opts.Since != "" {
+		_, _ = fmt.Fprintf(os.Stderr, "warning: --since is ignored when --only is set\n")
+	}
+
+	if scopeUsesAllFiles(opts, selection.hasCategory) {
 		for _, resource := range allLocal {
 			if !selection.Match(resource) {
 				continue
@@ -83,7 +88,7 @@ func planOperations(ctx context.Context, client *api.Client, cfg Config, opts Op
 			uploadMap[keyFor(resource)] = resource
 		}
 	} else {
-		gitChanges, err := CollectGitChanges(cfg)
+		gitChanges, err := CollectGitChanges(cfg, opts.Since)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -162,6 +167,12 @@ func planOperations(ctx context.Context, client *api.Client, cfg Config, opts Op
 	}
 
 	return sortResourceSlice(uploadMap), sortResourceSlice(deleteMap), nil
+}
+
+// scopeUsesAllFiles returns true when the option/filter combination means we
+// should iterate all local files instead of relying on git change detection.
+func scopeUsesAllFiles(opts Options, hasCategory bool) bool {
+	return opts.All || len(opts.Only) > 0 || (hasCategory && opts.Since == "")
 }
 
 func mapByKey(resources []Resource) map[resourceKey]Resource {

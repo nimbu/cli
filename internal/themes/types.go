@@ -99,6 +99,7 @@ type Options struct {
 	DryRun     bool
 	Force      bool
 	Prune      bool
+	Since      string
 	Only       []string
 	LiquidOnly bool
 	CSSOnly    bool
