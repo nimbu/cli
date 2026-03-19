@@ -145,8 +145,11 @@ func (c *InitCmd) runInteractiveTTY(ctx context.Context, flags *RootFlags) error
 	if model.err != nil {
 		return model.err
 	}
+	// Bubble Tea v1 inline shutdown erases the last rendered line, so print
+	// the durable footer after Run() returns — reusing the cleared line.
+	connector := renderTimelineConnector(model)
 	footer := renderInitTeaDoneFooter(model)
-	_, _ = fmt.Fprintf(writer.Err, "%s\n", footer)
+	_, _ = fmt.Fprintf(writer.Err, "%s\n%s\n", connector, footer)
 	return nil
 }
 

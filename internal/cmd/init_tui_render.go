@@ -100,15 +100,14 @@ func renderInitTeaTimeline(model *initTeaModel, width int) string {
 		entries = append(entries, renderTimelineEntry(model, initTimelineActive, activeLines)...)
 	}
 
-	if model.phase == initTeaPhaseDone {
-		// Footer maintains frame height so Bubble Tea's inline renderer doesn't
-		// swallow the last transcript entry. The footer itself gets swallowed on
-		// quit, so runInteractiveTTY reprints it after the program exits.
-		entries = append(entries, renderInitTeaDoneFooter(model))
-	}
-
-	for len(entries) > 0 && entries[len(entries)-1] == renderTimelineConnector(model) {
-		entries = entries[:len(entries)-1]
+	// Bubble Tea v1's inline renderer erases the last line on shutdown
+	// (EraseEntireLine + \r in standardRenderer.stop). In the done phase,
+	// keep the trailing connector as a sacrificial line that gets erased.
+	// The durable footer is printed after program.Run() returns.
+	if model.phase != initTeaPhaseDone {
+		for len(entries) > 0 && entries[len(entries)-1] == renderTimelineConnector(model) {
+			entries = entries[:len(entries)-1]
+		}
 	}
 
 	return strings.Join(entries, "\n")
