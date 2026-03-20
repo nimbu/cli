@@ -9,16 +9,18 @@ import (
 	"sync"
 
 	"github.com/nimbu/cli/internal/auth"
+	"github.com/nimbu/cli/internal/config"
 )
 
 type authResolverKey struct{}
 
-var openAuthStore = auth.OpenDefault
+var openAuthStore = auth.OpenForHost
 
 type authCredentialResolver struct {
 	mu sync.Mutex
 
-	openStore func() (auth.Store, error)
+	host      string
+	openStore func(host string) (auth.Store, error)
 
 	store     auth.Store
 	storeErr  error
@@ -32,8 +34,8 @@ type authCredentialResolver struct {
 	credLoaded    bool
 }
 
-func newAuthCredentialResolver() *authCredentialResolver {
-	return &authCredentialResolver{openStore: openAuthStore}
+func newAuthCredentialResolver(host string) *authCredentialResolver {
+	return &authCredentialResolver{host: host, openStore: openAuthStore}
 }
 
 func resolverFromContext(ctx context.Context) *authCredentialResolver {
@@ -42,7 +44,7 @@ func resolverFromContext(ctx context.Context) *authCredentialResolver {
 			return resolver
 		}
 	}
-	return newAuthCredentialResolver()
+	return newAuthCredentialResolver(config.DefaultAPIHost)
 }
 
 func ResolveAuthToken(ctx context.Context) (string, error) {
@@ -138,7 +140,7 @@ func (r *authCredentialResolver) DeleteStoredCredentials() error {
 
 func (r *authCredentialResolver) storeInstanceLocked() (auth.Store, error) {
 	if !r.storeOpen {
-		r.store, r.storeErr = r.openStore()
+		r.store, r.storeErr = r.openStore(r.host)
 		r.storeOpen = true
 	}
 	return r.store, r.storeErr

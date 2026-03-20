@@ -12,6 +12,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/apps"
 	"github.com/nimbu/cli/internal/auth"
 	"github.com/nimbu/cli/internal/output"
 )
@@ -26,9 +27,11 @@ type AuthLoginCmd struct {
 
 // Run executes the login command.
 func (c *AuthLoginCmd) Run(ctx context.Context, flags *RootFlags) error {
+	host := apps.NormalizeHost(flags.APIURL)
+
 	// If token provided directly, store it
 	if c.Token != "" {
-		return c.storeToken(ctx, c.Token, "")
+		return c.storeToken(ctx, c.Token, "", host)
 	}
 
 	// Get email
@@ -66,7 +69,7 @@ func (c *AuthLoginCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	// Store credentials
-	if err := c.storeToken(ctx, resp.Token, email); err != nil {
+	if err := c.storeToken(ctx, resp.Token, email, host); err != nil {
 		return err
 	}
 
@@ -141,8 +144,8 @@ func basicAuthHeader(email, password string) string {
 	return base64.StdEncoding.EncodeToString([]byte(email + ":" + password))
 }
 
-func (c *AuthLoginCmd) storeToken(ctx context.Context, token, email string) error {
-	store, err := openAuthStore()
+func (c *AuthLoginCmd) storeToken(ctx context.Context, token, email, host string) error {
+	store, err := openAuthStore(host)
 	if err != nil {
 		return fmt.Errorf("open keyring: %w", err)
 	}

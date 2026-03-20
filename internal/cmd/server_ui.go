@@ -38,8 +38,6 @@ var serverGoodbyeMessages = []string{
 	"Local stack folded. Back to work.",
 }
 
-const defaultServerAPIHost = "api.nimbu.io"
-
 type serverPresenter struct {
 	enabled  bool
 	useColor bool
@@ -532,7 +530,7 @@ func isLocalServerHost(host string) bool {
 
 func shouldShowServerAPI(host string) bool {
 	host = strings.ToLower(strings.TrimSpace(host))
-	return host != "" && host != defaultServerAPIHost
+	return host != "" && host != config.DefaultAPIHost
 }
 
 func displayServerURL(raw string) string {

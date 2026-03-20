@@ -166,7 +166,7 @@ func withFakeAuthStoreDelay(t *testing.T, store auth.Store, openDelay time.Durat
 	t.Helper()
 	old := openAuthStore
 	openCalls := &atomic.Int32{}
-	openAuthStore = func() (auth.Store, error) {
+	openAuthStore = func(_ string) (auth.Store, error) {
 		openCalls.Add(1)
 		if openDelay > 0 {
 			time.Sleep(openDelay)
@@ -187,7 +187,7 @@ func testAuthContext() context.Context {
 	})
 	ctx = context.WithValue(ctx, configKey{}, &config.Config{})
 	ctx = output.WithMode(ctx, output.Mode{})
-	ctx = context.WithValue(ctx, authResolverKey{}, newAuthCredentialResolver())
+	ctx = context.WithValue(ctx, authResolverKey{}, newAuthCredentialResolver("api.example.test"))
 	return ctx
 }
 
@@ -467,7 +467,7 @@ func TestAuthLoginStoreTokenWritesCombinedCredential(t *testing.T) {
 	withFakeAuthStore(t, store)
 
 	cmd := &AuthLoginCmd{}
-	if err := cmd.storeToken(context.Background(), "tok", "me@example.com"); err != nil {
+	if err := cmd.storeToken(context.Background(), "tok", "me@example.com", "api.example.test"); err != nil {
 		t.Fatalf("storeToken: %v", err)
 	}
 

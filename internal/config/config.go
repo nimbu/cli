@@ -18,10 +18,13 @@ type Config struct {
 	BannerTheme    string `json:"banner_theme,omitempty"`
 }
 
+// DefaultAPIHost is the default API host, extracted from the default API URL.
+const DefaultAPIHost = "api.nimbu.io"
+
 // Defaults returns config with default values.
 func Defaults() Config {
 	return Config{
-		APIURL:  "https://api.nimbu.io",
+		APIURL:  "https://" + DefaultAPIHost,
 		Timeout: "30s",
 	}
 }

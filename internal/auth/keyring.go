@@ -57,13 +57,22 @@ var (
 	errNoTTY          = errors.New("no TTY available for keyring file backend password prompt")
 )
 
-// OpenDefault opens the default keyring store.
+// OpenDefault opens the default keyring store (no host scoping).
 func OpenDefault() (Store, error) {
 	ring, err := openKeyring()
 	if err != nil {
 		return nil, err
 	}
 	return &KeyringStore{ring: ring}, nil
+}
+
+// OpenForHost opens a host-scoped keyring store.
+func OpenForHost(host string) (Store, error) {
+	ring, err := openKeyring()
+	if err != nil {
+		return nil, err
+	}
+	return NewHostStore(ring, host), nil
 }
 
 // ResolveBackend determines which keyring backend to use.

@@ -12,6 +12,7 @@ import (
 	"github.com/alecthomas/kong"
 
 	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/apps"
 	"github.com/nimbu/cli/internal/auth"
 	"github.com/nimbu/cli/internal/config"
 	"github.com/nimbu/cli/internal/output"
@@ -170,7 +171,6 @@ func execute(args []string) (err error) {
 	progress := output.NewProgress(ctx)
 	defer progress.Close()
 	ctx = output.WithProgress(ctx, progress)
-	ctx = context.WithValue(ctx, authResolverKey{}, newAuthCredentialResolver())
 
 	// Load config
 	cfg, cfgErr := config.Read()
@@ -178,6 +178,10 @@ func execute(args []string) (err error) {
 		_, _ = fmt.Fprintf(os.Stderr, "warning: %v\n", cfgErr)
 	}
 	cli.RootFlags = applyRootConfigDefaults(cli.RootFlags, cfg, args)
+
+	// Set up auth resolver after config defaults so APIURL is finalized
+	host := apps.NormalizeHost(cli.APIURL)
+	ctx = context.WithValue(ctx, authResolverKey{}, newAuthCredentialResolver(host))
 
 	// Resolve site from flags, config, or project file
 	site := cli.Site

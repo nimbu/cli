@@ -118,7 +118,7 @@ func newThemesCDNRootTestContext(t *testing.T, apiURL string, mode output.Mode) 
 		Timeout: 2 * time.Second,
 	})
 	ctx = context.WithValue(ctx, configKey{}, &config.Config{})
-	ctx = context.WithValue(ctx, authResolverKey{}, newAuthCredentialResolver())
+	ctx = context.WithValue(ctx, authResolverKey{}, newAuthCredentialResolver("api.example.test"))
 
 	if err := os.Setenv("NIMBU_TOKEN", "test-token"); err != nil {
 		t.Fatalf("set env: %v", err)
