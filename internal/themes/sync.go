@@ -2,7 +2,9 @@ package themes
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"sort"
 
@@ -43,33 +45,126 @@ func run(ctx context.Context, client *api.Client, cfg Config, opts Options, mode
 	if err != nil {
 		return result, err
 	}
-	result.Uploaded = toActions(uploads)
+
+	// Sort uploads in dependency order
+	orderedUploads := SortByKindOrder(uploads)
+	uploadsByKind := GroupByKind(orderedUploads)
+	result.Uploaded = toActions(orderedUploads)
 	result.Deleted = toActions(deletes)
 
+	// Build category list for timeline
+	var categories []output.SyncCategory
+	for _, k := range KindOrder {
+		if n := len(uploadsByKind[k]); n > 0 {
+			categories = append(categories, output.SyncCategory{Label: k.Collection(), Count: n})
+		}
+	}
+
+	tl := output.SyncTimelineFromContext(ctx)
+
+	// Dry-run path
 	if opts.DryRun {
+		if tl != nil {
+			tl.RenderPlan(categories, len(deletes))
+			result.TimelineRendered = true
+		}
 		return result, nil
 	}
 
-	task := output.ProgressFromContext(ctx).Counter(mode+" theme files", int64(len(uploads)+len(deletes)))
-	for _, resource := range uploads {
-		task.SetLabel("upload " + resource.DisplayPath)
-		if err := Upsert(ctx, client, cfg.Theme, resource, opts.Force); err != nil {
-			task.Fail(err)
-			return result, fmt.Errorf("upload %s: %w", resource.DisplayPath, err)
+	// Zero files
+	if len(orderedUploads) == 0 && len(deletes) == 0 {
+		if tl != nil {
+			tl.NothingToDo()
+			result.TimelineRendered = true
 		}
-		task.Add(1)
-	}
-	for _, resource := range deletes {
-		task.SetLabel("delete " + resource.DisplayPath)
-		if err := Delete(ctx, client, cfg.Theme, resource); err != nil {
-			task.Fail(err)
-			return result, fmt.Errorf("delete %s: %w", resource.DisplayPath, err)
-		}
-		task.Add(1)
+		return result, nil
 	}
 
-	task.Done("done")
+	// Start timeline
+	if tl != nil {
+		tl.SetCategories(categories)
+		tl.Header()
+	}
+
+	// Upload loop (dependency-ordered).
+	// catIdx tracks position in the categories slice, which is built from the
+	// same KindOrder iteration as orderedUploads — so kind transitions in the
+	// sorted uploads always align 1:1 with category indices.
+	catIdx := -1
+	currentKind := Kind("")
+	for _, resource := range orderedUploads {
+		if resource.Kind != currentKind {
+			if catIdx >= 0 && tl != nil {
+				tl.CategoryDone(catIdx)
+			}
+			currentKind = resource.Kind
+			catIdx++
+			if tl != nil {
+				tl.StartCategory(catIdx)
+			}
+		}
+		if tl != nil {
+			tl.SetActiveFile(resource.DisplayPath)
+		}
+		if err := Upsert(ctx, client, cfg.Theme, resource, opts.Force); err != nil {
+			if tl != nil {
+				tl.FileFailed(resource.DisplayPath, formatAPIError(err))
+				tl.ErrorFooter()
+				result.TimelineRendered = true
+			}
+			return result, fmt.Errorf("upload %s: %w", resource.DisplayPath, err)
+		}
+		if tl != nil {
+			tl.FileUploaded()
+		}
+	}
+	if catIdx >= 0 && tl != nil {
+		tl.CategoryDone(catIdx)
+	}
+
+	// Delete loop
+	if len(deletes) > 0 {
+		if tl != nil {
+			tl.StartDeletes(len(deletes))
+		}
+		for _, resource := range deletes {
+			if tl != nil {
+				tl.SetActiveDelete(resource.DisplayPath)
+			}
+			if err := Delete(ctx, client, cfg.Theme, resource); err != nil {
+				if tl != nil {
+					tl.DeleteFailed(resource.DisplayPath, formatAPIError(err))
+					tl.ErrorFooter()
+					result.TimelineRendered = true
+				}
+				return result, fmt.Errorf("delete %s: %w", resource.DisplayPath, err)
+			}
+			if tl != nil {
+				tl.FileDeleted()
+			}
+		}
+		if tl != nil {
+			tl.DeletesDone()
+		}
+	}
+
+	if tl != nil {
+		tl.Footer()
+		result.TimelineRendered = true
+	}
 	return result, nil
+}
+
+func formatAPIError(err error) string {
+	var apiErr *api.Error
+	if errors.As(err, &apiErr) {
+		status := http.StatusText(apiErr.StatusCode)
+		if status != "" {
+			return fmt.Sprintf("%d %s — %s", apiErr.StatusCode, status, apiErr.Message)
+		}
+		return apiErr.Message
+	}
+	return err.Error()
 }
 
 func planOperations(ctx context.Context, client *api.Client, cfg Config, opts Options, mode string, allLocal []Resource, localByKey map[resourceKey]Resource, selection *selectionFilter) ([]Resource, []Resource, error) {

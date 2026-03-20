@@ -107,6 +107,13 @@ func runThemeTransfer(ctx context.Context, flags *RootFlags, themeOverride strin
 		return err
 	}
 
+	ctx, tl := syncWithTimeline(ctx, mode, resolved.Theme, opts.DryRun)
+	defer func() {
+		if tl != nil {
+			tl.Close()
+		}
+	}()
+
 	var result themes.Result
 	if mode == "sync" {
 		result, err = themes.RunSync(ctx, client, resolved, opts)
@@ -114,7 +121,7 @@ func runThemeTransfer(ctx context.Context, flags *RootFlags, themeOverride strin
 		result, err = themes.RunPush(ctx, client, resolved, opts)
 	}
 	if err != nil {
-		return err
+		return finishSyncTimelineError(tl, err)
 	}
 	return writeThemeTransferResult(ctx, result)
 }
@@ -147,6 +154,9 @@ func resolveThemeProjectConfig() (string, config.ProjectConfig, []string, error)
 }
 
 func writeThemeTransferResult(ctx context.Context, result themes.Result) error {
+	if result.TimelineRendered {
+		return nil
+	}
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, result)

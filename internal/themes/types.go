@@ -58,12 +58,13 @@ type Action struct {
 
 // Result is emitted by push/sync commands.
 type Result struct {
-	Built    bool     `json:"built,omitempty"`
-	Deleted  []Action `json:"deleted,omitempty"`
-	DryRun   bool     `json:"dry_run,omitempty"`
-	Mode     string   `json:"mode"`
-	Theme    string   `json:"theme"`
-	Uploaded []Action `json:"uploaded,omitempty"`
+	Built            bool     `json:"built,omitempty"`
+	Deleted          []Action `json:"deleted,omitempty"`
+	DryRun           bool     `json:"dry_run,omitempty"`
+	Mode             string   `json:"mode"`
+	Theme            string   `json:"theme"`
+	Uploaded         []Action `json:"uploaded,omitempty"`
+	TimelineRendered bool     `json:"-"`
 }
 
 // BuildConfig configures an optional pre-push/pre-sync build step.
