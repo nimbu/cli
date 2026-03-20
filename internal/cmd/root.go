@@ -205,6 +205,7 @@ func execute(args []string) (err error) {
 	if err = kctx.Run(); err != nil {
 		return emitCommandError(ctx, err)
 	}
+	maybeNotifyUpdate(ctx, kctx.Command(), cli.RootFlags, version)
 	return nil
 }
 
