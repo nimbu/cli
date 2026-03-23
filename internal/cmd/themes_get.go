@@ -50,52 +50,52 @@ func (c *ThemesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.Plain(ctx, theme.ID, theme.Name, theme.Active)
 	}
 
-	if err := printLine(ctx, "ID:     %s\n", theme.ID); err != nil {
+	if _, err := output.Fprintf(ctx, "ID:     %s\n", theme.ID); err != nil {
 		return err
 	}
-	if err := printLine(ctx, "Name:   %s\n", theme.Name); err != nil {
+	if _, err := output.Fprintf(ctx, "Name:   %s\n", theme.Name); err != nil {
 		return err
 	}
 	if theme.ThemeShortID != "" {
-		if err := printLine(ctx, "Short:  %s\n", theme.ThemeShortID); err != nil {
+		if _, err := output.Fprintf(ctx, "Short:  %s\n", theme.ThemeShortID); err != nil {
 			return err
 		}
 	}
 	if theme.CDNRoot != "" {
-		if err := printLine(ctx, "CDN Root: %s\n", theme.CDNRoot); err != nil {
+		if _, err := output.Fprintf(ctx, "CDN Root: %s\n", theme.CDNRoot); err != nil {
 			return err
 		}
 	}
 	if theme.CDNHost != "" {
-		if err := printLine(ctx, "CDN Host: %s\n", theme.CDNHost); err != nil {
+		if _, err := output.Fprintf(ctx, "CDN Host: %s\n", theme.CDNHost); err != nil {
 			return err
 		}
 	}
 	if theme.CDNBasePath != "" {
-		if err := printLine(ctx, "CDN Path: %s\n", theme.CDNBasePath); err != nil {
+		if _, err := output.Fprintf(ctx, "CDN Path: %s\n", theme.CDNBasePath); err != nil {
 			return err
 		}
 	}
-	if err := printLine(ctx, "Active: %v\n", theme.Active); err != nil {
+	if _, err := output.Fprintf(ctx, "Active: %v\n", theme.Active); err != nil {
 		return err
 	}
 	if theme.SiteID != "" {
-		if err := printLine(ctx, "Site ID: %s\n", theme.SiteID); err != nil {
+		if _, err := output.Fprintf(ctx, "Site ID: %s\n", theme.SiteID); err != nil {
 			return err
 		}
 	}
 	if theme.SiteShortID != "" {
-		if err := printLine(ctx, "Site Short: %s\n", theme.SiteShortID); err != nil {
+		if _, err := output.Fprintf(ctx, "Site Short: %s\n", theme.SiteShortID); err != nil {
 			return err
 		}
 	}
 	if !theme.CreatedAt.IsZero() {
-		if err := printLine(ctx, "Created: %s\n", theme.CreatedAt.Format("2006-01-02 15:04:05")); err != nil {
+		if _, err := output.Fprintf(ctx, "Created: %s\n", theme.CreatedAt.Format("2006-01-02 15:04:05")); err != nil {
 			return err
 		}
 	}
 	if !theme.UpdatedAt.IsZero() {
-		if err := printLine(ctx, "Updated: %s\n", theme.UpdatedAt.Format("2006-01-02 15:04:05")); err != nil {
+		if _, err := output.Fprintf(ctx, "Updated: %s\n", theme.UpdatedAt.Format("2006-01-02 15:04:05")); err != nil {
 			return err
 		}
 	}

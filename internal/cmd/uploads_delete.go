@@ -38,15 +38,8 @@ func (c *UploadsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("delete upload: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload(fmt.Sprintf("deleted %s", c.ID)))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, c.ID, "deleted")
-	}
-
-	fmt.Printf("Deleted: %s\n", c.ID)
-	return nil
+	return output.Print(ctx, output.SuccessPayload(fmt.Sprintf("deleted %s", c.ID)), []any{c.ID, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted: %s\n", c.ID)
+		return err
+	})
 }

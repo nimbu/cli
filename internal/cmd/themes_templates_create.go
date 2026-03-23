@@ -65,17 +65,15 @@ func (c *ThemeTemplatesCreateCmd) Run(ctx context.Context, flags *RootFlags) err
 		return fmt.Errorf("create template: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, result)
-	}
-	if mode.Plain {
-		return output.Plain(ctx, result.ID, result.Name)
-	}
-
-	fmt.Printf("Upserted template: %s\n", result.Name)
-	if result.ID != "" {
-		fmt.Printf("ID: %s\n", result.ID)
-	}
-	return nil
+	return output.Print(ctx, result, []any{result.ID, result.Name}, func() error {
+		if _, err := output.Fprintf(ctx, "Upserted template: %s\n", result.Name); err != nil {
+			return err
+		}
+		if result.ID != "" {
+			if _, err := output.Fprintf(ctx, "ID: %s\n", result.ID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

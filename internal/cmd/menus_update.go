@@ -69,17 +69,8 @@ func (c *MenusUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("update menu: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, menu)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, menu["id"])
-	}
-
-	if err := printLine(ctx, "Updated menu %v\n", menu["id"]); err != nil {
+	return output.Print(ctx, menu, []any{menu["id"]}, func() error {
+		_, err := output.Fprintf(ctx, "Updated menu %v\n", menu["id"])
 		return err
-	}
-	return nil
+	})
 }

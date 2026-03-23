@@ -32,13 +32,16 @@ func (c *AuthWhoamiCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.Plain(ctx, user.Email, user.Name)
 	}
 
-	fmt.Printf("Email: %s\n", user.Email)
-	if user.Name != "" {
-		fmt.Printf("Name:  %s\n", user.Name)
-	}
+	admin := ""
 	if user.Admin {
-		fmt.Println("Admin: yes")
+		admin = "yes"
 	}
-
-	return nil
+	return output.Detail(ctx, user,
+		[]any{user.Email, user.Name},
+		[]output.Field{
+			output.FAlways("Email", user.Email),
+			output.F("Name", user.Name),
+			output.F("Admin", admin),
+		},
+	)
 }

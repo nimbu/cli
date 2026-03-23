@@ -33,25 +33,12 @@ func (c *BlogPostsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get article: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, post)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, post.ID, post.Slug, post.Title, post.Status)
-	}
-
-	fmt.Printf("ID:        %s\n", post.ID)
-	fmt.Printf("Slug:      %s\n", post.Slug)
-	fmt.Printf("Title:     %s\n", post.Title)
-	fmt.Printf("Status:    %s\n", post.Status)
-	if post.Author != "" {
-		fmt.Printf("Author:    %s\n", post.Author)
-	}
-	if post.TextContent != "" {
-		fmt.Printf("Body:      %s\n", post.TextContent)
-	}
-
-	return nil
+	return output.Detail(ctx, post, []any{post.ID, post.Slug, post.Title, post.Status}, []output.Field{
+		output.FAlways("ID", post.ID),
+		output.FAlways("Slug", post.Slug),
+		output.FAlways("Title", post.Title),
+		output.FAlways("Status", post.Status),
+		output.F("Author", post.Author),
+		output.F("Body", post.TextContent),
+	})
 }

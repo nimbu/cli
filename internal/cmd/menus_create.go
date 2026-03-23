@@ -40,15 +40,8 @@ func (c *MenusCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("create menu: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, menu)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, menu.ID)
-	}
-
-	fmt.Printf("Created menu %s\n", menu.ID)
-	return nil
+	return output.Print(ctx, menu, []any{menu.ID}, func() error {
+		_, err := output.Fprintf(ctx, "Created menu %s\n", menu.ID)
+		return err
+	})
 }

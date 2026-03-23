@@ -46,12 +46,15 @@ func (c *ConfigListCmd) Run(ctx context.Context) error {
 
 	if mode.Plain {
 		for k, v := range data {
-			fmt.Printf("%s\t%s\n", k, v)
+			if _, err := output.Fprintf(ctx, "%s\t%s\n", k, v); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
 
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	w := output.WriterFromContext(ctx)
+	tw := tabwriter.NewWriter(w.Out, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "KEY\tVALUE")
 	for _, k := range []string{"default_site", "api_url", "timeout", "keyring_backend", "banner_theme"} {
 		_, _ = fmt.Fprintf(tw, "%s\t%s\n", k, data[k])
@@ -80,7 +83,9 @@ func (c *ConfigGetCmd) Run(ctx context.Context) error {
 		return output.JSON(ctx, map[string]string{c.Key: val})
 	}
 
-	fmt.Println(val)
+	if _, err := output.Fprintln(ctx, val); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -115,7 +120,9 @@ func (c *ConfigSetCmd) Run(ctx context.Context) error {
 		}
 	}
 
-	fmt.Printf("Set %s = %s\n", c.Key, c.Value)
+	if _, err := output.Fprintf(ctx, "Set %s = %s\n", c.Key, c.Value); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -143,7 +150,9 @@ func (c *ConfigUnsetCmd) Run(ctx context.Context) error {
 		return output.JSON(ctx, map[string]string{"status": "ok", "key": c.Key})
 	}
 
-	fmt.Printf("Unset %s\n", c.Key)
+	if _, err := output.Fprintf(ctx, "Unset %s\n", c.Key); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -161,6 +170,8 @@ func (c *ConfigPathCmd) Run(ctx context.Context) error {
 		return output.JSON(ctx, map[string]string{"path": path})
 	}
 
-	fmt.Println(path)
+	if _, err := output.Fprintln(ctx, path); err != nil {
+		return err
+	}
 	return nil
 }

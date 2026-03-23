@@ -42,13 +42,8 @@ func runCustomerAction(ctx context.Context, flags *RootFlags, customerRef, actio
 	if err := client.Post(ctx, path, map[string]any{}, &result); err != nil {
 		return fmt.Errorf("%s: %w", label, err)
 	}
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, result)
-	}
-	if mode.Plain {
-		return output.Plain(ctx, customerRef, result.Status)
-	}
-	fmt.Printf("%s: %s\n", label, customerRef)
-	return nil
+	return output.Print(ctx, result, []any{customerRef, result.Status}, func() error {
+		_, err := output.Fprintf(ctx, "%s: %s\n", label, customerRef)
+		return err
+	})
 }

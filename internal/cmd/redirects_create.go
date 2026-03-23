@@ -40,15 +40,8 @@ func (c *RedirectsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("create redirect: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, redirect)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, redirect.ID, redirect.Source, redirect.Target)
-	}
-
-	fmt.Printf("Created redirect: %s -> %s (%s)\n", redirect.Source, redirect.Target, redirect.ID)
-	return nil
+	return output.Print(ctx, redirect, []any{redirect.ID, redirect.Source, redirect.Target}, func() error {
+		_, err := output.Fprintf(ctx, "Created redirect: %s -> %s (%s)\n", redirect.Source, redirect.Target, redirect.ID)
+		return err
+	})
 }

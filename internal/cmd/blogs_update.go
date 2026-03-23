@@ -43,15 +43,8 @@ func (c *BlogsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("update blog: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, blog)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, blog.ID, blog.Handle, blog.Name)
-	}
-
-	fmt.Printf("Updated blog: %s\n", blog.ID)
-	return nil
+	return output.Print(ctx, blog, []any{blog.ID, blog.Handle, blog.Name}, func() error {
+		_, err := output.Fprintf(ctx, "Updated blog: %s\n", blog.ID)
+		return err
+	})
 }

@@ -38,15 +38,8 @@ func (c *RedirectsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("delete redirect: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload("redirect deleted"))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, c.Redirect, "deleted")
-	}
-
-	fmt.Printf("Deleted redirect: %s\n", c.Redirect)
-	return nil
+	return output.Print(ctx, output.SuccessPayload("redirect deleted"), []any{c.Redirect, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted redirect: %s\n", c.Redirect)
+		return err
+	})
 }

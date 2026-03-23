@@ -43,15 +43,8 @@ func (c *CollectionsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return fmt.Errorf("update collection: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, col)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, col.ID, col.Slug, col.Name)
-	}
-
-	fmt.Printf("Updated collection: %s (%s)\n", col.Name, col.ID)
-	return nil
+	return output.Print(ctx, col, []any{col.ID, col.Slug, col.Name}, func() error {
+		_, err := output.Fprintf(ctx, "Updated collection: %s (%s)\n", col.Name, col.ID)
+		return err
+	})
 }

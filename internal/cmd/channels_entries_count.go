@@ -37,15 +37,8 @@ func (c *ChannelEntriesCountCmd) Run(ctx context.Context, flags *RootFlags) erro
 		return fmt.Errorf("count entries: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.CountPayload(count))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, count)
-	}
-
-	fmt.Printf("Count: %d\n", count)
-	return nil
+	return output.Print(ctx, output.CountPayload(count), []any{count}, func() error {
+		_, err := output.Fprintf(ctx, "Count: %d\n", count)
+		return err
+	})
 }

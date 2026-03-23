@@ -38,25 +38,12 @@ func (c *ChannelEntriesGetCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return fmt.Errorf("get entry: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, entry)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, entry.ID, entry.Slug, entry.Title, entry.Published)
-	}
-
-	fmt.Printf("ID:        %s\n", entry.ID)
-	fmt.Printf("Slug:      %s\n", entry.Slug)
-	fmt.Printf("Title:     %s\n", entry.Title)
-	fmt.Printf("Published: %v\n", entry.Published)
-	if entry.Locale != "" {
-		fmt.Printf("Locale:    %s\n", entry.Locale)
-	}
-	if entry.Body != "" {
-		fmt.Printf("Body:      %s\n", entry.Body)
-	}
-
-	return nil
+	return output.Detail(ctx, entry, []any{entry.ID, entry.Slug, entry.Title, entry.Published}, []output.Field{
+		output.FAlways("ID", entry.ID),
+		output.FAlways("Slug", entry.Slug),
+		output.FAlways("Title", entry.Title),
+		output.FAlways("Published", entry.Published),
+		output.F("Locale", entry.Locale),
+		output.F("Body", entry.Body),
+	})
 }

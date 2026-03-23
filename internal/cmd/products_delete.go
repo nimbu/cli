@@ -38,15 +38,8 @@ func (c *ProductsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("delete product: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload("product deleted"))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, c.Product, "deleted")
-	}
-
-	fmt.Printf("Deleted product: %s\n", c.Product)
-	return nil
+	return output.Print(ctx, output.SuccessPayload("product deleted"), []any{c.Product, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted product: %s\n", c.Product)
+		return err
+	})
 }

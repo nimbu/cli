@@ -37,9 +37,13 @@ func (c *AuthKeyringShowCmd) Run(ctx context.Context) error {
 		return output.Plain(ctx, backend, source)
 	}
 
-	fmt.Printf("Backend: %s\n", backend)
-	fmt.Printf("Source:  %s\n", source)
-	return nil
+	return output.Detail(ctx, map[string]string{"backend": backend, "source": source},
+		[]any{backend, source},
+		[]output.Field{
+			output.FAlways("Backend", backend),
+			output.FAlways("Source", source),
+		},
+	)
 }
 
 // AuthKeyringSetCmd sets the keyring backend.
@@ -79,6 +83,8 @@ func (c *AuthKeyringSetCmd) Run(ctx context.Context) error {
 		return output.JSON(ctx, output.SuccessPayload(fmt.Sprintf("keyring backend set to %s", c.Backend)))
 	}
 
-	fmt.Printf("Keyring backend set to %s\n", c.Backend)
+	if _, err := output.Fprintf(ctx, "Keyring backend set to %s\n", c.Backend); err != nil {
+		return err
+	}
 	return nil
 }

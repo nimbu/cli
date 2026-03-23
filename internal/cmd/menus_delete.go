@@ -38,15 +38,8 @@ func (c *MenusDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("delete menu: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload("menu deleted"))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, c.Menu, "deleted")
-	}
-
-	fmt.Printf("Deleted menu %s\n", c.Menu)
-	return nil
+	return output.Print(ctx, output.SuccessPayload("menu deleted"), []any{c.Menu, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted menu %s\n", c.Menu)
+		return err
+	})
 }

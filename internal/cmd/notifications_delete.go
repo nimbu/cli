@@ -38,15 +38,8 @@ func (c *NotificationsDeleteCmd) Run(ctx context.Context, flags *RootFlags) erro
 		return fmt.Errorf("delete notification: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload("notification deleted"))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, c.Notification, "deleted")
-	}
-
-	fmt.Printf("Deleted notification: %s\n", c.Notification)
-	return nil
+	return output.Print(ctx, output.SuccessPayload("notification deleted"), []any{c.Notification, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted notification: %s\n", c.Notification)
+		return err
+	})
 }

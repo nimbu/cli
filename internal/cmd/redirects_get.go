@@ -32,18 +32,9 @@ func (c *RedirectsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get redirect: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, redirect)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, redirect.ID, redirect.Source, redirect.Target)
-	}
-
-	fmt.Printf("ID:     %s\n", redirect.ID)
-	fmt.Printf("Source: %s\n", redirect.Source)
-	fmt.Printf("Target: %s\n", redirect.Target)
-
-	return nil
+	return output.Detail(ctx, redirect, []any{redirect.ID, redirect.Source, redirect.Target}, []output.Field{
+		output.FAlways("ID", redirect.ID),
+		output.FAlways("Source", redirect.Source),
+		output.FAlways("Target", redirect.Target),
+	})
 }

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/nimbu/cli/internal/notifications"
 	"github.com/nimbu/cli/internal/output"
@@ -42,13 +41,19 @@ func (c *NotificationsPullCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 	if mode.Plain {
 		for _, item := range result.Written {
-			fmt.Println(item)
+			if _, err := output.Fprintln(ctx, item); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
 	for _, item := range result.Written {
-		fmt.Printf("write %s\n", item)
+		if _, err := output.Fprintf(ctx, "write %s\n", item); err != nil {
+			return err
+		}
 	}
-	fmt.Printf("pull complete: %d files\n", len(result.Written))
+	if _, err := output.Fprintf(ctx, "pull complete: %d files\n", len(result.Written)); err != nil {
+		return err
+	}
 	return nil
 }

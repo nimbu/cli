@@ -42,18 +42,11 @@ func (c *BlogPostsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("create article: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, result)
-	}
-
-	if mode.Plain {
-		id, _ := result["id"].(string)
-		slug, _ := result["slug"].(string)
-		title, _ := result["title"].(string)
-		return output.Plain(ctx, id, slug, title)
-	}
-
-	fmt.Printf("Created article in blog %s\n", c.Blog)
-	return nil
+	id, _ := result["id"].(string)
+	slug, _ := result["slug"].(string)
+	title, _ := result["title"].(string)
+	return output.Print(ctx, result, []any{id, slug, title}, func() error {
+		_, err := output.Fprintf(ctx, "Created article in blog %s\n", c.Blog)
+		return err
+	})
 }

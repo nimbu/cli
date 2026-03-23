@@ -65,17 +65,15 @@ func (c *ThemeSnippetsCreateCmd) Run(ctx context.Context, flags *RootFlags) erro
 		return fmt.Errorf("create snippet: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, result)
-	}
-	if mode.Plain {
-		return output.Plain(ctx, result.ID, result.Name)
-	}
-
-	fmt.Printf("Upserted snippet: %s\n", result.Name)
-	if result.ID != "" {
-		fmt.Printf("ID: %s\n", result.ID)
-	}
-	return nil
+	return output.Print(ctx, result, []any{result.ID, result.Name}, func() error {
+		if _, err := output.Fprintf(ctx, "Upserted snippet: %s\n", result.Name); err != nil {
+			return err
+		}
+		if result.ID != "" {
+			if _, err := output.Fprintf(ctx, "ID: %s\n", result.ID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

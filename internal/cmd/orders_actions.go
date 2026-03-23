@@ -73,13 +73,8 @@ func runOrderAction(ctx context.Context, flags *RootFlags, orderRef, action stri
 	if err := client.Post(ctx, path, body, &result); err != nil {
 		return fmt.Errorf("%s: %w", label, err)
 	}
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, result)
-	}
-	if mode.Plain {
-		return output.Plain(ctx, orderRef, result.Status, result.State)
-	}
-	fmt.Printf("%s: %s\n", label, orderRef)
-	return nil
+	return output.Print(ctx, result, []any{orderRef, result.Status, result.State}, func() error {
+		_, err := output.Fprintf(ctx, "%s: %s\n", label, orderRef)
+		return err
+	})
 }

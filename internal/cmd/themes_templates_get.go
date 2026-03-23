@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -34,47 +33,27 @@ func (c *ThemeTemplatesGetCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return fmt.Errorf("get template: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, tmpl)
-	}
-
-	if mode.Plain {
-		if tmpl.Code != "" {
-			_, err := os.Stdout.WriteString(tmpl.Code)
-			if err != nil {
-				return fmt.Errorf("write stdout: %w", err)
-			}
-			_, err = os.Stdout.WriteString("\n")
-			if err != nil {
-				return fmt.Errorf("write stdout: %w", err)
-			}
-			return nil
-		}
-		return output.Plain(ctx, tmpl.ID, tmpl.Name, tmpl.UpdatedAt)
-	}
-
 	if tmpl.Code != "" {
-		_, err := os.Stdout.WriteString(tmpl.Code)
-		if err != nil {
-			return fmt.Errorf("write stdout: %w", err)
-		}
-		_, err = os.Stdout.WriteString("\n")
-		if err != nil {
-			return fmt.Errorf("write stdout: %w", err)
-		}
-		return nil
+		return output.Print(ctx, tmpl, []any{tmpl.Code}, func() error {
+			_, err := output.Fprintf(ctx, "%s\n", tmpl.Code)
+			return err
+		})
 	}
 
-	fmt.Printf("ID:       %s\n", tmpl.ID)
-	fmt.Printf("Name:     %s\n", tmpl.Name)
-	fmt.Printf("URL:      %s\n", tmpl.URL)
-	fmt.Printf("Permalink:%s\n", tmpl.Permalink)
+	var created, updated string
 	if !tmpl.CreatedAt.IsZero() {
-		fmt.Printf("Created:  %s\n", tmpl.CreatedAt.Format("2006-01-02 15:04:05"))
+		created = tmpl.CreatedAt.Format("2006-01-02 15:04:05")
 	}
 	if !tmpl.UpdatedAt.IsZero() {
-		fmt.Printf("Updated:  %s\n", tmpl.UpdatedAt.Format("2006-01-02 15:04:05"))
+		updated = tmpl.UpdatedAt.Format("2006-01-02 15:04:05")
 	}
-	return nil
+
+	return output.Detail(ctx, tmpl, []any{tmpl.ID, tmpl.Name, tmpl.UpdatedAt}, []output.Field{
+		output.FAlways("ID", tmpl.ID),
+		output.FAlways("Name", tmpl.Name),
+		output.FAlways("URL", tmpl.URL),
+		output.FAlways("Permalink", tmpl.Permalink),
+		output.F("Created", created),
+		output.F("Updated", updated),
+	})
 }

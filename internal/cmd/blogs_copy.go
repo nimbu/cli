@@ -57,7 +57,7 @@ func (c *BlogsCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 			if item.Slug != "" {
 				label = item.Blog + "/" + item.Slug
 			}
-			if err := printLine(ctx, "%s\t%s\t%s\n", item.Action, item.Kind, label); err != nil {
+			if _, err := output.Fprintf(ctx, "%s\t%s\t%s\n", item.Action, item.Kind, label); err != nil {
 				return err
 			}
 		}
@@ -71,7 +71,7 @@ func (c *BlogsCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if item.Slug != "" {
 			label = item.Blog + "/" + item.Slug
 		}
-		if err := printLine(ctx, "%s %s %s\n", item.Action, item.Kind, label); err != nil {
+		if _, err := output.Fprintf(ctx, "%s %s %s\n", item.Action, item.Kind, label); err != nil {
 			return err
 		}
 	}

@@ -50,13 +50,8 @@ func (c *ChannelsEmptyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err := client.Post(ctx, path, map[string]any{"confirm": channel.Slug}, &result); err != nil {
 		return fmt.Errorf("empty channel: %w", err)
 	}
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, result)
-	}
-	if mode.Plain {
-		return output.Plain(ctx, channel.Slug, result.Status, result.Message)
-	}
-	fmt.Printf("Scheduled empty for channel %s\n", channel.Slug)
-	return nil
+	return output.Print(ctx, result, []any{channel.Slug, result.Status, result.Message}, func() error {
+		_, err := output.Fprintf(ctx, "Scheduled empty for channel %s\n", channel.Slug)
+		return err
+	})
 }

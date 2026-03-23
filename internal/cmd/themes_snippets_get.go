@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -34,47 +33,27 @@ func (c *ThemeSnippetsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get snippet: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, snippet)
-	}
-
-	if mode.Plain {
-		if snippet.Code != "" {
-			_, err := os.Stdout.WriteString(snippet.Code)
-			if err != nil {
-				return fmt.Errorf("write stdout: %w", err)
-			}
-			_, err = os.Stdout.WriteString("\n")
-			if err != nil {
-				return fmt.Errorf("write stdout: %w", err)
-			}
-			return nil
-		}
-		return output.Plain(ctx, snippet.ID, snippet.Name, snippet.UpdatedAt)
-	}
-
 	if snippet.Code != "" {
-		_, err := os.Stdout.WriteString(snippet.Code)
-		if err != nil {
-			return fmt.Errorf("write stdout: %w", err)
-		}
-		_, err = os.Stdout.WriteString("\n")
-		if err != nil {
-			return fmt.Errorf("write stdout: %w", err)
-		}
-		return nil
+		return output.Print(ctx, snippet, []any{snippet.Code}, func() error {
+			_, err := output.Fprintf(ctx, "%s\n", snippet.Code)
+			return err
+		})
 	}
 
-	fmt.Printf("ID:       %s\n", snippet.ID)
-	fmt.Printf("Name:     %s\n", snippet.Name)
-	fmt.Printf("URL:      %s\n", snippet.URL)
-	fmt.Printf("Permalink:%s\n", snippet.Permalink)
+	var created, updated string
 	if !snippet.CreatedAt.IsZero() {
-		fmt.Printf("Created:  %s\n", snippet.CreatedAt.Format("2006-01-02 15:04:05"))
+		created = snippet.CreatedAt.Format("2006-01-02 15:04:05")
 	}
 	if !snippet.UpdatedAt.IsZero() {
-		fmt.Printf("Updated:  %s\n", snippet.UpdatedAt.Format("2006-01-02 15:04:05"))
+		updated = snippet.UpdatedAt.Format("2006-01-02 15:04:05")
 	}
-	return nil
+
+	return output.Detail(ctx, snippet, []any{snippet.ID, snippet.Name, snippet.UpdatedAt}, []output.Field{
+		output.FAlways("ID", snippet.ID),
+		output.FAlways("Name", snippet.Name),
+		output.FAlways("URL", snippet.URL),
+		output.FAlways("Permalink", snippet.Permalink),
+		output.F("Created", created),
+		output.F("Updated", updated),
+	})
 }

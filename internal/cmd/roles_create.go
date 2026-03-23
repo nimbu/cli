@@ -40,15 +40,8 @@ func (c *RolesCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("create role: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, role)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, role.ID, role.Name)
-	}
-
-	fmt.Printf("Created role: %s (%s)\n", role.Name, role.ID)
-	return nil
+	return output.Print(ctx, role, []any{role.ID, role.Name}, func() error {
+		_, err := output.Fprintf(ctx, "Created role: %s (%s)\n", role.Name, role.ID)
+		return err
+	})
 }

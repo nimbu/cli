@@ -28,15 +28,8 @@ func (c *WebhooksCountCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("count webhooks: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.CountPayload(count))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, count)
-	}
-
-	fmt.Printf("Webhooks: %d\n", count)
-	return nil
+	return output.Print(ctx, output.CountPayload(count), []any{count}, func() error {
+		_, err := output.Fprintf(ctx, "Webhooks: %d\n", count)
+		return err
+	})
 }

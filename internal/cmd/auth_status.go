@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -71,16 +70,24 @@ func (c *AuthStatusCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if verified {
 		symbol := colorSymbol("✓", "#22c55e", useColor)
 		if name != "" {
-			fmt.Printf("%s Logged in to %s as %s (%s)\n", symbol, bold(host, useColor), bold(name, useColor), email)
+			if _, err := output.Fprintf(ctx, "%s Logged in to %s as %s (%s)\n", symbol, bold(host, useColor), bold(name, useColor), email); err != nil {
+				return err
+			}
 		} else {
-			fmt.Printf("%s Logged in to %s as %s\n", symbol, bold(host, useColor), bold(email, useColor))
+			if _, err := output.Fprintf(ctx, "%s Logged in to %s as %s\n", symbol, bold(host, useColor), bold(email, useColor)); err != nil {
+				return err
+			}
 		}
 	} else {
 		symbol := colorSymbol("!", "#f59e0b", useColor)
 		if email != "" {
-			fmt.Printf("%s Logged in to %s as %s (unverified)\n", symbol, bold(host, useColor), bold(email, useColor))
+			if _, err := output.Fprintf(ctx, "%s Logged in to %s as %s (unverified)\n", symbol, bold(host, useColor), bold(email, useColor)); err != nil {
+				return err
+			}
 		} else {
-			fmt.Printf("%s Logged in to %s (unverified)\n", symbol, bold(host, useColor))
+			if _, err := output.Fprintf(ctx, "%s Logged in to %s (unverified)\n", symbol, bold(host, useColor)); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -102,7 +109,9 @@ func (c *AuthStatusCmd) renderNotLoggedIn(ctx context.Context, mode output.Mode,
 	}
 
 	symbol := colorSymbol("✗", "#ef4444", useColor)
-	fmt.Printf("%s Not logged in to %s\n", symbol, bold(host, useColor))
+	if _, err := output.Fprintf(ctx, "%s Not logged in to %s\n", symbol, bold(host, useColor)); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -28,15 +28,8 @@ func (c *PagesCountCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("count pages: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.CountPayload(count))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, count)
-	}
-
-	fmt.Printf("Pages: %d\n", count)
-	return nil
+	return output.Print(ctx, output.CountPayload(count), []any{count}, func() error {
+		_, err := output.Fprintf(ctx, "Pages: %d\n", count)
+		return err
+	})
 }

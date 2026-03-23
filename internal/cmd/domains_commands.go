@@ -89,28 +89,19 @@ func (c *DomainsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return fmt.Errorf("get domain: %w", err)
 	}
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, domain)
-	}
-	if mode.Plain {
-		return output.Plain(ctx, domain.ID, domain.Domain, domain.Primary, domain.DNSCheck, domain.SSLEnabled)
-	}
-	fmt.Printf("ID:          %s\n", domain.ID)
-	fmt.Printf("Domain:      %s\n", domain.Domain)
-	fmt.Printf("Primary:     %t\n", domain.Primary)
-	fmt.Printf("DNS Check:   %t\n", domain.DNSCheck)
-	fmt.Printf("SSL Enabled: %t\n", domain.SSLEnabled)
-	if domain.RedirectDomain != "" {
-		fmt.Printf("Redirect:    %s\n", domain.RedirectDomain)
-	}
-	if domain.DefaultLocale != "" {
-		fmt.Printf("Locale:      %s\n", domain.DefaultLocale)
-	}
-	if domain.DefaultCountry != "" {
-		fmt.Printf("Country:     %s\n", domain.DefaultCountry)
-	}
-	return nil
+	return output.Detail(ctx, domain,
+		[]any{domain.ID, domain.Domain, domain.Primary, domain.DNSCheck, domain.SSLEnabled},
+		[]output.Field{
+			output.FAlways("ID", domain.ID),
+			output.FAlways("Domain", domain.Domain),
+			output.FAlways("Primary", domain.Primary),
+			output.FAlways("DNS Check", domain.DNSCheck),
+			output.FAlways("SSL Enabled", domain.SSLEnabled),
+			output.F("Redirect", domain.RedirectDomain),
+			output.F("Locale", domain.DefaultLocale),
+			output.F("Country", domain.DefaultCountry),
+		},
+	)
 }
 
 type DomainsCreateCmd struct {
@@ -156,7 +147,9 @@ func (c *DomainsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if mode.Plain {
 		return output.Plain(ctx, domain.ID, domain.Domain)
 	}
-	fmt.Printf("Created domain %s (%s)\n", domain.Domain, domain.ID)
+	if _, err := output.Fprintf(ctx, "Created domain %s (%s)\n", domain.Domain, domain.ID); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -201,7 +194,9 @@ func (c *DomainsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if mode.Plain {
 		return output.Plain(ctx, updated.ID, updated.Domain)
 	}
-	fmt.Printf("Updated domain %s (%s)\n", updated.Domain, updated.ID)
+	if _, err := output.Fprintf(ctx, "Updated domain %s (%s)\n", updated.Domain, updated.ID); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -239,7 +234,9 @@ func (c *DomainsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if mode.Plain {
 		return output.Plain(ctx, domain.ID, "deleted")
 	}
-	fmt.Printf("Deleted domain %s\n", domain.Domain)
+	if _, err := output.Fprintf(ctx, "Deleted domain %s\n", domain.Domain); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -278,6 +275,8 @@ func (c *DomainsMakePrimaryCmd) Run(ctx context.Context, flags *RootFlags) error
 	if mode.Plain {
 		return output.Plain(ctx, domain.ID, result.Status, result.Primary)
 	}
-	fmt.Printf("Made domain primary: %s\n", domain.Domain)
+	if _, err := output.Fprintf(ctx, "Made domain primary: %s\n", domain.Domain); err != nil {
+		return err
+	}
 	return nil
 }

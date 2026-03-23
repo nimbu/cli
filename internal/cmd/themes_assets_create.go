@@ -80,21 +80,12 @@ func (c *ThemeAssetsCreateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return fmt.Errorf("create asset: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, result)
+	displayName := result.Name
+	if displayName == "" {
+		displayName = c.Name
 	}
-	if mode.Plain {
-		if result.Name != "" {
-			return output.Plain(ctx, result.Name)
-		}
-		return output.Plain(ctx, c.Name)
-	}
-
-	if result.Name != "" {
-		fmt.Printf("Upserted asset: %s\n", result.Name)
-		return nil
-	}
-	fmt.Printf("Upserted asset: %s\n", c.Name)
-	return nil
+	return output.Print(ctx, result, []any{displayName}, func() error {
+		_, err := output.Fprintf(ctx, "Upserted asset: %s\n", displayName)
+		return err
+	})
 }

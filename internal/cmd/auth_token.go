@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/nimbu/cli/internal/output"
 )
@@ -23,6 +22,8 @@ func (c *AuthTokenCmd) Run(ctx context.Context) error {
 	}
 
 	// Plain and human output are the same - just the token
-	fmt.Println(token)
+	if _, err := output.Fprintln(ctx, token); err != nil {
+		return err
+	}
 	return nil
 }

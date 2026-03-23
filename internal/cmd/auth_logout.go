@@ -30,6 +30,8 @@ func (c *AuthLogoutCmd) Run(ctx context.Context) error {
 		return output.JSON(ctx, output.SuccessPayload("logged out"))
 	}
 
-	fmt.Println("Logged out")
+	if _, err := output.Fprintln(ctx, "Logged out"); err != nil {
+		return err
+	}
 	return nil
 }

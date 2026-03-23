@@ -76,15 +76,8 @@ func (c *WebhooksCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("create webhook: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, webhook)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, webhook.ID)
-	}
-
-	fmt.Printf("Created webhook %s\n", webhook.ID)
-	return nil
+	return output.Print(ctx, webhook, []any{webhook.ID}, func() error {
+		_, err := output.Fprintf(ctx, "Created webhook %s\n", webhook.ID)
+		return err
+	})
 }

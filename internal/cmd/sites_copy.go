@@ -90,43 +90,44 @@ func (c *SitesCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if result.DryRun {
 			prefix = "[dry-run] "
 		}
-		if err := printLine(ctx, "%suploads\t%d\n", prefix, len(result.Uploads.Items)); err != nil {
+		if _, err := output.Fprintf(ctx, "%suploads\t%d\n", prefix, len(result.Uploads.Items)); err != nil {
 			return err
 		}
-		if err := printLine(ctx, "%schannels\t%d\n", prefix, len(result.Channels.Items)); err != nil {
+		if _, err := output.Fprintf(ctx, "%schannels\t%d\n", prefix, len(result.Channels.Items)); err != nil {
 			return err
 		}
-		if err := printLine(ctx, "%schannel_entries\t%d\n", prefix, len(result.ChannelEntries)); err != nil {
+		if _, err := output.Fprintf(ctx, "%schannel_entries\t%d\n", prefix, len(result.ChannelEntries)); err != nil {
 			return err
 		}
-		if err := printLine(ctx, "%sroles\t%d\n", prefix, len(result.Roles.Items)); err != nil {
+		if _, err := output.Fprintf(ctx, "%sroles\t%d\n", prefix, len(result.Roles.Items)); err != nil {
 			return err
 		}
-		if err := printLine(ctx, "%sproducts\t%d\n", prefix, len(result.Products.Items)); err != nil {
+		if _, err := output.Fprintf(ctx, "%sproducts\t%d\n", prefix, len(result.Products.Items)); err != nil {
 			return err
 		}
-		if err := printLine(ctx, "%scollections\t%d\n", prefix, len(result.Collections.Items)); err != nil {
+		if _, err := output.Fprintf(ctx, "%scollections\t%d\n", prefix, len(result.Collections.Items)); err != nil {
 			return err
 		}
-		if err := printLine(ctx, "%spages\t%d\n", prefix, len(result.Pages.Items)); err != nil {
+		if _, err := output.Fprintf(ctx, "%spages\t%d\n", prefix, len(result.Pages.Items)); err != nil {
 			return err
 		}
-		if err := printLine(ctx, "%smenus\t%d\n", prefix, len(result.Menus.Items)); err != nil {
+		if _, err := output.Fprintf(ctx, "%smenus\t%d\n", prefix, len(result.Menus.Items)); err != nil {
 			return err
 		}
-		if err := printLine(ctx, "%sblogs\t%d\n", prefix, len(result.Blogs.Items)); err != nil {
+		if _, err := output.Fprintf(ctx, "%sblogs\t%d\n", prefix, len(result.Blogs.Items)); err != nil {
 			return err
 		}
-		if err := printLine(ctx, "%snotifications\t%d\n", prefix, len(result.Notifications.Items)); err != nil {
+		if _, err := output.Fprintf(ctx, "%snotifications\t%d\n", prefix, len(result.Notifications.Items)); err != nil {
 			return err
 		}
-		if err := printLine(ctx, "%sredirects\t%d\n", prefix, len(result.Redirects.Items)); err != nil {
+		if _, err := output.Fprintf(ctx, "%sredirects\t%d\n", prefix, len(result.Redirects.Items)); err != nil {
 			return err
 		}
-		if err := printLine(ctx, "%stranslations\t%d\n", prefix, len(result.Translations.Items)); err != nil {
+		if _, err := output.Fprintf(ctx, "%stranslations\t%d\n", prefix, len(result.Translations.Items)); err != nil {
 			return err
 		}
-		return printLine(ctx, "%swarnings\t%d\n", prefix, len(result.Warnings))
+		_, err := output.Fprintf(ctx, "%swarnings\t%d\n", prefix, len(result.Warnings))
+		return err
 	}
 
 	// Human mode: timeline already rendered during execution

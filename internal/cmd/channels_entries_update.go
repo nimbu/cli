@@ -44,15 +44,8 @@ func (c *ChannelEntriesUpdateCmd) Run(ctx context.Context, flags *RootFlags) err
 		return fmt.Errorf("update entry: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, entry)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, entry.ID)
-	}
-
-	fmt.Printf("Updated entry %s\n", entry.ID)
-	return nil
+	return output.Print(ctx, entry, []any{entry.ID}, func() error {
+		_, err := output.Fprintf(ctx, "Updated entry %s\n", entry.ID)
+		return err
+	})
 }

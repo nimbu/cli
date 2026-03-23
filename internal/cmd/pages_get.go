@@ -61,41 +61,41 @@ func (c *PagesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		)
 	}
 
-	if err := printLine(ctx, "ID:           %v\n", page["id"]); err != nil {
+	if _, err := output.Fprintf(ctx, "ID:           %v\n", page["id"]); err != nil {
 		return err
 	}
-	if err := printLine(ctx, "Fullpath:     %s\n", api.PageDocumentFullpath(page)); err != nil {
+	if _, err := output.Fprintf(ctx, "Fullpath:     %s\n", api.PageDocumentFullpath(page)); err != nil {
 		return err
 	}
 	if parent := api.PageDocumentParentPath(page); parent != "" {
-		if err := printLine(ctx, "Parent path:  %s\n", parent); err != nil {
+		if _, err := output.Fprintf(ctx, "Parent path:  %s\n", parent); err != nil {
 			return err
 		}
 	}
-	if err := printLine(ctx, "Title:        %s\n", api.PageDocumentTitle(page)); err != nil {
+	if _, err := output.Fprintf(ctx, "Title:        %s\n", api.PageDocumentTitle(page)); err != nil {
 		return err
 	}
 	if template := api.PageDocumentTemplate(page); template != "" {
-		if err := printLine(ctx, "Template:     %s\n", template); err != nil {
+		if _, err := output.Fprintf(ctx, "Template:     %s\n", template); err != nil {
 			return err
 		}
 	}
-	if err := printLine(ctx, "Published:    %v\n", api.PageDocumentPublished(page)); err != nil {
+	if _, err := output.Fprintf(ctx, "Published:    %v\n", api.PageDocumentPublished(page)); err != nil {
 		return err
 	}
 	if locale := api.PageDocumentLocale(page); locale != "" {
-		if err := printLine(ctx, "Locale:       %s\n", locale); err != nil {
+		if _, err := output.Fprintf(ctx, "Locale:       %s\n", locale); err != nil {
 			return err
 		}
 	}
-	if err := printLine(ctx, "Editables:    %d\n", stats.EditableCount); err != nil {
+	if _, err := output.Fprintf(ctx, "Editables:    %d\n", stats.EditableCount); err != nil {
 		return err
 	}
-	if err := printLine(ctx, "Attachments:  %d\n", stats.AttachmentCount); err != nil {
+	if _, err := output.Fprintf(ctx, "Attachments:  %d\n", stats.AttachmentCount); err != nil {
 		return err
 	}
 	if c.DownloadAssets != "" {
-		if err := printLine(ctx, "Assets dir:   %s\n", c.DownloadAssets); err != nil {
+		if _, err := output.Fprintf(ctx, "Assets dir:   %s\n", c.DownloadAssets); err != nil {
 			return err
 		}
 	}

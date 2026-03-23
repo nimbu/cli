@@ -104,12 +104,14 @@ func runCustomizationCopy(ctx context.Context, flags *RootFlags, service migrate
 		return output.JSON(ctx, result)
 	}
 	if mode.Plain {
-		return printLine(ctx, "%s\t%s\t%d\n", result.Action, result.Kind, result.FieldCount)
+		_, err := output.Fprintf(ctx, "%s\t%s\t%d\n", result.Action, result.Kind, result.FieldCount)
+		return err
 	}
 	if tl != nil {
 		return nil
 	}
-	return printLine(ctx, "%s %s customizations (%d fields)\n", result.Action, result.Kind, result.FieldCount)
+	_, err = output.Fprintf(ctx, "%s %s customizations (%d fields)\n", result.Action, result.Kind, result.FieldCount)
+	return err
 }
 
 func runCustomizationDiff(ctx context.Context, service migrate.CustomizationService, from, to, fromHost, toHost string) error {

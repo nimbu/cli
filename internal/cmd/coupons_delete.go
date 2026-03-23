@@ -38,15 +38,8 @@ func (c *CouponsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("delete coupon: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload("coupon deleted"))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, c.Coupon, "deleted")
-	}
-
-	fmt.Printf("Deleted coupon: %s\n", c.Coupon)
-	return nil
+	return output.Print(ctx, output.SuccessPayload("coupon deleted"), []any{c.Coupon, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted coupon: %s\n", c.Coupon)
+		return err
+	})
 }

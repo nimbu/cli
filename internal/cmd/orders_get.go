@@ -32,28 +32,19 @@ func (c *OrdersGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get order: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, o)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, o.ID, o.Number, o.Status, o.Total, o.Currency, o.CustomerID)
-	}
-
-	fmt.Printf("ID:         %s\n", o.ID)
-	fmt.Printf("Number:     %s\n", o.Number)
-	fmt.Printf("Status:     %s\n", o.Status)
-	fmt.Printf("Total:      %.2f %s\n", o.Total, o.Currency)
-	if o.CustomerID != "" {
-		fmt.Printf("Customer:   %s\n", o.CustomerID)
+	fields := []output.Field{
+		output.FAlways("ID", o.ID),
+		output.FAlways("Number", o.Number),
+		output.FAlways("Status", o.Status),
+		output.FAlways("Total", fmt.Sprintf("%.2f %s", o.Total, o.Currency)),
+		output.F("Customer", o.CustomerID),
 	}
 	if !o.CreatedAt.IsZero() {
-		fmt.Printf("Created:    %s\n", o.CreatedAt.Format("2006-01-02 15:04:05"))
+		fields = append(fields, output.FAlways("Created", o.CreatedAt.Format("2006-01-02 15:04:05")))
 	}
 	if !o.UpdatedAt.IsZero() {
-		fmt.Printf("Updated:    %s\n", o.UpdatedAt.Format("2006-01-02 15:04:05"))
+		fields = append(fields, output.FAlways("Updated", o.UpdatedAt.Format("2006-01-02 15:04:05")))
 	}
 
-	return nil
+	return output.Detail(ctx, o, []any{o.ID, o.Number, o.Status, o.Total, o.Currency, o.CustomerID}, fields)
 }

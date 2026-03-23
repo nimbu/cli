@@ -43,15 +43,8 @@ func (c *CouponsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("update coupon: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, coupon)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, coupon.ID, coupon.Code, coupon.Name)
-	}
-
-	fmt.Printf("Updated coupon: %s (%s)\n", coupon.Code, coupon.ID)
-	return nil
+	return output.Print(ctx, coupon, []any{coupon.ID, coupon.Code, coupon.Name}, func() error {
+		_, err := output.Fprintf(ctx, "Updated coupon: %s (%s)\n", coupon.Code, coupon.ID)
+		return err
+	})
 }

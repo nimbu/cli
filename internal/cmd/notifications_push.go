@@ -48,14 +48,20 @@ func (c *NotificationsPushCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 	if mode.Plain {
 		for _, action := range result.Actions {
-			fmt.Printf("%s\t%s\n", action.Action, action.Slug)
+			if _, err := output.Fprintf(ctx, "%s\t%s\n", action.Action, action.Slug); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
 	for _, action := range result.Actions {
-		fmt.Printf("%s %s\n", action.Action, action.Slug)
+		if _, err := output.Fprintf(ctx, "%s %s\n", action.Action, action.Slug); err != nil {
+			return err
+		}
 	}
-	fmt.Printf("push complete: %d templates\n", len(result.Actions))
+	if _, err := output.Fprintf(ctx, "push complete: %d templates\n", len(result.Actions)); err != nil {
+		return err
+	}
 	return nil
 }
 

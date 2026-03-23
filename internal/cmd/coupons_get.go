@@ -32,25 +32,14 @@ func (c *CouponsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get coupon: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, coupon)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, coupon.ID, coupon.Code, coupon.Name, coupon.State, coupon.CouponType)
-	}
-
-	fmt.Printf("ID:          %s\n", coupon.ID)
-	fmt.Printf("Code:        %s\n", coupon.Code)
-	fmt.Printf("Name:        %s\n", coupon.Name)
-	if coupon.Description != "" {
-		fmt.Printf("Description: %s\n", coupon.Description)
-	}
-	fmt.Printf("State:       %s\n", coupon.State)
-	fmt.Printf("Type:        %s\n", coupon.CouponType)
-	fmt.Printf("Percentage:  %.2f\n", coupon.CouponPercentage)
-	fmt.Printf("Amount:      %.2f\n", coupon.CouponAmount)
-
-	return nil
+	return output.Detail(ctx, coupon, []any{coupon.ID, coupon.Code, coupon.Name, coupon.State, coupon.CouponType}, []output.Field{
+		output.FAlways("ID", coupon.ID),
+		output.FAlways("Code", coupon.Code),
+		output.FAlways("Name", coupon.Name),
+		output.F("Description", coupon.Description),
+		output.FAlways("State", coupon.State),
+		output.FAlways("Type", coupon.CouponType),
+		output.FAlways("Percentage", fmt.Sprintf("%.2f", coupon.CouponPercentage)),
+		output.FAlways("Amount", fmt.Sprintf("%.2f", coupon.CouponAmount)),
+	})
 }

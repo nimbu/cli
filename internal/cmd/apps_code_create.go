@@ -43,15 +43,8 @@ func (c *AppsCodeCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("create app code file: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, file)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, file.Name, file.URL)
-	}
-
-	fmt.Printf("Created app code file: %s\n", file.Name)
-	return nil
+	return output.Print(ctx, file, []any{file.Name, file.URL}, func() error {
+		_, err := output.Fprintf(ctx, "Created app code file: %s\n", file.Name)
+		return err
+	})
 }

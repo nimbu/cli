@@ -39,14 +39,14 @@ func writeDiffSet(ctx context.Context, diff any, plainLines []string, humanLines
 	}
 	if mode.Plain {
 		for _, line := range plainLines {
-			if err := printLine(ctx, "%s\n", line); err != nil {
+			if _, err := output.Fprintf(ctx, "%s\n", line); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 	for _, line := range humanLines {
-		if err := printLine(ctx, "%s\n", line); err != nil {
+		if _, err := output.Fprintf(ctx, "%s\n", line); err != nil {
 			return err
 		}
 	}

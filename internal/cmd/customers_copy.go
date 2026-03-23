@@ -65,12 +65,12 @@ func (c *CustomersCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	if mode.Plain {
 		for _, item := range result.Items {
-			if err := printLine(ctx, "%s\t%s\t%s\t%s\n", item.Action, item.Resource, item.Identifier, item.TargetID); err != nil {
+			if _, err := output.Fprintf(ctx, "%s\t%s\t%s\t%s\n", item.Action, item.Resource, item.Identifier, item.TargetID); err != nil {
 				return err
 			}
 		}
 		for _, warning := range result.Warnings {
-			if err := printLine(ctx, "warning: %s\n", warning); err != nil {
+			if _, err := output.Fprintf(ctx, "warning: %s\n", warning); err != nil {
 				return err
 			}
 		}
@@ -80,12 +80,12 @@ func (c *CustomersCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return nil
 	}
 	for _, item := range result.Items {
-		if err := printLine(ctx, "%s %s\n", item.Action, item.Identifier); err != nil {
+		if _, err := output.Fprintf(ctx, "%s %s\n", item.Action, item.Identifier); err != nil {
 			return err
 		}
 	}
 	for _, warning := range result.Warnings {
-		if err := printLine(ctx, "warning: %s\n", warning); err != nil {
+		if _, err := output.Fprintf(ctx, "warning: %s\n", warning); err != nil {
 			return err
 		}
 	}

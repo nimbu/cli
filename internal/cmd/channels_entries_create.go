@@ -43,15 +43,8 @@ func (c *ChannelEntriesCreateCmd) Run(ctx context.Context, flags *RootFlags) err
 		return fmt.Errorf("create entry: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, entry)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, entry.ID)
-	}
-
-	fmt.Printf("Created entry %s\n", entry.ID)
-	return nil
+	return output.Print(ctx, entry, []any{entry.ID}, func() error {
+		_, err := output.Fprintf(ctx, "Created entry %s\n", entry.ID)
+		return err
+	})
 }

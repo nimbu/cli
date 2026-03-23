@@ -35,15 +35,8 @@ func (c *TranslationsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error
 		return fmt.Errorf("delete translation: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload(fmt.Sprintf("deleted %s", c.Key)))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, c.Key, "deleted")
-	}
-
-	fmt.Printf("Deleted translation: %s\n", c.Key)
-	return nil
+	return output.Print(ctx, output.SuccessPayload(fmt.Sprintf("deleted %s", c.Key)), []any{c.Key, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted translation: %s\n", c.Key)
+		return err
+	})
 }

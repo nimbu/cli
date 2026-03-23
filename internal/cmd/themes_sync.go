@@ -163,10 +163,14 @@ func writeThemeTransferResult(ctx context.Context, result themes.Result) error {
 	}
 	if mode.Plain {
 		for _, action := range result.Uploaded {
-			fmt.Printf("upload\t%s\n", action.DisplayPath)
+			if _, err := output.Fprintf(ctx, "upload\t%s\n", action.DisplayPath); err != nil {
+				return err
+			}
 		}
 		for _, action := range result.Deleted {
-			fmt.Printf("delete\t%s\n", action.DisplayPath)
+			if _, err := output.Fprintf(ctx, "delete\t%s\n", action.DisplayPath); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -176,11 +180,17 @@ func writeThemeTransferResult(ctx context.Context, result themes.Result) error {
 		prefix = "[dry-run] "
 	}
 	for _, action := range result.Uploaded {
-		fmt.Printf("%supload %s\n", prefix, action.DisplayPath)
+		if _, err := output.Fprintf(ctx, "%supload %s\n", prefix, action.DisplayPath); err != nil {
+			return err
+		}
 	}
 	for _, action := range result.Deleted {
-		fmt.Printf("%sdelete %s\n", prefix, action.DisplayPath)
+		if _, err := output.Fprintf(ctx, "%sdelete %s\n", prefix, action.DisplayPath); err != nil {
+			return err
+		}
 	}
-	fmt.Printf("%s complete: %d uploads, %d deletes\n", result.Mode, len(result.Uploaded), len(result.Deleted))
+	if _, err := output.Fprintf(ctx, "%s complete: %d uploads, %d deletes\n", result.Mode, len(result.Uploaded), len(result.Deleted)); err != nil {
+		return err
+	}
 	return nil
 }

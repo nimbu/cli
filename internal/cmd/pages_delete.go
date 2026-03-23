@@ -38,15 +38,8 @@ func (c *PagesDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("delete page: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload("page deleted"))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, c.Page, "deleted")
-	}
-
-	fmt.Printf("Deleted page %s\n", c.Page)
-	return nil
+	return output.Print(ctx, output.SuccessPayload("page deleted"), []any{c.Page, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted page %s\n", c.Page)
+		return err
+	})
 }

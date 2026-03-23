@@ -93,19 +93,19 @@ func writeChannelCopyResult(ctx context.Context, result migrate.ChannelCopyResul
 	}
 	if mode.Plain {
 		for _, item := range result.Items {
-			if err := printLine(ctx, "%s\t%s\t%s\n", item.Action, item.Source, item.Target); err != nil {
+			if _, err := output.Fprintf(ctx, "%s\t%s\t%s\n", item.Action, item.Source, item.Target); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 	for _, item := range result.Items {
-		if err := printLine(ctx, "%s %s -> %s\n", item.Action, item.Source, item.Target); err != nil {
+		if _, err := output.Fprintf(ctx, "%s %s -> %s\n", item.Action, item.Source, item.Target); err != nil {
 			return err
 		}
 	}
 	if len(result.Placeholders) > 0 {
-		if err := printLine(ctx, "placeholders: %s\n", fmt.Sprintf("%v", result.Placeholders)); err != nil {
+		if _, err := output.Fprintf(ctx, "placeholders: %s\n", fmt.Sprintf("%v", result.Placeholders)); err != nil {
 			return err
 		}
 	}

@@ -83,7 +83,9 @@ func (c *AuthLoginCmd) Run(ctx context.Context, flags *RootFlags) error {
 		})
 	}
 
-	fmt.Printf("Logged in as %s\n", email)
+	if _, err := output.Fprintf(ctx, "Logged in as %s\n", email); err != nil {
+		return err
+	}
 	return nil
 }
 

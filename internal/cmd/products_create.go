@@ -40,15 +40,8 @@ func (c *ProductsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("create product: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, p)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, p.ID, p.Slug, p.Name)
-	}
-
-	fmt.Printf("Created product: %s (%s)\n", p.Name, p.ID)
-	return nil
+	return output.Print(ctx, p, []any{p.ID, p.Slug, p.Name}, func() error {
+		_, err := output.Fprintf(ctx, "Created product: %s (%s)\n", p.Name, p.ID)
+		return err
+	})
 }

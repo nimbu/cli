@@ -40,15 +40,8 @@ func (c *NotificationsCreateCmd) Run(ctx context.Context, flags *RootFlags) erro
 		return fmt.Errorf("create notification: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, notification)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, notification.ID, notification.Slug, notification.Name)
-	}
-
-	fmt.Printf("Created notification: %s (%s)\n", notification.Name, notification.ID)
-	return nil
+	return output.Print(ctx, notification, []any{notification.ID, notification.Slug, notification.Name}, func() error {
+		_, err := output.Fprintf(ctx, "Created notification: %s (%s)\n", notification.Name, notification.ID)
+		return err
+	})
 }

@@ -40,15 +40,8 @@ func (c *BlogsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("create blog: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, blog)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, blog.ID, blog.Handle, blog.Name)
-	}
-
-	fmt.Printf("Created blog: %s\n", blog.ID)
-	return nil
+	return output.Print(ctx, blog, []any{blog.ID, blog.Handle, blog.Name}, func() error {
+		_, err := output.Fprintf(ctx, "Created blog: %s\n", blog.ID)
+		return err
+	})
 }

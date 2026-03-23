@@ -56,15 +56,8 @@ func (c *OrdersUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("update order: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, o)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, o.ID, o.Number, o.Status)
-	}
-
-	fmt.Printf("Updated order: %s (status: %s)\n", o.Number, o.Status)
-	return nil
+	return output.Print(ctx, o, []any{o.ID, o.Number, o.Status}, func() error {
+		_, err := output.Fprintf(ctx, "Updated order: %s (status: %s)\n", o.Number, o.Status)
+		return err
+	})
 }

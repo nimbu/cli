@@ -82,22 +82,20 @@ func (c *UploadsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	task.Done("done")
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, upload)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, upload.ID, upload.Name, upload.URL)
-	}
-
-	fmt.Printf("Uploaded: %s\n", upload.Name)
-	fmt.Printf("ID:       %s\n", upload.ID)
-	if upload.URL != "" {
-		fmt.Printf("URL:      %s\n", upload.URL)
-	}
-
-	return nil
+	return output.Print(ctx, upload, []any{upload.ID, upload.Name, upload.URL}, func() error {
+		if _, err := output.Fprintf(ctx, "Uploaded: %s\n", upload.Name); err != nil {
+			return err
+		}
+		if _, err := output.Fprintf(ctx, "ID:       %s\n", upload.ID); err != nil {
+			return err
+		}
+		if upload.URL != "" {
+			if _, err := output.Fprintf(ctx, "URL:      %s\n", upload.URL); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func newMultipartFileBody(path string, filename string, task *output.Task) (api.RequestBody, error) {

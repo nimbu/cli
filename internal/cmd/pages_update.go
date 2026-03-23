@@ -74,17 +74,8 @@ func (c *PagesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("update page: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, page)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, page["id"])
-	}
-
-	if err := printLine(ctx, "Updated page %v\n", page["id"]); err != nil {
+	return output.Print(ctx, page, []any{page["id"]}, func() error {
+		_, err := output.Fprintf(ctx, "Updated page %v\n", page["id"])
 		return err
-	}
-	return nil
+	})
 }

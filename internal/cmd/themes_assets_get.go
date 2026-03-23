@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -34,49 +33,27 @@ func (c *ThemeAssetsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get asset: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, asset)
-	}
-
-	if mode.Plain {
-		if asset.Code != "" {
-			_, err := os.Stdout.WriteString(asset.Code)
-			if err != nil {
-				return fmt.Errorf("write stdout: %w", err)
-			}
-			_, err = os.Stdout.WriteString("\n")
-			if err != nil {
-				return fmt.Errorf("write stdout: %w", err)
-			}
-			return nil
-		}
-		return output.Plain(ctx, asset.ID, asset.Name, asset.Path)
-	}
-
 	if asset.Code != "" {
-		_, err := os.Stdout.WriteString(asset.Code)
-		if err != nil {
-			return fmt.Errorf("write stdout: %w", err)
-		}
-		_, err = os.Stdout.WriteString("\n")
-		if err != nil {
-			return fmt.Errorf("write stdout: %w", err)
-		}
-		return nil
+		return output.Print(ctx, asset, []any{asset.Code}, func() error {
+			_, err := output.Fprintf(ctx, "%s\n", asset.Code)
+			return err
+		})
 	}
 
-	fmt.Printf("ID:       %s\n", asset.ID)
-	fmt.Printf("Name:     %s\n", asset.Name)
-	fmt.Printf("Path:     %s\n", asset.Path)
-	if asset.PublicURL != "" {
-		fmt.Printf("Public:   %s\n", asset.PublicURL)
-	}
+	var created, updated string
 	if !asset.CreatedAt.IsZero() {
-		fmt.Printf("Created:  %s\n", asset.CreatedAt.Format("2006-01-02 15:04:05"))
+		created = asset.CreatedAt.Format("2006-01-02 15:04:05")
 	}
 	if !asset.UpdatedAt.IsZero() {
-		fmt.Printf("Updated:  %s\n", asset.UpdatedAt.Format("2006-01-02 15:04:05"))
+		updated = asset.UpdatedAt.Format("2006-01-02 15:04:05")
 	}
-	return nil
+
+	return output.Detail(ctx, asset, []any{asset.ID, asset.Name, asset.Path}, []output.Field{
+		output.FAlways("ID", asset.ID),
+		output.FAlways("Name", asset.Name),
+		output.FAlways("Path", asset.Path),
+		output.F("Public", asset.PublicURL),
+		output.F("Created", created),
+		output.F("Updated", updated),
+	})
 }

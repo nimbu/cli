@@ -102,7 +102,9 @@ func (c *APICmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	// Plain or non-JSON response
-	fmt.Println(string(respBody))
+	if _, err := output.Fprintln(ctx, string(respBody)); err != nil {
+		return err
+	}
 	return nil
 }
 

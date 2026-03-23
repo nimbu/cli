@@ -40,15 +40,8 @@ func (c *PagesCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("create page: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, page)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, page.ID)
-	}
-
-	fmt.Printf("Created page %s\n", page.ID)
-	return nil
+	return output.Print(ctx, page, []any{page.ID}, func() error {
+		_, err := output.Fprintf(ctx, "Created page %s\n", page.ID)
+		return err
+	})
 }

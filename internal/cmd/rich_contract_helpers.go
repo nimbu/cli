@@ -1,12 +1,9 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/nimbu/cli/internal/output"
 )
 
 func readRichDocumentInput(file string) (map[string]any, error) {
@@ -38,11 +35,6 @@ func validateShallowInlineAssignments(resource string, assignments []string, all
 	}
 
 	return nil
-}
-
-func printLine(ctx context.Context, format string, args ...any) error {
-	_, err := fmt.Fprintf(output.WriterFromContext(ctx).Out, format, args...)
-	return err
 }
 
 func mergeTopLevel(dst map[string]any, src map[string]any) {

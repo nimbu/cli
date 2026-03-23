@@ -37,15 +37,8 @@ func (c *BlogsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("delete blog: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload(fmt.Sprintf("deleted %s", c.Blog)))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, c.Blog, "deleted")
-	}
-
-	fmt.Printf("Deleted blog: %s\n", c.Blog)
-	return nil
+	return output.Print(ctx, output.SuccessPayload(fmt.Sprintf("deleted %s", c.Blog)), []any{c.Blog, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted blog: %s\n", c.Blog)
+		return err
+	})
 }

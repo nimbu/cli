@@ -47,69 +47,69 @@ func (c *ChannelsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	graph := api.BuildChannelDependencyGraph(allChannels)
 
-	if err := printLine(ctx, "Summary\n"); err != nil {
+	if _, err := output.Fprintf(ctx, "Summary\n"); err != nil {
 		return err
 	}
-	if err := printLine(ctx, "ID:               %s\n", ch.ID); err != nil {
+	if _, err := output.Fprintf(ctx, "ID:               %s\n", ch.ID); err != nil {
 		return err
 	}
-	if err := printLine(ctx, "Slug:             %s\n", ch.Slug); err != nil {
+	if _, err := output.Fprintf(ctx, "Slug:             %s\n", ch.Slug); err != nil {
 		return err
 	}
-	if err := printLine(ctx, "Name:             %s\n", ch.Name); err != nil {
+	if _, err := output.Fprintf(ctx, "Name:             %s\n", ch.Name); err != nil {
 		return err
 	}
 	if ch.Description != "" {
-		if err := printLine(ctx, "Description:      %s\n", ch.Description); err != nil {
+		if _, err := output.Fprintf(ctx, "Description:      %s\n", ch.Description); err != nil {
 			return err
 		}
 	}
 	if ch.LabelField != "" {
-		if err := printLine(ctx, "Label field:      %s\n", ch.LabelField); err != nil {
+		if _, err := output.Fprintf(ctx, "Label field:      %s\n", ch.LabelField); err != nil {
 			return err
 		}
 	}
 	if ch.TitleField != "" {
-		if err := printLine(ctx, "Title field:      %s\n", ch.TitleField); err != nil {
+		if _, err := output.Fprintf(ctx, "Title field:      %s\n", ch.TitleField); err != nil {
 			return err
 		}
 	}
 	if ch.OrderBy != "" {
-		if err := printLine(ctx, "Order:            %s %s\n", ch.OrderBy, strings.TrimSpace(ch.OrderDirection)); err != nil {
+		if _, err := output.Fprintf(ctx, "Order:            %s %s\n", ch.OrderBy, strings.TrimSpace(ch.OrderDirection)); err != nil {
 			return err
 		}
 	}
-	if err := printLine(ctx, "Submittable:      %v\n", ch.Submittable); err != nil {
+	if _, err := output.Fprintf(ctx, "Submittable:      %v\n", ch.Submittable); err != nil {
 		return err
 	}
-	if err := printLine(ctx, "RSS enabled:      %v\n", ch.RSSEnabled); err != nil {
+	if _, err := output.Fprintf(ctx, "RSS enabled:      %v\n", ch.RSSEnabled); err != nil {
 		return err
 	}
 	if ch.EntriesURL != "" {
-		if err := printLine(ctx, "Entries URL:      %s\n", ch.EntriesURL); err != nil {
+		if _, err := output.Fprintf(ctx, "Entries URL:      %s\n", ch.EntriesURL); err != nil {
 			return err
 		}
 	}
 	if ch.URL != "" {
-		if err := printLine(ctx, "URL:              %s\n", ch.URL); err != nil {
+		if _, err := output.Fprintf(ctx, "URL:              %s\n", ch.URL); err != nil {
 			return err
 		}
 	}
 
-	if err := printLine(ctx, "\nACL\n"); err != nil {
+	if _, err := output.Fprintf(ctx, "\nACL\n"); err != nil {
 		return err
 	}
 	if len(ch.ACL) == 0 {
-		if err := printLine(ctx, "  <empty>\n"); err != nil {
+		if _, err := output.Fprintf(ctx, "  <empty>\n"); err != nil {
 			return err
 		}
 	} else if data, err := json.MarshalIndent(ch.ACL, "  ", "  "); err == nil {
-		if err := printLine(ctx, "  %s\n", string(data)); err != nil {
+		if _, err := output.Fprintf(ctx, "  %s\n", string(data)); err != nil {
 			return err
 		}
 	}
 
-	if err := printLine(ctx, "\nCustom Fields (%d)\n", len(ch.Customizations)); err != nil {
+	if _, err := output.Fprintf(ctx, "\nCustom Fields (%d)\n", len(ch.Customizations)); err != nil {
 		return err
 	}
 	for _, field := range ch.Customizations {
@@ -129,27 +129,27 @@ func (c *ChannelsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if field.Localized {
 			line += " localized"
 		}
-		if err := printLine(ctx, "%s\n", line); err != nil {
+		if _, err := output.Fprintf(ctx, "%s\n", line); err != nil {
 			return err
 		}
 	}
 
-	if err := printLine(ctx, "\nDependency Summary\n"); err != nil {
+	if _, err := output.Fprintf(ctx, "\nDependency Summary\n"); err != nil {
 		return err
 	}
-	if err := printLine(ctx, "  direct deps:        %s\n", joinOrNone(graph.DirectDependencies(ch.Slug))); err != nil {
+	if _, err := output.Fprintf(ctx, "  direct deps:        %s\n", joinOrNone(graph.DirectDependencies(ch.Slug))); err != nil {
 		return err
 	}
-	if err := printLine(ctx, "  transitive deps:    %s\n", joinOrNone(graph.TransitiveDependencies(ch.Slug))); err != nil {
+	if _, err := output.Fprintf(ctx, "  transitive deps:    %s\n", joinOrNone(graph.TransitiveDependencies(ch.Slug))); err != nil {
 		return err
 	}
-	if err := printLine(ctx, "  direct dependants:  %s\n", joinOrNone(graph.DirectDependants(ch.Slug))); err != nil {
+	if _, err := output.Fprintf(ctx, "  direct dependants:  %s\n", joinOrNone(graph.DirectDependants(ch.Slug))); err != nil {
 		return err
 	}
-	if err := printLine(ctx, "  transitive dependants: %s\n", joinOrNone(graph.TransitiveDependants(ch.Slug))); err != nil {
+	if _, err := output.Fprintf(ctx, "  transitive dependants: %s\n", joinOrNone(graph.TransitiveDependants(ch.Slug))); err != nil {
 		return err
 	}
-	if err := printLine(ctx, "  circular:           %v\n", graph.HasCircularDependencies(ch.Slug)); err != nil {
+	if _, err := output.Fprintf(ctx, "  circular:           %v\n", graph.HasCircularDependencies(ch.Slug)); err != nil {
 		return err
 	}
 

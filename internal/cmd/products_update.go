@@ -43,15 +43,8 @@ func (c *ProductsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("update product: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, p)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, p.ID, p.Slug, p.Name)
-	}
-
-	fmt.Printf("Updated product: %s (%s)\n", p.Name, p.ID)
-	return nil
+	return output.Print(ctx, p, []any{p.ID, p.Slug, p.Name}, func() error {
+		_, err := output.Fprintf(ctx, "Updated product: %s (%s)\n", p.Name, p.ID)
+		return err
+	})
 }

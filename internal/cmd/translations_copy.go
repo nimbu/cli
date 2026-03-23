@@ -65,7 +65,7 @@ func (c *TranslationsCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	if mode.Plain {
 		for _, item := range result.Items {
-			if err := printLine(ctx, "%s\t%s\n", item.Action, item.Key); err != nil {
+			if _, err := output.Fprintf(ctx, "%s\t%s\n", item.Action, item.Key); err != nil {
 				return err
 			}
 		}
@@ -75,7 +75,7 @@ func (c *TranslationsCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return nil
 	}
 	for _, item := range result.Items {
-		if err := printLine(ctx, "%s %s\n", item.Action, item.Key); err != nil {
+		if _, err := output.Fprintf(ctx, "%s %s\n", item.Action, item.Key); err != nil {
 			return err
 		}
 	}

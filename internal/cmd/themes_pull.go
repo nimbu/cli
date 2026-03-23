@@ -64,13 +64,19 @@ func (c *ThemePullCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	if mode.Plain {
 		for _, action := range result.Written {
-			fmt.Println(action.LocalPath)
+			if _, err := output.Fprintln(ctx, action.LocalPath); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
 	for _, action := range result.Written {
-		fmt.Printf("write %s\n", action.LocalPath)
+		if _, err := output.Fprintf(ctx, "write %s\n", action.LocalPath); err != nil {
+			return err
+		}
 	}
-	fmt.Printf("pull complete: %d files\n", len(result.Written))
+	if _, err := output.Fprintf(ctx, "pull complete: %d files\n", len(result.Written)); err != nil {
+		return err
+	}
 	return nil
 }

@@ -32,27 +32,16 @@ func (c *AppsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get app: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, app)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, app.Key, app.Name, app.Domain, app.CallbackURL)
-	}
-
-	fmt.Printf("Key:        %s\n", app.Key)
-	fmt.Printf("Name:       %s\n", app.Name)
-	fmt.Printf("Domain:     %s\n", app.Domain)
-	fmt.Printf("Callback:   %s\n", app.CallbackURL)
-	if app.SDKVersion != "" {
-		fmt.Printf("SDK:        %s\n", app.SDKVersion)
-	}
-	fmt.Printf("Functions:  %d\n", len(app.Functions))
-	fmt.Printf("Routes:     %d\n", len(app.Routes))
-	fmt.Printf("Callbacks:  %d\n", len(app.Callbacks))
-	fmt.Printf("Jobs:       %d\n", len(app.Jobs))
-	fmt.Printf("Schedules:  %d\n", len(app.Schedules))
-
-	return nil
+	return output.Detail(ctx, app, []any{app.Key, app.Name, app.Domain, app.CallbackURL}, []output.Field{
+		output.FAlways("Key", app.Key),
+		output.FAlways("Name", app.Name),
+		output.FAlways("Domain", app.Domain),
+		output.FAlways("Callback", app.CallbackURL),
+		output.F("SDK", app.SDKVersion),
+		output.FAlways("Functions", len(app.Functions)),
+		output.FAlways("Routes", len(app.Routes)),
+		output.FAlways("Callbacks", len(app.Callbacks)),
+		output.FAlways("Jobs", len(app.Jobs)),
+		output.FAlways("Schedules", len(app.Schedules)),
+	})
 }

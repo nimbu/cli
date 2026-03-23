@@ -47,15 +47,8 @@ func (c *ThemeFilesDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("delete theme file: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload(fmt.Sprintf("deleted %s", resource.DisplayPath)))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, resource.DisplayPath, "deleted")
-	}
-
-	fmt.Printf("Deleted: %s\n", resource.DisplayPath)
-	return nil
+	return output.Print(ctx, output.SuccessPayload(fmt.Sprintf("deleted %s", resource.DisplayPath)), []any{resource.DisplayPath, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted: %s\n", resource.DisplayPath)
+		return err
+	})
 }

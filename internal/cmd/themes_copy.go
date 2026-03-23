@@ -61,7 +61,9 @@ func (c *ThemeCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	if mode.Plain {
 		for _, item := range result.Items {
-			fmt.Println(item.DisplayPath)
+			if _, err := output.Fprintln(ctx, item.DisplayPath); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -69,9 +71,13 @@ func (c *ThemeCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return nil
 	}
 	for _, item := range result.Items {
-		fmt.Printf("copy %s\n", item.DisplayPath)
+		if _, err := output.Fprintf(ctx, "copy %s\n", item.DisplayPath); err != nil {
+			return err
+		}
 	}
-	fmt.Printf("copy complete: %d files\n", len(result.Items))
+	if _, err := output.Fprintf(ctx, "copy complete: %d files\n", len(result.Items)); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -32,23 +32,12 @@ func (c *RolesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get role: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, role)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, role.ID, role.Name)
-	}
-
-	fmt.Printf("ID:          %s\n", role.ID)
-	fmt.Printf("Name:        %s\n", role.Name)
-	if role.Description != "" {
-		fmt.Printf("Description: %s\n", role.Description)
-	}
-	fmt.Printf("Customers:   %d\n", len(role.Customers))
-	fmt.Printf("Children:    %d\n", len(role.Children))
-	fmt.Printf("Parents:     %d\n", len(role.Parents))
-
-	return nil
+	return output.Detail(ctx, role, []any{role.ID, role.Name}, []output.Field{
+		output.FAlways("ID", role.ID),
+		output.FAlways("Name", role.Name),
+		output.F("Description", role.Description),
+		output.FAlways("Customers", len(role.Customers)),
+		output.FAlways("Children", len(role.Children)),
+		output.FAlways("Parents", len(role.Parents)),
+	})
 }

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/nimbu/cli/internal/config"
 	"github.com/nimbu/cli/internal/output"
@@ -51,17 +50,35 @@ func (c *SitesCurrentCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if site == "" {
-		fmt.Println("No site configured")
-		fmt.Println("")
-		fmt.Println("Set a site using:")
-		fmt.Println("  --site flag")
-		fmt.Println("  NIMBU_SITE environment variable")
-		fmt.Println("  default_site in config file")
-		fmt.Println("  site in nimbu.yml project file")
+		if _, err := output.Fprintln(ctx, "No site configured"); err != nil {
+			return err
+		}
+		if _, err := output.Fprintln(ctx); err != nil {
+			return err
+		}
+		if _, err := output.Fprintln(ctx, "Set a site using:"); err != nil {
+			return err
+		}
+		if _, err := output.Fprintln(ctx, "  --site flag"); err != nil {
+			return err
+		}
+		if _, err := output.Fprintln(ctx, "  NIMBU_SITE environment variable"); err != nil {
+			return err
+		}
+		if _, err := output.Fprintln(ctx, "  default_site in config file"); err != nil {
+			return err
+		}
+		if _, err := output.Fprintln(ctx, "  site in nimbu.yml project file"); err != nil {
+			return err
+		}
 		return nil
 	}
 
-	fmt.Printf("Site:   %s\n", site)
-	fmt.Printf("Source: %s\n", source)
-	return nil
+	return output.Detail(ctx, map[string]string{"site": site, "source": source},
+		[]any{site, source},
+		[]output.Field{
+			output.FAlways("Site", site),
+			output.FAlways("Source", source),
+		},
+	)
 }

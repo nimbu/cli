@@ -40,15 +40,8 @@ func (c *CustomersCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("create customer: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, cust)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, cust.ID, cust.Email)
-	}
-
-	fmt.Printf("Created customer: %s (%s)\n", cust.Email, cust.ID)
-	return nil
+	return output.Print(ctx, cust, []any{cust.ID, cust.Email}, func() error {
+		_, err := output.Fprintf(ctx, "Created customer: %s (%s)\n", cust.Email, cust.ID)
+		return err
+	})
 }

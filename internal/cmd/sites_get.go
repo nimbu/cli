@@ -32,27 +32,17 @@ func (c *SitesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get site: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, s)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, s.ID, s.Subdomain, s.Name, s.Domain)
-	}
-
-	fmt.Printf("ID:        %s\n", s.ID)
-	fmt.Printf("Subdomain: %s\n", s.Subdomain)
-	fmt.Printf("Name:      %s\n", s.Name)
-	if s.Domain != "" {
-		fmt.Printf("Domain:    %s\n", s.Domain)
-	}
-	if s.Timezone != "" {
-		fmt.Printf("Timezone:  %s\n", s.Timezone)
-	}
+	var locales string
 	if len(s.Locales) > 0 {
-		fmt.Printf("Locales:   %v\n", s.Locales)
+		locales = fmt.Sprintf("%v", s.Locales)
 	}
 
-	return nil
+	return output.Detail(ctx, s, []any{s.ID, s.Subdomain, s.Name, s.Domain}, []output.Field{
+		output.FAlways("ID", s.ID),
+		output.FAlways("Subdomain", s.Subdomain),
+		output.FAlways("Name", s.Name),
+		output.F("Domain", s.Domain),
+		output.F("Timezone", s.Timezone),
+		output.F("Locales", locales),
+	})
 }

@@ -32,29 +32,17 @@ func (c *UploadsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get upload: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, upload)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, upload.ID, upload.Name, upload.URL, upload.Size, upload.MimeType)
-	}
-
-	fmt.Printf("ID:        %s\n", upload.ID)
-	fmt.Printf("Name:      %s\n", upload.Name)
-	if upload.URL != "" {
-		fmt.Printf("URL:       %s\n", upload.URL)
-	}
-	if upload.Size > 0 {
-		fmt.Printf("Size:      %d\n", upload.Size)
-	}
-	if upload.MimeType != "" {
-		fmt.Printf("MIME Type: %s\n", upload.MimeType)
-	}
+	var created string
 	if !upload.CreatedAt.IsZero() {
-		fmt.Printf("Created:   %s\n", upload.CreatedAt.Format("2006-01-02 15:04:05"))
+		created = upload.CreatedAt.Format("2006-01-02 15:04:05")
 	}
 
-	return nil
+	return output.Detail(ctx, upload, []any{upload.ID, upload.Name, upload.URL, upload.Size, upload.MimeType}, []output.Field{
+		output.FAlways("ID", upload.ID),
+		output.FAlways("Name", upload.Name),
+		output.F("URL", upload.URL),
+		output.F("Size", upload.Size),
+		output.F("MIME Type", upload.MimeType),
+		output.F("Created", created),
+	})
 }

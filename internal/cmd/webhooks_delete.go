@@ -38,15 +38,8 @@ func (c *WebhooksDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("delete webhook: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload("deleted"))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, c.ID, "deleted")
-	}
-
-	fmt.Printf("Deleted webhook %s\n", c.ID)
-	return nil
+	return output.Print(ctx, output.SuccessPayload("deleted"), []any{c.ID, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted webhook %s\n", c.ID)
+		return err
+	})
 }

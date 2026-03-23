@@ -58,6 +58,8 @@ func (c *ThemeFilesPutCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.Plain(ctx, resource.DisplayPath)
 	}
 
-	fmt.Printf("Uploaded: %s\n", resource.DisplayPath)
+	if _, err := output.Fprintf(ctx, "Uploaded: %s\n", resource.DisplayPath); err != nil {
+		return err
+	}
 	return nil
 }

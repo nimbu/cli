@@ -32,20 +32,14 @@ func (c *WebhooksGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get webhook: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, webhook)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, webhook.ID, webhook.URL)
-	}
-
-	fmt.Printf("ID:     %s\n", webhook.ID)
-	fmt.Printf("URL:    %s\n", webhook.URL)
+	var events string
 	if len(webhook.Events) > 0 {
-		fmt.Printf("Events: %v\n", webhook.Events)
+		events = fmt.Sprintf("%v", webhook.Events)
 	}
 
-	return nil
+	return output.Detail(ctx, webhook, []any{webhook.ID, webhook.URL}, []output.Field{
+		output.FAlways("ID", webhook.ID),
+		output.FAlways("URL", webhook.URL),
+		output.F("Events", events),
+	})
 }

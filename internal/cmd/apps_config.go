@@ -129,7 +129,9 @@ func (c *AppsConfigCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if mode.Plain {
 		return output.Plain(ctx, item.Name, item.ID, item.Dir, item.Glob, item.Host, item.Site)
 	}
-	fmt.Printf("Configured app %s in %s\n", item.Name, project.File)
+	if _, err := output.Fprintf(ctx, "Configured app %s in %s\n", item.Name, project.File); err != nil {
+		return err
+	}
 	return nil
 }
 

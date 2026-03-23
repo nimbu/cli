@@ -39,14 +39,8 @@ func (c *ThemeAssetsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return fmt.Errorf("delete asset: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload("deleted "+c.Path))
-	}
-	if mode.Plain {
-		return output.Plain(ctx, c.Path, "deleted")
-	}
-
-	fmt.Printf("Deleted: %s\n", c.Path)
-	return nil
+	return output.Print(ctx, output.SuccessPayload("deleted "+c.Path), []any{c.Path, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted: %s\n", c.Path)
+		return err
+	})
 }

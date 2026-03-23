@@ -76,17 +76,17 @@ func (c *ChannelEntriesCopyCmd) Run(ctx context.Context, flags *RootFlags) error
 	}
 	for _, item := range result.Items {
 		if mode.Plain {
-			if err := printLine(ctx, "%s\t%s\t%s\t%s\n", item.Action, item.Resource, item.Identifier, item.TargetID); err != nil {
+			if _, err := output.Fprintf(ctx, "%s\t%s\t%s\t%s\n", item.Action, item.Resource, item.Identifier, item.TargetID); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := printLine(ctx, "%s %s %s\n", item.Action, item.Resource, item.Identifier); err != nil {
+		if _, err := output.Fprintf(ctx, "%s %s %s\n", item.Action, item.Resource, item.Identifier); err != nil {
 			return err
 		}
 	}
 	for _, warning := range result.Warnings {
-		if err := printLine(ctx, "warning: %s\n", warning); err != nil {
+		if _, err := output.Fprintf(ctx, "warning: %s\n", warning); err != nil {
 			return err
 		}
 	}

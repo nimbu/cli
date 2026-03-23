@@ -38,15 +38,8 @@ func (c *RolesDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("delete role: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload("role deleted"))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, c.Role, "deleted")
-	}
-
-	fmt.Printf("Deleted role: %s\n", c.Role)
-	return nil
+	return output.Print(ctx, output.SuccessPayload("role deleted"), []any{c.Role, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted role: %s\n", c.Role)
+		return err
+	})
 }

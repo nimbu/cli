@@ -79,25 +79,22 @@ func (c *SendersGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return fmt.Errorf("get sender: %w", err)
 	}
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, sender)
-	}
-	if mode.Plain {
-		return output.Plain(ctx, sender.ID, sender.Domain, sender.Status)
-	}
-	fmt.Printf("ID:                 %s\n", sender.ID)
-	fmt.Printf("Domain:             %s\n", sender.Domain)
-	fmt.Printf("Provider:           %s\n", sender.Provider)
-	fmt.Printf("Status:             %s\n", sender.Status)
-	fmt.Printf("Ownership Verified: %t\n", sender.OwnershipVerified)
+	var verifiedAt string
 	if sender.VerifiedAt != nil {
-		fmt.Printf("Verified At:        %s\n", sender.VerifiedAt.Format("2006-01-02 15:04:05Z07:00"))
+		verifiedAt = sender.VerifiedAt.Format("2006-01-02 15:04:05Z07:00")
 	}
-	if sender.LastCheckError != "" {
-		fmt.Printf("Last Error:         %s\n", sender.LastCheckError)
-	}
-	return nil
+	return output.Detail(ctx, sender,
+		[]any{sender.ID, sender.Domain, sender.Status},
+		[]output.Field{
+			output.FAlways("ID", sender.ID),
+			output.FAlways("Domain", sender.Domain),
+			output.FAlways("Provider", sender.Provider),
+			output.FAlways("Status", sender.Status),
+			output.FAlways("Ownership Verified", sender.OwnershipVerified),
+			output.F("Verified At", verifiedAt),
+			output.F("Last Error", sender.LastCheckError),
+		},
+	)
 }
 
 type SendersCreateCmd struct {
@@ -127,7 +124,9 @@ func (c *SendersCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if mode.Plain {
 		return output.Plain(ctx, sender.ID, sender.Domain, sender.Status)
 	}
-	fmt.Printf("Created sender domain %s (%s)\n", sender.Domain, sender.ID)
+	if _, err := output.Fprintf(ctx, "Created sender domain %s (%s)\n", sender.Domain, sender.ID); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -163,7 +162,9 @@ func (c *SendersVerifyOwnershipCmd) Run(ctx context.Context, flags *RootFlags) e
 	if mode.Plain {
 		return output.Plain(ctx, verified.ID, verified.Domain, verified.OwnershipVerified)
 	}
-	fmt.Printf("Ownership verification requested for %s\n", verified.Domain)
+	if _, err := output.Fprintf(ctx, "Ownership verification requested for %s\n", verified.Domain); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -199,6 +200,8 @@ func (c *SendersVerifyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if mode.Plain {
 		return output.Plain(ctx, verified.ID, verified.Domain, verified.Status)
 	}
-	fmt.Printf("DNS verification requested for %s\n", verified.Domain)
+	if _, err := output.Fprintf(ctx, "DNS verification requested for %s\n", verified.Domain); err != nil {
+		return err
+	}
 	return nil
 }

@@ -47,16 +47,22 @@ func (c *ThemeDiffCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	if mode.Plain {
 		for _, item := range result.Entries {
-			fmt.Printf("%s\t%s\n", item.Status, item.Path)
+			if _, err := output.Fprintf(ctx, "%s\t%s\n", item.Status, item.Path); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
 	if len(result.Entries) == 0 {
-		fmt.Println("no differences found")
+		if _, err := output.Fprintln(ctx, "no differences found"); err != nil {
+			return err
+		}
 		return nil
 	}
 	for _, item := range result.Entries {
-		fmt.Printf("%s %s\n", item.Status, item.Path)
+		if _, err := output.Fprintf(ctx, "%s %s\n", item.Status, item.Path); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -39,15 +39,8 @@ func (c *ChannelEntriesDeleteCmd) Run(ctx context.Context, flags *RootFlags) err
 		return fmt.Errorf("delete entry: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload("entry deleted"))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, c.Entry, "deleted")
-	}
-
-	fmt.Printf("Deleted entry %s\n", c.Entry)
-	return nil
+	return output.Print(ctx, output.SuccessPayload("entry deleted"), []any{c.Entry, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted entry %s\n", c.Entry)
+		return err
+	})
 }

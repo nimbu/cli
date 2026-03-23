@@ -43,15 +43,8 @@ func (c *TranslationsCreateCmd) Run(ctx context.Context, flags *RootFlags) error
 		return fmt.Errorf("create translation: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, t)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, t.Key, t.Locale, t.Value)
-	}
-
-	fmt.Printf("Created translation: %s\n", t.Key)
-	return nil
+	return output.Print(ctx, t, []any{t.Key, t.Locale, t.Value}, func() error {
+		_, err := output.Fprintf(ctx, "Created translation: %s\n", t.Key)
+		return err
+	})
 }

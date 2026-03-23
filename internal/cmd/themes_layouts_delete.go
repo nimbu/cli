@@ -39,14 +39,8 @@ func (c *ThemeLayoutsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error
 		return fmt.Errorf("delete layout: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload("deleted "+c.Name))
-	}
-	if mode.Plain {
-		return output.Plain(ctx, c.Name, "deleted")
-	}
-
-	fmt.Printf("Deleted: %s\n", c.Name)
-	return nil
+	return output.Print(ctx, output.SuccessPayload("deleted "+c.Name), []any{c.Name, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted: %s\n", c.Name)
+		return err
+	})
 }

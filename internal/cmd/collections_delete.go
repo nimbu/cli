@@ -38,15 +38,8 @@ func (c *CollectionsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return fmt.Errorf("delete collection: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, output.SuccessPayload("collection deleted"))
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, c.Collection, "deleted")
-	}
-
-	fmt.Printf("Deleted collection: %s\n", c.Collection)
-	return nil
+	return output.Print(ctx, output.SuccessPayload("collection deleted"), []any{c.Collection, "deleted"}, func() error {
+		_, err := output.Fprintf(ctx, "Deleted collection: %s\n", c.Collection)
+		return err
+	})
 }

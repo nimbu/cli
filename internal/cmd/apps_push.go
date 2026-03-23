@@ -90,19 +90,29 @@ func (c *AppsPushCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	if mode.Plain {
 		for _, action := range outcome.Uploads {
-			fmt.Printf("%s\t%s\n", action.Action, action.Name)
+			if _, err := output.Fprintf(ctx, "%s\t%s\n", action.Action, action.Name); err != nil {
+				return err
+			}
 		}
 		for _, action := range outcome.Deletes {
-			fmt.Printf("%s\t%s\n", action.Action, action.Name)
+			if _, err := output.Fprintf(ctx, "%s\t%s\n", action.Action, action.Name); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
 	for _, action := range outcome.Uploads {
-		fmt.Printf("%s %s\n", action.Action, action.Name)
+		if _, err := output.Fprintf(ctx, "%s %s\n", action.Action, action.Name); err != nil {
+			return err
+		}
 	}
 	for _, action := range outcome.Deletes {
-		fmt.Printf("%s %s\n", action.Action, action.Name)
+		if _, err := output.Fprintf(ctx, "%s %s\n", action.Action, action.Name); err != nil {
+			return err
+		}
 	}
-	fmt.Printf("push complete: %d uploads, %d deletes\n", len(outcome.Uploads), len(outcome.Deletes))
+	if _, err := output.Fprintf(ctx, "push complete: %d uploads, %d deletes\n", len(outcome.Uploads), len(outcome.Deletes)); err != nil {
+		return err
+	}
 	return nil
 }

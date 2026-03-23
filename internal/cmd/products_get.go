@@ -32,44 +32,32 @@ func (c *ProductsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get product: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, p)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, p.ID, p.Slug, p.Name, p.SKU, p.Price, p.Status)
-	}
-
-	fmt.Printf("ID:          %s\n", p.ID)
-	fmt.Printf("Slug:        %s\n", p.Slug)
-	fmt.Printf("Name:        %s\n", p.Name)
-	if p.SKU != "" {
-		fmt.Printf("SKU:         %s\n", p.SKU)
-	}
-	if p.Description != "" {
-		fmt.Printf("Description: %s\n", p.Description)
-	}
-	if p.Status != "" {
-		fmt.Printf("Status:      %s\n", p.Status)
-	}
+	price := fmt.Sprintf("%.2f", p.Price)
 	if p.Currency != "" {
-		fmt.Printf("Price:       %.2f %s\n", p.Price, p.Currency)
-	} else {
-		fmt.Printf("Price:       %.2f\n", p.Price)
+		price = fmt.Sprintf("%.2f %s", p.Price, p.Currency)
 	}
-	fmt.Printf("Stock:       %d\n", p.CurrentStock)
-	fmt.Printf("Digital:     %v\n", p.Digital)
-	fmt.Printf("Shipping:    %v\n", p.RequiresShipping)
+
+	fields := []output.Field{
+		output.FAlways("ID", p.ID),
+		output.FAlways("Slug", p.Slug),
+		output.FAlways("Name", p.Name),
+		output.F("SKU", p.SKU),
+		output.F("Description", p.Description),
+		output.F("Status", p.Status),
+		output.FAlways("Price", price),
+		output.FAlways("Stock", p.CurrentStock),
+		output.FAlways("Digital", p.Digital),
+		output.FAlways("Shipping", p.RequiresShipping),
+	}
 	if p.OnSale {
-		fmt.Printf("Sale Price:  %.2f\n", p.OnSalePrice)
+		fields = append(fields, output.FAlways("Sale Price", fmt.Sprintf("%.2f", p.OnSalePrice)))
 	}
 	if !p.CreatedAt.IsZero() {
-		fmt.Printf("Created:     %s\n", p.CreatedAt.Format("2006-01-02 15:04:05"))
+		fields = append(fields, output.FAlways("Created", p.CreatedAt.Format("2006-01-02 15:04:05")))
 	}
 	if !p.UpdatedAt.IsZero() {
-		fmt.Printf("Updated:     %s\n", p.UpdatedAt.Format("2006-01-02 15:04:05"))
+		fields = append(fields, output.FAlways("Updated", p.UpdatedAt.Format("2006-01-02 15:04:05")))
 	}
 
-	return nil
+	return output.Detail(ctx, p, []any{p.ID, p.Slug, p.Name, p.SKU, p.Price, p.Status}, fields)
 }

@@ -40,26 +40,26 @@ func (c *MenusGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.Plain(ctx, menu["id"], api.MenuDocumentSlug(menu), api.MenuDocumentName(menu), stats.ItemCount)
 	}
 
-	if err := printLine(ctx, "ID:        %v\n", menu["id"]); err != nil {
+	if _, err := output.Fprintf(ctx, "ID:        %v\n", menu["id"]); err != nil {
 		return err
 	}
 	if slug := api.MenuDocumentSlug(menu); slug != "" {
-		if err := printLine(ctx, "Slug:      %s\n", slug); err != nil {
+		if _, err := output.Fprintf(ctx, "Slug:      %s\n", slug); err != nil {
 			return err
 		}
 	}
 	if handle := api.MenuDocumentHandle(menu); handle != "" {
-		if err := printLine(ctx, "Handle:    %s\n", handle); err != nil {
+		if _, err := output.Fprintf(ctx, "Handle:    %s\n", handle); err != nil {
 			return err
 		}
 	}
-	if err := printLine(ctx, "Name:      %s\n", api.MenuDocumentName(menu)); err != nil {
+	if _, err := output.Fprintf(ctx, "Name:      %s\n", api.MenuDocumentName(menu)); err != nil {
 		return err
 	}
-	if err := printLine(ctx, "Items:     %d\n", stats.ItemCount); err != nil {
+	if _, err := output.Fprintf(ctx, "Items:     %d\n", stats.ItemCount); err != nil {
 		return err
 	}
-	if err := printLine(ctx, "Max depth: %d\n", stats.MaxDepth); err != nil {
+	if _, err := output.Fprintf(ctx, "Max depth: %d\n", stats.MaxDepth); err != nil {
 		return err
 	}
 

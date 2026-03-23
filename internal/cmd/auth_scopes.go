@@ -53,15 +53,27 @@ func (c *AuthScopesCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.Plain(ctx, snapshot.Status, scopes, snapshot.Source, snapshot.UnknownReason)
 	}
 
-	fmt.Printf("Scope status: %s\n", snapshot.Status)
-	fmt.Printf("Source: %s\n", snapshot.Source)
-	fmt.Printf("Checked at: %s\n", snapshot.CheckedAt.UTC().Format(time.RFC3339))
+	if _, err := output.Fprintf(ctx, "Scope status: %s\n", snapshot.Status); err != nil {
+		return err
+	}
+	if _, err := output.Fprintf(ctx, "Source: %s\n", snapshot.Source); err != nil {
+		return err
+	}
+	if _, err := output.Fprintf(ctx, "Checked at: %s\n", snapshot.CheckedAt.UTC().Format(time.RFC3339)); err != nil {
+		return err
+	}
 	if snapshot.Status == scopeStatusKnown {
-		fmt.Printf("Scopes: %s\n", strings.Join(snapshot.Scopes, ", "))
+		if _, err := output.Fprintf(ctx, "Scopes: %s\n", strings.Join(snapshot.Scopes, ", ")); err != nil {
+			return err
+		}
 		return nil
 	}
-	fmt.Printf("Reason: %s\n", snapshot.UnknownReason)
-	fmt.Println("No scope claims can be made.")
+	if _, err := output.Fprintf(ctx, "Reason: %s\n", snapshot.UnknownReason); err != nil {
+		return err
+	}
+	if _, err := output.Fprintln(ctx, "No scope claims can be made."); err != nil {
+		return err
+	}
 	return nil
 }
 

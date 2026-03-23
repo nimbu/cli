@@ -32,23 +32,12 @@ func (c *NotificationsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get notification: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, notification)
-	}
-
-	if mode.Plain {
-		return output.Plain(ctx, notification.ID, notification.Slug, notification.Name, notification.Subject)
-	}
-
-	fmt.Printf("ID:          %s\n", notification.ID)
-	fmt.Printf("Slug:        %s\n", notification.Slug)
-	fmt.Printf("Name:        %s\n", notification.Name)
-	if notification.Description != "" {
-		fmt.Printf("Description: %s\n", notification.Description)
-	}
-	fmt.Printf("Subject:     %s\n", notification.Subject)
-	fmt.Printf("HTML:        %v\n", notification.HTMLEnabled)
-
-	return nil
+	return output.Detail(ctx, notification, []any{notification.ID, notification.Slug, notification.Name, notification.Subject}, []output.Field{
+		output.FAlways("ID", notification.ID),
+		output.FAlways("Slug", notification.Slug),
+		output.FAlways("Name", notification.Name),
+		output.F("Description", notification.Description),
+		output.FAlways("Subject", notification.Subject),
+		output.FAlways("HTML", notification.HTMLEnabled),
+	})
 }

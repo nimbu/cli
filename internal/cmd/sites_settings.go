@@ -41,7 +41,11 @@ func (c *SitesSettingsCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.Plain(ctx, site, fmt.Sprintf("%T", settings))
 	}
 
-	fmt.Printf("Site settings for: %s\n", site)
-	fmt.Printf("Type:         %T\n", settings)
+	if _, err := output.Fprintf(ctx, "Site settings for: %s\n", site); err != nil {
+		return err
+	}
+	if _, err := output.Fprintf(ctx, "Type:         %T\n", settings); err != nil {
+		return err
+	}
 	return nil
 }

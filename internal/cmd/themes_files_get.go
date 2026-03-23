@@ -45,27 +45,18 @@ func (c *ThemeFilesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 			return fmt.Errorf("write file: %w", err)
 		}
 
-		mode := output.FromContext(ctx)
-		if mode.JSON {
-			return output.JSON(ctx, output.PathPayload(c.Output))
-		}
-		if mode.Plain {
-			return output.Plain(ctx, c.Output)
-		}
-		fmt.Printf("Written to: %s\n", c.Output)
-		return nil
-	}
-
-	// Output to stdout
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, map[string]any{
-			"path":    displayPath,
-			"content": base64.StdEncoding.EncodeToString(content),
+		return output.Print(ctx, output.PathPayload(c.Output), []any{c.Output}, func() error {
+			_, err := output.Fprintf(ctx, "Written to: %s\n", c.Output)
+			return err
 		})
 	}
 
-	// Plain and human: write raw content
-	_, err = os.Stdout.Write(content)
-	return err
+	// Output to stdout
+	return output.Print(ctx, map[string]any{
+		"path":    displayPath,
+		"content": base64.StdEncoding.EncodeToString(content),
+	}, nil, func() error {
+		_, err := os.Stdout.Write(content)
+		return err
+	})
 }
