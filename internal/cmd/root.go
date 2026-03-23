@@ -31,32 +31,45 @@ type (
 	rootFlagsKey struct{}
 )
 
+// QueryFlags contains flags for filtering/sorting API list responses.
+// Embedded by commands that support query parameters.
+type QueryFlags struct {
+	Fields  string   `help:"Comma-separated fields to return" group:"Query"`
+	Locale  string   `help:"Filter by locale" group:"Query"`
+	Include string   `help:"Include related resources" group:"Query"`
+	Sort    string   `help:"Sort by field, e.g. field or field:desc" group:"Query"`
+	Filters []string `help:"Filter by key=value, repeatable" group:"Query"`
+}
+
 // RootFlags contains global flags available to all commands.
 type RootFlags struct {
-	Site           string        `help:"Site ID or subdomain" env:"NIMBU_SITE"`
-	APIURL         string        `help:"API base URL" default:"https://api.nimbu.io" env:"NIMBU_API_URL"`
-	Timeout        time.Duration `help:"Request timeout" default:"30s" env:"NIMBU_TIMEOUT"`
-	Fields         string        `help:"Comma-separated fields to return"`
-	Locale         string        `help:"Filter by locale"`
-	Include        string        `help:"Include related resources"`
-	Sort           string        `help:"Sort by field, e.g. field or field:desc"`
-	Filters        []string      `help:"Filter by key=value, repeatable"`
-	Color          string        `help:"Color output: auto|always|never" default:"${color}" env:"NIMBU_COLOR"`
-	JSON           bool          `help:"Output JSON to stdout" default:"${json}" env:"NIMBU_JSON"`
-	Plain          bool          `help:"Output stable TSV to stdout" default:"${plain}" env:"NIMBU_PLAIN"`
-	NoProgress     bool          `help:"Disable live progress UI" env:"NIMBU_NO_PROGRESS"`
-	Force          bool          `help:"Skip confirmations for destructive operations"`
-	NoInput        bool          `help:"Never prompt; fail instead (for CI)" env:"NIMBU_NO_INPUT"`
-	Readonly       bool          `help:"Disable all write operations" env:"NIMBU_READONLY"`
-	EnableCommands string        `help:"Comma-separated allowlist of commands" env:"NIMBU_ENABLE_COMMANDS"`
-	Verbose        bool          `help:"Enable verbose logging"`
-	Debug          bool          `help:"Enable debug logging (HTTP traces)"`
+	// Essential (ungrouped — always visible in help)
+	Site    string `help:"Site ID or subdomain" env:"NIMBU_SITE"`
+	JSON    bool   `help:"Output JSON to stdout" default:"${json}" env:"NIMBU_JSON"`
+	Plain   bool   `help:"Output stable TSV to stdout" default:"${plain}" env:"NIMBU_PLAIN"`
+	Verbose bool   `help:"Enable verbose logging"`
+	Debug   bool   `help:"Enable debug logging (HTTP traces)"`
+
+	// Output (suppressed in default help)
+	Color      string `help:"Color output: auto|always|never" default:"${color}" env:"NIMBU_COLOR" group:"Output"`
+	NoProgress bool   `help:"Disable live progress UI" env:"NIMBU_NO_PROGRESS" group:"Output"`
+
+	// Agent/CI (suppressed in default help)
+	Force          bool   `help:"Skip confirmations for destructive operations" group:"Agent/CI"`
+	NoInput        bool   `help:"Never prompt; fail instead (for CI)" env:"NIMBU_NO_INPUT" group:"Agent/CI"`
+	Readonly       bool   `help:"Disable all write operations" env:"NIMBU_READONLY" group:"Agent/CI"`
+	EnableCommands string `help:"Comma-separated allowlist of commands" env:"NIMBU_ENABLE_COMMANDS" group:"Agent/CI"`
+
+	// Connection (suppressed in default help)
+	APIURL  string        `help:"API base URL" default:"https://api.nimbu.io" env:"NIMBU_API_URL" group:"Connection"`
+	Timeout time.Duration `help:"Request timeout" default:"30s" env:"NIMBU_TIMEOUT" group:"Connection"`
 }
 
 // CLI is the root command structure.
 type CLI struct {
 	RootFlags `embed:""`
 
+	HelpAll       bool             `help:"Show all flags including hidden" name:"help-all" hidden:""`
 	Version       kong.VersionFlag `help:"Print version and exit"`
 	Auth          AuthCmd          `cmd:"" help:"Authentication and credentials"`
 	Init          InitCmd          `cmd:"" help:"Bootstrap a local theme project"`
@@ -112,6 +125,21 @@ func execute(args []string) (err error) {
 	// Show help when no args provided
 	if len(args) == 0 {
 		args = []string{"--help"}
+	}
+
+	// --help-all implies --help
+	hasHelpAll := false
+	hasHelp := false
+	for _, arg := range args {
+		if arg == "--help-all" {
+			hasHelpAll = true
+		}
+		if arg == "--help" || arg == "-h" {
+			hasHelp = true
+		}
+	}
+	if hasHelpAll && !hasHelp {
+		args = append(args, "--help")
 	}
 
 	parser, cli, err := newParser()
@@ -227,6 +255,12 @@ func newParser() (*kong.Kong, *CLI, error) {
 		kong.UsageOnError(),
 		kong.Help(helpPrinter()),
 		kong.ConfigureHelp(helpOptions()),
+		kong.ExplicitGroups([]kong.Group{
+			{Key: "Query", Title: "Query:"},
+			{Key: "Output", Title: "Output:"},
+			{Key: "Agent/CI", Title: "Agent/CI:"},
+			{Key: "Connection", Title: "Connection:"},
+		}),
 		kong.Vars(vars),
 		kong.Writers(os.Stdout, os.Stderr),
 		kong.Exit(func(code int) { panic(exitPanic{code: code}) }),

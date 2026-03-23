@@ -10,6 +10,7 @@ import (
 
 // PagesGetCmd gets page details.
 type PagesGetCmd struct {
+	QueryFlags     `embed:""`
 	DownloadAssets string `help:"Download page file editables into DIR and rewrite JSON to attachment_path refs"`
 	Page           string `arg:"" help:"Page fullpath"`
 }
@@ -27,8 +28,8 @@ func (c *PagesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var opts []api.RequestOption
-	if flags.Locale != "" {
-		opts = append(opts, api.WithLocale(flags.Locale))
+	if c.Locale != "" {
+		opts = append(opts, api.WithLocale(c.Locale))
 	}
 
 	page, err := api.GetPageDocument(ctx, client, c.Page, opts...)

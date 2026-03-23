@@ -10,9 +10,10 @@ import (
 )
 
 type SendersListCmd struct {
-	All     bool `help:"Fetch all pages"`
-	Page    int  `help:"Page number" default:"1"`
-	PerPage int  `help:"Items per page" default:"25"`
+	QueryFlags `embed:""`
+	All        bool `help:"Fetch all pages"`
+	Page       int  `help:"Page number" default:"1"`
+	PerPage    int  `help:"Items per page" default:"25"`
 }
 
 func (c *SendersListCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -24,7 +25,7 @@ func (c *SendersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	opts, err := listRequestOptions(flags)
+	opts, err := listRequestOptions(&c.QueryFlags)
 	if err != nil {
 		return fmt.Errorf("list senders: %w", err)
 	}
@@ -53,9 +54,9 @@ func (c *SendersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	tableFields := []string{"id", "domain", "provider", "status", "ownership_verified", "verified_at"}
 	tableHeaders := []string{"ID", "DOMAIN", "PROVIDER", "STATUS", "OWNERSHIP_VERIFIED", "VERIFIED_AT"}
 	if mode.Plain {
-		return output.PlainFromSlice(ctx, senders, listOutputFields(flags, plainFields))
+		return output.PlainFromSlice(ctx, senders, listOutputFields(&c.QueryFlags, plainFields))
 	}
-	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
+	fields, headers := listOutputColumns(&c.QueryFlags, tableFields, tableHeaders)
 	if err := output.WriteTable(ctx, senders, fields, headers); err != nil {
 		return err
 	}

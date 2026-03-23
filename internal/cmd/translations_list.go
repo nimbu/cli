@@ -12,9 +12,10 @@ import (
 
 // TranslationsListCmd lists translations.
 type TranslationsListCmd struct {
-	All     bool `help:"Fetch all pages"`
-	Page    int  `help:"Page number" default:"1"`
-	PerPage int  `help:"Items per page" default:"25"`
+	QueryFlags `embed:""`
+	All        bool `help:"Fetch all pages"`
+	Page       int  `help:"Page number" default:"1"`
+	PerPage    int  `help:"Items per page" default:"25"`
 }
 
 // Run executes the list command.
@@ -29,7 +30,7 @@ func (c *TranslationsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	requestFlags := *flags
+	requestFlags := c.QueryFlags
 	requestFlags.Locale = ""
 
 	opts, err := listRequestOptions(&requestFlags)
@@ -63,7 +64,7 @@ func (c *TranslationsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	rawCount := len(translations)
-	translations = expandTranslationsListRows(translations, flags.Locale)
+	translations = expandTranslationsListRows(translations, c.Locale)
 	meta.Returned = rawCount
 
 	plainFields := []string{"key", "locale", "value"}
@@ -71,10 +72,10 @@ func (c *TranslationsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	tableHeaders := []string{"KEY", "LOCALE", "VALUE"}
 
 	if mode.Plain {
-		return output.PlainFromSlice(ctx, translations, listOutputFields(flags, plainFields))
+		return output.PlainFromSlice(ctx, translations, listOutputFields(&c.QueryFlags, plainFields))
 	}
 
-	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
+	fields, headers := listOutputColumns(&c.QueryFlags, tableFields, tableHeaders)
 	if err := output.WriteTable(ctx, translations, fields, headers); err != nil {
 		return err
 	}

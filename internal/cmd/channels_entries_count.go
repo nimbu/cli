@@ -11,7 +11,8 @@ import (
 
 // ChannelEntriesCountCmd counts channel entries.
 type ChannelEntriesCountCmd struct {
-	Channel string `arg:"" help:"Channel ID or slug"`
+	QueryFlags `embed:""`
+	Channel    string `arg:"" help:"Channel ID or slug"`
 }
 
 // Run executes the count command.
@@ -28,8 +29,8 @@ func (c *ChannelEntriesCountCmd) Run(ctx context.Context, flags *RootFlags) erro
 
 	path := "/channels/" + url.PathEscape(c.Channel) + "/entries/count"
 	var opts []api.RequestOption
-	if flags.Locale != "" {
-		opts = append(opts, api.WithLocale(flags.Locale))
+	if c.Locale != "" {
+		opts = append(opts, api.WithLocale(c.Locale))
 	}
 
 	count, err := api.Count(ctx, client, path, opts...)

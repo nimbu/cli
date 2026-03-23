@@ -11,10 +11,11 @@ import (
 
 // BlogPostsListCmd lists blog articles.
 type BlogPostsListCmd struct {
-	Blog    string `arg:"" help:"Blog ID or handle"`
-	All     bool   `help:"Fetch all pages"`
-	Page    int    `help:"Page number" default:"1"`
-	PerPage int    `help:"Items per page" default:"25"`
+	QueryFlags `embed:""`
+	Blog       string `arg:"" help:"Blog ID or handle"`
+	All        bool   `help:"Fetch all pages"`
+	Page       int    `help:"Page number" default:"1"`
+	PerPage    int    `help:"Items per page" default:"25"`
 }
 
 // Run executes the list command.
@@ -30,7 +31,7 @@ func (c *BlogPostsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	path := "/blogs/" + url.PathEscape(c.Blog) + "/articles"
-	opts, err := listRequestOptions(flags)
+	opts, err := listRequestOptions(&c.QueryFlags)
 	if err != nil {
 		return fmt.Errorf("list articles: %w", err)
 	}
@@ -64,10 +65,10 @@ func (c *BlogPostsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	tableHeaders := []string{"ID", "SLUG", "TITLE", "STATUS"}
 
 	if mode.Plain {
-		return output.PlainFromSlice(ctx, posts, listOutputFields(flags, plainFields))
+		return output.PlainFromSlice(ctx, posts, listOutputFields(&c.QueryFlags, plainFields))
 	}
 
-	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
+	fields, headers := listOutputColumns(&c.QueryFlags, tableFields, tableHeaders)
 	if err := output.WriteTable(ctx, posts, fields, headers); err != nil {
 		return err
 	}

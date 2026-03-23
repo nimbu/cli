@@ -8,12 +8,12 @@ import (
 func TestListRequestedFields(t *testing.T) {
 	tests := []struct {
 		name  string
-		flags *RootFlags
+		flags *QueryFlags
 		want  []string
 	}{
 		{name: "nil flags", flags: nil, want: nil},
-		{name: "empty", flags: &RootFlags{}, want: []string{}},
-		{name: "trim and drop empty", flags: &RootFlags{Fields: " id, slug , ,name ,,"}, want: []string{"id", "slug", "name"}},
+		{name: "empty", flags: &QueryFlags{}, want: []string{}},
+		{name: "trim and drop empty", flags: &QueryFlags{Fields: " id, slug , ,name ,,"}, want: []string{"id", "slug", "name"}},
 	}
 
 	for _, tc := range tests {
@@ -31,7 +31,7 @@ func TestListOutputColumns(t *testing.T) {
 	headers := []string{"ID", "NAME"}
 
 	t.Run("defaults", func(t *testing.T) {
-		gotFields, gotHeaders := listOutputColumns(&RootFlags{}, defaults, headers)
+		gotFields, gotHeaders := listOutputColumns(&QueryFlags{}, defaults, headers)
 		if !reflect.DeepEqual(gotFields, defaults) {
 			t.Fatalf("fields = %v, want %v", gotFields, defaults)
 		}
@@ -41,7 +41,7 @@ func TestListOutputColumns(t *testing.T) {
 	})
 
 	t.Run("custom fields", func(t *testing.T) {
-		gotFields, gotHeaders := listOutputColumns(&RootFlags{Fields: "id,created_at,published"}, defaults, headers)
+		gotFields, gotHeaders := listOutputColumns(&QueryFlags{Fields: "id,created_at,published"}, defaults, headers)
 		wantFields := []string{"id", "created_at", "published"}
 		wantHeaders := []string{"ID", "CREATED AT", "PUBLISHED"}
 		if !reflect.DeepEqual(gotFields, wantFields) {

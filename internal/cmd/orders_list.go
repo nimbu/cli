@@ -11,10 +11,11 @@ import (
 
 // OrdersListCmd lists orders.
 type OrdersListCmd struct {
-	Status  string `help:"Filter by status"`
-	All     bool   `help:"Fetch all pages"`
-	Page    int    `help:"Page number" default:"1"`
-	PerPage int    `help:"Items per page" default:"25"`
+	QueryFlags `embed:""`
+	Status     string `help:"Filter by status"`
+	All        bool   `help:"Fetch all pages"`
+	Page       int    `help:"Page number" default:"1"`
+	PerPage    int    `help:"Items per page" default:"25"`
 }
 
 // Run executes the list command.
@@ -32,7 +33,7 @@ func (c *OrdersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	opts, err := listRequestOptions(flags)
+	opts, err := listRequestOptions(&c.QueryFlags)
 	if err != nil {
 		return fmt.Errorf("list orders: %w", err)
 	}
@@ -71,10 +72,10 @@ func (c *OrdersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	tableHeaders := []string{"ID", "NUMBER", "STATUS", "TOTAL", "CURRENCY", "CUSTOMER"}
 
 	if mode.Plain {
-		return output.PlainFromSlice(ctx, displayOrders, listOutputFields(flags, plainFields))
+		return output.PlainFromSlice(ctx, displayOrders, listOutputFields(&c.QueryFlags, plainFields))
 	}
 
-	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
+	fields, headers := listOutputColumns(&c.QueryFlags, tableFields, tableHeaders)
 	if err := output.WriteTable(ctx, displayOrders, fields, headers); err != nil {
 		return err
 	}

@@ -11,8 +11,9 @@ import (
 
 // ChannelEntriesGetCmd gets an entry by ID or slug.
 type ChannelEntriesGetCmd struct {
-	Channel string `arg:"" help:"Channel ID or slug"`
-	Entry   string `arg:"" help:"Entry ID or slug"`
+	QueryFlags `embed:""`
+	Channel    string `arg:"" help:"Channel ID or slug"`
+	Entry      string `arg:"" help:"Entry ID or slug"`
 }
 
 // Run executes the get command.
@@ -29,8 +30,8 @@ func (c *ChannelEntriesGetCmd) Run(ctx context.Context, flags *RootFlags) error 
 
 	path := "/channels/" + url.PathEscape(c.Channel) + "/entries/" + url.PathEscape(c.Entry)
 	var opts []api.RequestOption
-	if flags.Locale != "" {
-		opts = append(opts, api.WithLocale(flags.Locale))
+	if c.Locale != "" {
+		opts = append(opts, api.WithLocale(c.Locale))
 	}
 
 	var entry api.Entry

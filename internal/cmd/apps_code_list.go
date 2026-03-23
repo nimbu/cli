@@ -11,7 +11,8 @@ import (
 
 // AppsCodeListCmd lists app code files.
 type AppsCodeListCmd struct {
-	App string `arg:"" help:"Application ID"`
+	QueryFlags `embed:""`
+	App        string `arg:"" help:"Application ID"`
 }
 
 // Run executes the list command.
@@ -42,9 +43,9 @@ func (c *AppsCodeListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	tableHeaders := []string{"NAME", "URL", "UPDATED"}
 
 	if mode.Plain {
-		return output.PlainFromSlice(ctx, files, listOutputFields(flags, plainFields))
+		return output.PlainFromSlice(ctx, files, listOutputFields(&c.QueryFlags, plainFields))
 	}
 
-	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
+	fields, headers := listOutputColumns(&c.QueryFlags, tableFields, tableHeaders)
 	return output.WriteTable(ctx, files, fields, headers)
 }

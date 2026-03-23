@@ -17,6 +17,18 @@ func helpOptions() kong.HelpOptions {
 	}
 }
 
+// sectionHeaders recognized for colorization.
+var sectionHeaders = map[string]bool{
+	"Flags:":        true,
+	"Global Flags:": true,
+	"Commands:":     true,
+	"Arguments:":    true,
+	"Output:":       true,
+	"Agent/CI:":     true,
+	"Connection:":   true,
+	"Query:":        true,
+}
+
 // Color palette (matches gogcli/frontappcli).
 const (
 	colorUsage   = "#60a5fa" // blue - Usage heading
@@ -41,6 +53,11 @@ func helpPrinter() kong.HelpPrinter {
 
 		raw := appendRootInlinePayloadFooter(buf.String())
 		raw = compactCommandsSection(raw)
+
+		// Suppress non-essential flag groups unless --help-all
+		showAll := helpAllRequested()
+		raw = suppressHelpGroups(raw, showAll)
+		raw = appendHelpAllFooter(raw, showAll)
 
 		// Colorize and write
 		output := colorizeHelp(raw)
@@ -139,6 +156,175 @@ func compactCommandsSection(text string) string {
 	return strings.Join(out, "\n")
 }
 
+// helpAllRequested checks os.Args for --help-all before Kong parsing.
+// Same pre-parse pattern as helpColorMode.
+func helpAllRequested() bool {
+	for _, arg := range os.Args {
+		if arg == "--help-all" {
+			return true
+		}
+	}
+	return false
+}
+
+// suppressedGroups are flag group headers hidden from default help.
+// The Query group is never suppressed (only appears on commands that embed QueryFlags).
+var suppressedGroups = map[string]bool{
+	"Output:":     true,
+	"Agent/CI:":   true,
+	"Connection:": true,
+}
+
+// globalFlagPrefixes identifies flags from RootFlags + CLI (not command-specific).
+var globalFlagPrefixes = []string{
+	"-h, --help",
+	"--site=",
+	"--json",
+	"--plain",
+	"--verbose",
+	"--debug",
+	"--version",
+	"--help-all",
+}
+
+func isGlobalFlag(line string) bool {
+	trimmed := strings.TrimLeft(line, " ")
+	for _, prefix := range globalFlagPrefixes {
+		if strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// suppressHelpGroups removes non-essential flag groups from help output,
+// splits the "Flags:" section into "Flags:" (command-specific) and "Global Flags:",
+// and suppresses Output/Agent-CI/Connection groups unless showAll.
+func suppressHelpGroups(text string, showAll bool) string {
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines))
+	skip := false
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+
+		// Split the "Flags:" section into command flags + global flags
+		if line == "Flags:" {
+			skip = false
+
+			// Collect all flag lines in this section
+			flagLines := []string{}
+			i++
+			for i < len(lines) {
+				fl := lines[i]
+				// Empty line between flag groups within the section
+				if fl == "" {
+					flagLines = append(flagLines, fl)
+					i++
+					continue
+				}
+				// Non-indented non-empty line = new section
+				if !strings.HasPrefix(fl, " ") {
+					break
+				}
+				flagLines = append(flagLines, fl)
+				i++
+			}
+			i-- // back up for outer loop
+
+			// Separate global vs command flags
+			var cmdFlags, globalFlags []string
+			for _, fl := range flagLines {
+				if fl == "" {
+					continue // skip blank separators, we'll re-add them
+				}
+				if isGlobalFlag(fl) {
+					globalFlags = append(globalFlags, fl)
+				} else {
+					// Also collect continuation lines (deeply indented descriptions)
+					cmdFlags = append(cmdFlags, fl)
+				}
+			}
+
+			// Emit command-specific flags first (if any)
+			if len(cmdFlags) > 0 {
+				out = append(out, "Flags:")
+				out = append(out, cmdFlags...)
+				out = append(out, "")
+			}
+
+			// Emit global flags
+			out = append(out, "Global Flags:")
+			out = append(out, globalFlags...)
+			out = append(out, "")
+			continue
+		}
+
+		// Ensure blank line before section headers
+		if sectionHeaders[line] && len(out) > 0 && out[len(out)-1] != "" {
+			out = append(out, "")
+		}
+
+		// Check if this is a suppressed group header
+		if !showAll && suppressedGroups[line] {
+			skip = true
+			// Also remove the blank line before the group header
+			if len(out) > 0 && out[len(out)-1] == "" {
+				out = out[:len(out)-1]
+			}
+			continue
+		}
+
+		// End of a suppressed section: next non-indented, non-empty line
+		if skip {
+			if line == "" {
+				continue
+			}
+			if !strings.HasPrefix(line, " ") {
+				// New section — stop skipping
+				skip = false
+			} else {
+				continue
+			}
+		}
+
+		out = append(out, line)
+	}
+
+	return strings.Join(out, "\n")
+}
+
+// appendHelpAllFooter adds a hint about --help-all when groups are suppressed.
+func appendHelpAllFooter(text string, showAll bool) string {
+	if showAll {
+		return text
+	}
+
+	// Derive command from Usage: line
+	cmd := "nimbu"
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(line, "Usage: ") {
+			usage := strings.TrimPrefix(line, "Usage: ")
+			// Strip trailing [flags], <args>, etc.
+			if idx := strings.Index(usage, " ["); idx > 0 {
+				usage = usage[:idx]
+			}
+			if idx := strings.Index(usage, " <"); idx > 0 {
+				usage = usage[:idx]
+			}
+			cmd = strings.TrimSpace(usage)
+			break
+		}
+	}
+
+	footer := "\nRun \"" + cmd + " --help-all\" for all flags.\n"
+
+	if strings.HasSuffix(text, "\n") {
+		return text + footer
+	}
+	return text + "\n" + footer
+}
+
 // helpColorMode determines color mode from CLI args and environment.
 // Called BEFORE Kong parsing since --color flag not yet available.
 func helpColorMode() string {
@@ -227,7 +413,7 @@ func colorizeHelp(text string) string {
 		}
 
 		// Section headers
-		if line == "Flags:" || line == "Commands:" || line == "Arguments:" {
+		if sectionHeaders[line] {
 			lines[i] = section(line)
 			if line == "Commands:" {
 				inCommands = true

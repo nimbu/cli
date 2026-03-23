@@ -10,6 +10,7 @@ import (
 
 // PagesUpdateCmd updates a page.
 type PagesUpdateCmd struct {
+	QueryFlags  `embed:""`
 	Page        string   `arg:"" help:"Page fullpath"`
 	File        string   `help:"Read page JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. title=About, published:=true)"`
@@ -32,8 +33,8 @@ func (c *PagesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var opts []api.RequestOption
-	if flags.Locale != "" {
-		opts = append(opts, api.WithLocale(flags.Locale))
+	if c.Locale != "" {
+		opts = append(opts, api.WithLocale(c.Locale))
 	}
 
 	var body api.PageDocument

@@ -7,7 +7,7 @@ import (
 	"github.com/nimbu/cli/internal/api"
 )
 
-func listRequestOptions(flags *RootFlags, extra ...api.RequestOption) ([]api.RequestOption, error) {
+func listRequestOptions(flags *QueryFlags, extra ...api.RequestOption) ([]api.RequestOption, error) {
 	opts := make([]api.RequestOption, 0, len(extra)+4)
 
 	if flags != nil {

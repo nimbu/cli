@@ -28,6 +28,10 @@ func (s *HostStore) hostKey(base string) string {
 	return base + ":" + s.host
 }
 
+func (s *HostStore) hostLabel(base string) string {
+	return base + " (" + s.host + ")"
+}
+
 func (s *HostStore) isDefaultHost() bool {
 	return s.host == config.DefaultAPIHost
 }
@@ -49,8 +53,9 @@ func (s *HostStore) SetCredential(cred Credential) error {
 	}
 
 	if err := s.ring.Set(keyring.Item{
-		Key:  s.hostKey(credentialKey),
-		Data: data,
+		Key:   s.hostKey(credentialKey),
+		Data:  data,
+		Label: s.hostLabel("Nimbu CLI credential"),
 	}); err != nil {
 		return fmt.Errorf("store credential: %w", err)
 	}
@@ -95,8 +100,9 @@ func (s *HostStore) DeleteCredential() error {
 
 func (s *HostStore) SetToken(token string) error {
 	if err := s.ring.Set(keyring.Item{
-		Key:  s.hostKey(tokenKey),
-		Data: []byte(token),
+		Key:   s.hostKey(tokenKey),
+		Data:  []byte(token),
+		Label: s.hostLabel("Nimbu CLI token"),
 	}); err != nil {
 		return fmt.Errorf("store token: %w", err)
 	}
@@ -126,8 +132,9 @@ func (s *HostStore) DeleteToken() error {
 
 func (s *HostStore) SetEmail(email string) error {
 	if err := s.ring.Set(keyring.Item{
-		Key:  s.hostKey(emailKey),
-		Data: []byte(strings.ToLower(strings.TrimSpace(email))),
+		Key:   s.hostKey(emailKey),
+		Data:  []byte(strings.ToLower(strings.TrimSpace(email))),
+		Label: s.hostLabel("Nimbu CLI email"),
 	}); err != nil {
 		return fmt.Errorf("store email: %w", err)
 	}

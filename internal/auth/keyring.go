@@ -203,8 +203,9 @@ func openKeyringWithTimeout(cfg keyring.Config, timeout time.Duration) (keyring.
 // SetToken stores an authentication token.
 func (s *KeyringStore) SetToken(token string) error {
 	if err := s.ring.Set(keyring.Item{
-		Key:  tokenKey,
-		Data: []byte(token),
+		Key:   tokenKey,
+		Data:  []byte(token),
+		Label: "Nimbu CLI token",
 	}); err != nil {
 		return fmt.Errorf("store token: %w", err)
 	}
@@ -237,8 +238,9 @@ func (s *KeyringStore) DeleteToken() error {
 // SetEmail stores the user's email.
 func (s *KeyringStore) SetEmail(email string) error {
 	if err := s.ring.Set(keyring.Item{
-		Key:  emailKey,
-		Data: []byte(strings.ToLower(strings.TrimSpace(email))),
+		Key:   emailKey,
+		Data:  []byte(strings.ToLower(strings.TrimSpace(email))),
+		Label: "Nimbu CLI email",
 	}); err != nil {
 		return fmt.Errorf("store email: %w", err)
 	}
@@ -285,8 +287,9 @@ func (s *KeyringStore) SetCredential(cred Credential) error {
 	}
 
 	if err := s.ring.Set(keyring.Item{
-		Key:  credentialKey,
-		Data: data,
+		Key:   credentialKey,
+		Data:  data,
+		Label: "Nimbu CLI credential",
 	}); err != nil {
 		return fmt.Errorf("store credential: %w", err)
 	}

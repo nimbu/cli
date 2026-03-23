@@ -11,10 +11,11 @@ import (
 
 // ThemeLayoutsListCmd lists theme layouts.
 type ThemeLayoutsListCmd struct {
-	Theme   string `arg:"" help:"Theme ID"`
-	All     bool   `help:"Fetch all pages"`
-	Page    int    `help:"Page number" default:"1"`
-	PerPage int    `help:"Items per page" default:"25"`
+	QueryFlags `embed:""`
+	Theme      string `arg:"" help:"Theme ID"`
+	All        bool   `help:"Fetch all pages"`
+	Page       int    `help:"Page number" default:"1"`
+	PerPage    int    `help:"Items per page" default:"25"`
 }
 
 // Run executes the list command.
@@ -30,7 +31,7 @@ func (c *ThemeLayoutsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	path := "/themes/" + url.PathEscape(c.Theme) + "/layouts"
-	opts, err := listRequestOptions(flags)
+	opts, err := listRequestOptions(&c.QueryFlags)
 	if err != nil {
 		return fmt.Errorf("list theme layouts: %w", err)
 	}
@@ -60,9 +61,9 @@ func (c *ThemeLayoutsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	tableHeaders := []string{"ID", "NAME", "PERMALINK", "UPDATED"}
 
 	if mode.Plain {
-		return output.PlainFromSlice(ctx, layouts, listOutputFields(flags, plainFields))
+		return output.PlainFromSlice(ctx, layouts, listOutputFields(&c.QueryFlags, plainFields))
 	}
 
-	fields, headers := listOutputColumns(flags, tableFields, tableHeaders)
+	fields, headers := listOutputColumns(&c.QueryFlags, tableFields, tableHeaders)
 	return output.WriteTable(ctx, layouts, fields, headers)
 }

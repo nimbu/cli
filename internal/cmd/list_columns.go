@@ -2,7 +2,7 @@ package cmd
 
 import "strings"
 
-func listRequestedFields(flags *RootFlags) []string {
+func listRequestedFields(flags *QueryFlags) []string {
 	if flags == nil {
 		return nil
 	}
@@ -20,14 +20,14 @@ func listRequestedFields(flags *RootFlags) []string {
 	return fields
 }
 
-func listOutputFields(flags *RootFlags, defaults []string) []string {
+func listOutputFields(flags *QueryFlags, defaults []string) []string {
 	if fields := listRequestedFields(flags); len(fields) > 0 {
 		return fields
 	}
 	return defaults
 }
 
-func listOutputColumns(flags *RootFlags, defaultFields, defaultHeaders []string) ([]string, []string) {
+func listOutputColumns(flags *QueryFlags, defaultFields, defaultHeaders []string) ([]string, []string) {
 	if fields := listRequestedFields(flags); len(fields) > 0 {
 		return fields, listHeadersFromFields(fields)
 	}

@@ -317,8 +317,8 @@ func TestDomainsListPassesStandardListOptions(t *testing.T) {
 	defer srv.Close()
 
 	ctx, _, _ := newAdminWorkflowTestContext(t, srv.URL, output.Mode{JSON: true})
-	cmd := &DomainsListCmd{All: true}
-	if err := cmd.Run(ctx, &RootFlags{Site: "demo", Sort: "domain:desc", Fields: "id,domain"}); err != nil {
+	cmd := &DomainsListCmd{All: true, QueryFlags: QueryFlags{Sort: "domain:desc", Fields: "id,domain"}}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
 		t.Fatalf("run domains list: %v", err)
 	}
 
@@ -337,8 +337,8 @@ func TestSendersListPassesStandardListOptions(t *testing.T) {
 	defer srv.Close()
 
 	ctx, _, _ := newAdminWorkflowTestContext(t, srv.URL, output.Mode{JSON: true})
-	cmd := &SendersListCmd{All: true}
-	if err := cmd.Run(ctx, &RootFlags{Site: "demo", Sort: "status:asc", Fields: "id,domain"}); err != nil {
+	cmd := &SendersListCmd{All: true, QueryFlags: QueryFlags{Sort: "status:asc", Fields: "id,domain"}}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
 		t.Fatalf("run senders list: %v", err)
 	}
 
