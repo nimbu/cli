@@ -131,14 +131,9 @@ func (tl *SyncTimeline) Header() {
 		tl.loopOnce.Do(func() { go tl.loop() })
 	}
 
-	verb := "Pushing"
-	if tl.mode == "sync" {
-		verb = "Syncing"
-	}
-
 	if tl.animated {
 		corner := "┌"
-		text := fmt.Sprintf(`%s theme "%s"`, verb, tl.theme)
+		text := fmt.Sprintf(`%s theme "%s"`, tl.gerund(), tl.theme)
 		if tl.dryRun {
 			text += "  [dry-run]"
 		}
@@ -201,7 +196,7 @@ func (tl *SyncTimeline) CategoryDone(index int) {
 	tl.activeCat = -1
 	tl.activeFile = ""
 	cat := tl.cats[index]
-	summary := fmt.Sprintf("%d uploaded", cat.done)
+	summary := fmt.Sprintf("%d %s", cat.done, tl.pastVerb())
 
 	if tl.animated {
 		tl.writeLine(tl.renderRail())
@@ -362,14 +357,9 @@ func (tl *SyncTimeline) RenderPlan(categories []SyncCategory, deleteCount int) {
 	}
 	tl.padWidth = maxLen
 
-	verb := "Pushing"
-	if tl.mode == "sync" {
-		verb = "Syncing"
-	}
-
 	if tl.animated {
 		corner := "┌"
-		text := fmt.Sprintf(`%s theme "%s"  [dry-run]`, verb, tl.theme)
+		text := fmt.Sprintf(`%s theme "%s"  [dry-run]`, tl.gerund(), tl.theme)
 		if tl.useColor {
 			corner = tl.colorDim(corner)
 			text = tl.colorBright(text)
@@ -444,11 +434,7 @@ func (tl *SyncTimeline) NothingToDo() {
 
 	if tl.animated {
 		corner := "┌"
-		headerVerb := "Pushing"
-		if tl.mode == "sync" {
-			headerVerb = "Syncing"
-		}
-		text := fmt.Sprintf(`%s theme "%s"`, headerVerb, tl.theme)
+		text := fmt.Sprintf(`%s theme "%s"`, tl.gerund(), tl.theme)
 		if tl.useColor {
 			corner = tl.colorDim(corner)
 			text = tl.colorBright(text)
@@ -488,8 +474,14 @@ func (tl *SyncTimeline) Footer() {
 
 	var summary string
 	if tl.deleted > 0 {
+		noun := "upload"
+		nouns := "uploads"
+		if tl.mode == "pull" {
+			noun = "download"
+			nouns = "downloads"
+		}
 		summary = fmt.Sprintf("%d %s, %d %s in %s",
-			tl.uploaded, plural(tl.uploaded, "upload", "uploads"),
+			tl.uploaded, plural(tl.uploaded, noun, nouns),
 			tl.deleted, plural(tl.deleted, "delete", "deletes"),
 			elapsed,
 		)
@@ -530,7 +522,7 @@ func (tl *SyncTimeline) ErrorFooter() {
 	tl.closed = true
 	tl.clearActiveLocked()
 
-	summary := fmt.Sprintf("%d uploaded, %d failed, %d skipped", tl.uploaded, tl.failed, tl.skipped)
+	summary := fmt.Sprintf("%d %s, %d failed, %d skipped", tl.uploaded, tl.pastVerb(), tl.failed, tl.skipped)
 
 	if tl.animated {
 		corner := "└"
@@ -656,6 +648,26 @@ func (tl *SyncTimeline) renderRail() string {
 
 func (tl *SyncTimeline) writeLine(line string) {
 	_, _ = fmt.Fprintln(tl.writer, line)
+}
+
+// --- verb helpers ---
+
+func (tl *SyncTimeline) pastVerb() string {
+	if tl.mode == "pull" {
+		return "downloaded"
+	}
+	return "uploaded"
+}
+
+func (tl *SyncTimeline) gerund() string {
+	switch tl.mode {
+	case "pull":
+		return "Pulling"
+	case "sync":
+		return "Syncing"
+	default:
+		return "Pushing"
+	}
 }
 
 // --- color helpers ---

@@ -42,10 +42,22 @@ func (c *ThemePullCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
+	ctx, tl := syncWithTimeline(ctx, "pull", resolved.Theme, false)
+	defer func() {
+		if tl != nil {
+			tl.Close()
+		}
+	}()
+
 	result, err := themes.RunPull(ctx, client, resolved, themes.Options{LiquidOnly: c.LiquidOnly})
 	if err != nil {
-		return err
+		return finishSyncTimelineError(tl, err)
 	}
+
+	if result.TimelineRendered {
+		return nil
+	}
+
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, result)
