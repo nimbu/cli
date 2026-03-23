@@ -82,6 +82,7 @@ func CopyProducts(ctx context.Context, fromClient, toClient *api.Client, fromRef
 		}
 
 		if existing, ok := targetBySlug[slug]; ok {
+			remapProductImageIDs(payload, existing)
 			targetID := stringValue(existing["id"])
 			action := "update"
 			if opts.DryRun {
@@ -100,6 +101,7 @@ func CopyProducts(ctx context.Context, fromClient, toClient *api.Client, fromRef
 			}
 			result.Items = append(result.Items, ProductCopyItem{Slug: slug, Name: name, Action: action})
 		} else {
+			remapProductImageIDs(payload, nil)
 			action := "create"
 			if opts.DryRun {
 				action = "dry-run:" + action
@@ -158,4 +160,58 @@ func prepareProductAttachments(ctx context.Context, client *api.Client, payload 
 		}
 	}
 	return nil
+}
+
+// remapProductImageIDs matches source product images to target images by
+// filename. Matched images get the target's ID (update); unmatched images
+// have their ID stripped (create new). When target is nil (new product),
+// all IDs are stripped.
+func remapProductImageIDs(payload map[string]any, target map[string]any) {
+	rawImages, ok := payload["images"].([]any)
+	if !ok {
+		return
+	}
+
+	// Build filename → target image IDs lookup from the existing product.
+	// A slice per filename handles duplicates: IDs are consumed in order,
+	// giving a position-based fallback when filenames repeat.
+	targetByFilename := map[string][]string{}
+	if target != nil {
+		if targetImages, ok := target["images"].([]any); ok {
+			for _, rawImg := range targetImages {
+				img, ok := rawImg.(map[string]any)
+				if !ok {
+					continue
+				}
+				id := stringValue(img["id"])
+				filename := productImageFilename(img)
+				if id != "" && filename != "" {
+					targetByFilename[filename] = append(targetByFilename[filename], id)
+				}
+			}
+		}
+	}
+
+	for _, rawImg := range rawImages {
+		img, ok := rawImg.(map[string]any)
+		if !ok {
+			continue
+		}
+		filename := productImageFilename(img)
+		if ids := targetByFilename[filename]; len(ids) > 0 {
+			img["id"] = ids[0]
+			targetByFilename[filename] = ids[1:]
+		} else {
+			delete(img, "id")
+		}
+	}
+}
+
+// productImageFilename extracts the filename from a product image's file sub-object.
+func productImageFilename(img map[string]any) string {
+	file, ok := img["file"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	return stringValue(file["filename"])
 }
