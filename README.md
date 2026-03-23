@@ -20,6 +20,7 @@ npx skills add nimbu/cli
 ## Features
 
 - **Broad API coverage** - Channels, pages, products, orders, customers, themes, and more
+- **Admin workflows** - Domains, sender verification, and support actions for orders/customers
 - **Secure credentials** - OS keychain storage (macOS Keychain, Linux Secret Service)
 - **JSON-first output** - `--json` and `--plain` (TSV) modes for scripting
 - **Agent-friendly** - Command allowlists, readonly mode, deterministic output
@@ -71,6 +72,12 @@ nimbu init
 
 # Work with a specific site
 nimbu channels list --site my-site
+
+# Manage custom domains
+nimbu domains list --site my-site
+
+# Verify a sender domain
+nimbu senders verify-ownership mail.example.com --site my-site
 
 # JSON output for scripting
 nimbu channels entries list blog --site my-site --json | jq '.[]'
@@ -166,6 +173,7 @@ nimbu menus      Manage navigation menus
 nimbu products   Manage products
 nimbu collections Manage collections
 nimbu coupons    Manage coupons
+nimbu domains    Manage custom domains
 nimbu orders     Manage orders
 nimbu customers  Manage customers
 nimbu mails      Sync notification templates to local files
@@ -176,6 +184,7 @@ nimbu redirects  Manage redirects
 nimbu functions  Execute cloud functions
 nimbu jobs       Execute cloud jobs
 nimbu apps       Manage OAuth apps
+nimbu senders    Manage email sender domains
 nimbu themes     Manage themes
 nimbu uploads    Manage uploads
 nimbu blogs      Manage blogs
@@ -184,6 +193,44 @@ nimbu server     Run local simulator proxy with child dev server
 nimbu config     Manage configuration
 nimbu api        Raw API access
 nimbu completion Generate shell completions
+```
+
+## Admin Workflow Commands
+
+```bash
+# Make a domain primary
+nimbu domains make-primary shop.example.com --site my-site --force
+
+# Trigger sender verification
+nimbu senders verify mail.example.com --site my-site
+
+# Record manual payment for an order
+nimbu orders pay 100012 --site my-site
+
+# Resend customer confirmation
+nimbu customers resend-confirmation alice@example.com --site my-site
+
+# Empty a channel with strict confirmation
+nimbu channels empty news --site my-site --confirm news --force
+```
+
+## Advanced Admin Endpoints
+
+Some newer admin endpoints are intentionally left on the raw API surface until they justify dedicated CLI UX.
+
+```bash
+# Settings groups
+nimbu api GET /settings/checkout --site my-site
+nimbu api PATCH /settings/shipping --site my-site -d '{"bpost_label_qty":2}'
+
+# Shipping rates
+nimbu api GET /shipping_rates --site my-site
+
+# Tax schemes
+nimbu api GET /tax_schemes --site my-site
+
+# Subscriptions
+nimbu api GET /subscriptions --site my-site
 ```
 
 ## Configuration

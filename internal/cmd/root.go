@@ -67,6 +67,7 @@ type CLI struct {
 	Products      ProductsCmd      `cmd:"" help:"Manage products"`
 	Collections   CollectionsCmd   `cmd:"" help:"Manage collections"`
 	Coupons       CouponsCmd       `cmd:"" help:"Manage coupons"`
+	Domains       DomainsCmd       `cmd:"" help:"Manage custom domains"`
 	Orders        OrdersCmd        `cmd:"" help:"Manage orders"`
 	Customers     CustomersCmd     `cmd:"" help:"Manage customers"`
 	Mails         MailsCmd         `cmd:"" aliases:"mail" help:"Sync notification templates to local files"`
@@ -77,6 +78,7 @@ type CLI struct {
 	Functions     FunctionsCmd     `cmd:"" help:"Execute cloud functions"`
 	Jobs          JobsCmd          `cmd:"" help:"Execute cloud jobs"`
 	Apps          AppsCmd          `cmd:"" help:"Manage OAuth apps"`
+	Senders       SendersCmd       `cmd:"" help:"Manage email sender domains"`
 	Themes        ThemesCmd        `cmd:"" help:"Manage themes"`
 	Uploads       UploadsCmd       `cmd:"" help:"Manage uploads"`
 	Blogs         BlogsCmd         `cmd:"" help:"Manage blogs"`

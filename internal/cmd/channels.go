@@ -7,6 +7,7 @@ type ChannelsCmd struct {
 	Info    ChannelsInfoCmd   `cmd:"" help:"Show rich channel info and TypeScript output"`
 	Copy    ChannelsCopyCmd   `cmd:"" help:"Copy channel configuration between sites"`
 	Diff    ChannelsDiffCmd   `cmd:"" help:"Diff channel configuration between sites"`
+	Empty   ChannelsEmptyCmd  `cmd:"" help:"Empty a channel after strict confirmation"`
 	Entries ChannelEntriesCmd `cmd:"" help:"Manage channel entries"`
 	Fields  ChannelsFieldsCmd `cmd:"" help:"List channel fields"`
 }

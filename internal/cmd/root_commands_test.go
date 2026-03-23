@@ -13,11 +13,13 @@ func TestCLIHasNewTopLevelCommands(t *testing.T) {
 		"Accounts",
 		"Collections",
 		"Coupons",
+		"Domains",
 		"Init",
 		"Mails",
 		"Notifications",
 		"Roles",
 		"Redirects",
+		"Senders",
 		"Functions",
 		"Jobs",
 		"Apps",
@@ -58,11 +60,13 @@ func TestReadmeMentionsNewTopLevelCommands(t *testing.T) {
 		"nimbu accounts",
 		"nimbu collections",
 		"nimbu coupons",
+		"nimbu domains",
 		"nimbu init",
 		"nimbu mails",
 		"nimbu notifications",
 		"nimbu roles",
 		"nimbu redirects",
+		"nimbu senders",
 		"nimbu functions",
 		"nimbu jobs",
 		"nimbu apps",
@@ -151,5 +155,32 @@ func TestCompactCommandsSection(t *testing.T) {
 func TestParserBuildsWithoutDuplicateFlags(t *testing.T) {
 	if _, _, err := newParser(); err != nil {
 		t.Fatalf("newParser() error = %v", err)
+	}
+}
+
+func TestOrdersCmdExposesAdminActionSubcommands(t *testing.T) {
+	rt := reflect.TypeOf(OrdersCmd{})
+	required := []string{"Pay", "Finish", "Cancel", "Reopen", "Archive"}
+	for _, field := range required {
+		if _, ok := rt.FieldByName(field); !ok {
+			t.Fatalf("OrdersCmd missing %s command", field)
+		}
+	}
+}
+
+func TestCustomersCmdExposesAdminActionSubcommands(t *testing.T) {
+	rt := reflect.TypeOf(CustomersCmd{})
+	required := []string{"ResetPassword", "ResendConfirmation"}
+	for _, field := range required {
+		if _, ok := rt.FieldByName(field); !ok {
+			t.Fatalf("CustomersCmd missing %s command", field)
+		}
+	}
+}
+
+func TestChannelsCmdExposesEmptySubcommand(t *testing.T) {
+	rt := reflect.TypeOf(ChannelsCmd{})
+	if _, ok := rt.FieldByName("Empty"); !ok {
+		t.Fatal("ChannelsCmd missing Empty command")
 	}
 }

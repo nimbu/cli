@@ -38,6 +38,59 @@ type Site struct {
 	UpdatedAt   time.Time `json:"updated_at,omitempty"`
 }
 
+// Domain represents a custom site domain.
+type Domain struct {
+	ID             string    `json:"id"`
+	Domain         string    `json:"domain"`
+	DNSCheck       bool      `json:"dns_check,omitempty"`
+	Primary        bool      `json:"primary,omitempty"`
+	SSLEnabled     bool      `json:"ssl_enabled,omitempty"`
+	RedirectDomain string    `json:"redirect_domain,omitempty"`
+	DefaultLocale  string    `json:"default_locale,omitempty"`
+	DefaultCountry string    `json:"default_country,omitempty"`
+	CreatedAt      time.Time `json:"created_at,omitempty"`
+	UpdatedAt      time.Time `json:"updated_at,omitempty"`
+}
+
+// SenderDNSRecord represents a DNS verification record for a sender domain.
+type SenderDNSRecord struct {
+	Type        string `json:"type,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Value       string `json:"value,omitempty"`
+	Host        string `json:"host,omitempty"`
+	TTL         int    `json:"ttl,omitempty"`
+	Priority    int    `json:"priority,omitempty"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+}
+
+// SenderDomain represents an email sender domain.
+type SenderDomain struct {
+	ID                  string            `json:"id"`
+	Domain              string            `json:"domain"`
+	Provider            string            `json:"provider,omitempty"`
+	Status              string            `json:"status,omitempty"`
+	OwnershipVerified   bool              `json:"ownership_verified,omitempty"`
+	OwnershipVerifiedAt *time.Time        `json:"ownership_verified_at,omitempty"`
+	VerifiedAt          *time.Time        `json:"verified_at,omitempty"`
+	LastCheckAt         *time.Time        `json:"last_check_at,omitempty"`
+	LastCheckError      string            `json:"last_check_error,omitempty"`
+	ExpectedTXTRecord   string            `json:"expected_txt_record,omitempty"`
+	DNSRecords          []SenderDNSRecord `json:"dns_records,omitempty"`
+	CreatedAt           time.Time         `json:"created_at,omitempty"`
+	UpdatedAt           time.Time         `json:"updated_at,omitempty"`
+}
+
+// ActionStatus represents small state-changing action responses.
+type ActionStatus struct {
+	Status  string `json:"status,omitempty"`
+	Message string `json:"message,omitempty"`
+	State   string `json:"state,omitempty"`
+	Paid    bool   `json:"paid,omitempty"`
+	Primary bool   `json:"primary,omitempty"`
+	Domain  string `json:"domain,omitempty"`
+}
+
 // AuthResponse is returned from login.
 type AuthResponse struct {
 	Token string `json:"token"`
