@@ -61,7 +61,7 @@ func (c *AuthLoginCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	// Call login API
-	client := api.New(flags.APIURL, "")
+	client := api.New(flags.APIURL, "").WithVersion(version)
 
 	resp, err := loginWithCredentials(ctx, client, email, password, c.ExpiresIn, flags.NoInput, prompt)
 	if err != nil {

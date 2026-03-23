@@ -683,6 +683,14 @@ func embedFileFromClient(ctx context.Context, client *api.Client, file map[strin
 	file["__type"] = "File"
 	delete(file, "url")
 	delete(file, "public_url")
+	// Strip output-only metadata from rich API responses
+	delete(file, "permanent_url")
+	delete(file, "size")
+	delete(file, "width")
+	delete(file, "height")
+	delete(file, "checksum")
+	delete(file, "version")
+	delete(file, "private")
 	return nil
 }
 

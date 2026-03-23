@@ -335,6 +335,7 @@ func GetAPIClient(ctx context.Context) (*api.Client, error) {
 	}
 
 	client := api.New(flags.APIURL, token)
+	client = client.WithVersion(version)
 	client = client.WithTimeout(flags.Timeout)
 	client = client.WithDebug(flags.Debug)
 
@@ -376,6 +377,7 @@ func GetAPIClientWithBaseURL(ctx context.Context, baseURL, site string) (*api.Cl
 	}
 
 	client := api.New(apiURL, token)
+	client = client.WithVersion(version)
 	client = client.WithTimeout(flags.Timeout)
 	client = client.WithDebug(flags.Debug)
 	if site != "" {

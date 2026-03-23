@@ -18,6 +18,7 @@ type Client struct {
 	BaseURL    string
 	Token      string
 	Site       string
+	Version    string
 	HTTPClient *http.Client
 	Debug      bool
 }
@@ -48,6 +49,13 @@ func (c *Client) WithTimeout(timeout time.Duration) *Client {
 		Timeout:   timeout,
 		Transport: c.HTTPClient.Transport,
 	}
+	return &clone
+}
+
+// WithVersion returns a copy of the client with the version set.
+func (c *Client) WithVersion(version string) *Client {
+	clone := *c
+	clone.Version = version
 	return &clone
 }
 
@@ -169,6 +177,11 @@ func (c *Client) buildRequest(ctx context.Context, method, path string, body any
 	// Auth header
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+
+	// Client version header (triggers rich serialization with __type metadata)
+	if c.Version != "" {
+		req.Header.Set("X-Nimbu-Client-Version", c.Version)
 	}
 
 	// Site header
