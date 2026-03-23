@@ -84,8 +84,9 @@ func TestExecuteSkipsUpdateNotifierForCompletionWithGlobalFlagPrefix(t *testing.
 
 func TestExecuteRunsUpdateNotifierAfterSuccessfulCommandAndWritesOnlyToStderr(t *testing.T) {
 	tempHome := t.TempDir()
+	configHome := filepath.Join(tempHome, ".config")
 	t.Setenv("HOME", tempHome)
-	t.Setenv("XDG_CONFIG_HOME", tempHome)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
 
 	restore := stubUpdateNotifier(t, true, func(ctx context.Context, errWriter io.Writer, currentVersion string, style updatecheck.Style) {
 		if currentVersion == "" {
@@ -105,7 +106,7 @@ func TestExecuteRunsUpdateNotifierAfterSuccessfulCommandAndWritesOnlyToStderr(t 
 		t.Fatalf("expected exit code 0, got %d with stderr %q", code, stderr)
 	}
 
-	expectedPath := filepath.Join(tempHome, ".config", "nimbu", "config.json")
+	expectedPath := filepath.Join(configHome, "nimbu", "config.json")
 	if !strings.Contains(stdout, expectedPath) {
 		t.Fatalf("expected stdout to contain config path %q, got %q", expectedPath, stdout)
 	}
