@@ -47,3 +47,24 @@ jobs:
 
       - name: Test binary
         run: ./bin/nimbu --version
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: |
+          mkdir bin
+          go build -o bin/nimbu.exe ./cmd/nimbu-cli
+
+      - name: Test
+        run: go test ./...
+
+      - name: Test binary
+        run: .\bin\nimbu.exe --version

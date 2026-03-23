@@ -45,18 +45,11 @@ func (c *TranslationsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error
 		return fmt.Errorf("update translation: %w", err)
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		return output.JSON(ctx, t)
-	}
-
-	if mode.Plain {
-		key, _ := t["key"].(string)
-		locale, _ := t["locale"].(string)
-		value, _ := t["value"].(string)
-		return output.Plain(ctx, key, locale, value)
-	}
-
-	fmt.Printf("Updated translation: %s\n", c.Key)
-	return nil
+	key, _ := t["key"].(string)
+	locale, _ := t["locale"].(string)
+	value, _ := t["value"].(string)
+	return output.Print(ctx, t, []any{key, locale, value}, func() error {
+		_, err := output.Fprintf(ctx, "Updated translation: %s\n", c.Key)
+		return err
+	})
 }
