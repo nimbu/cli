@@ -87,8 +87,12 @@ dev:
 	if resolved, err := filepath.EvalSymlinks(expectedChildCWD); err == nil {
 		expectedChildCWD = resolved
 	}
-	if cfg.ChildCWD != expectedChildCWD {
-		t.Fatalf("child cwd mismatch: %q", cfg.ChildCWD)
+	actualChildCWD := cfg.ChildCWD
+	if resolved, err := filepath.EvalSymlinks(actualChildCWD); err == nil {
+		actualChildCWD = resolved
+	}
+	if actualChildCWD != expectedChildCWD {
+		t.Fatalf("child cwd mismatch: got %q, want %q", actualChildCWD, expectedChildCWD)
 	}
 	if cfg.ReadyURL != "http://127.0.0.1:5173" {
 		t.Fatalf("ready URL mismatch: %q", cfg.ReadyURL)
