@@ -88,17 +88,20 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 
 	os.Stdout = w
-	defer func() {
-		os.Stdout = original
+
+	// Read in a goroutine to avoid deadlock on Windows where pipe buffers are small.
+	done := make(chan []byte, 1)
+	go func() {
+		data, _ := io.ReadAll(r)
+		done <- data
 	}()
 
 	fn()
 
 	_ = w.Close()
-	data, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("read stdout: %v", err)
-	}
+	os.Stdout = original
+
+	data := <-done
 	_ = r.Close()
 	return string(data)
 }

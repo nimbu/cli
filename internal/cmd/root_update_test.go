@@ -172,6 +172,20 @@ func captureExecute(t *testing.T, args []string) (int, string, string) {
 	os.Stdout = stdoutW
 	os.Stderr = stderrW
 
+	// Read both pipes in goroutines to avoid deadlock on Windows where
+	// pipe buffers are small and sequential reads can block.
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdoutDone := make(chan error, 1)
+	stderrDone := make(chan error, 1)
+	go func() {
+		_, copyErr := io.Copy(&stdoutBuf, stdoutR)
+		stdoutDone <- copyErr
+	}()
+	go func() {
+		_, copyErr := io.Copy(&stderrBuf, stderrR)
+		stderrDone <- copyErr
+	}()
+
 	code := Execute(args)
 
 	_ = stdoutW.Close()
@@ -179,17 +193,11 @@ func captureExecute(t *testing.T, args []string) (int, string, string) {
 	os.Stdout = origStdout
 	os.Stderr = origStderr
 
-	stdout := readPipe(t, stdoutR)
-	stderr := readPipe(t, stderrR)
-	return code, stdout, stderr
-}
-
-func readPipe(t *testing.T, r *os.File) string {
-	t.Helper()
-
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, r); err != nil {
-		t.Fatalf("read pipe: %v", err)
+	if err := <-stdoutDone; err != nil {
+		t.Fatalf("read stdout pipe: %v", err)
 	}
-	return buf.String()
+	if err := <-stderrDone; err != nil {
+		t.Fatalf("read stderr pipe: %v", err)
+	}
+	return code, stdoutBuf.String(), stderrBuf.String()
 }

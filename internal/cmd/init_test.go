@@ -71,7 +71,10 @@ func TestInitBootstrapsProjectIntoOutputDir(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(finalPath, "nimbu.yml")); err != nil {
 		t.Fatalf("expected bootstrapped project: %v", err)
 	}
-	if !strings.Contains(stdout.String(), `"path": `) || !strings.Contains(stdout.String(), finalPath) {
+	// JSON encodes backslashes as \\, so use forward slashes for comparison.
+	normalizedOutput := strings.ReplaceAll(stdout.String(), `\\`, `/`)
+	normalizedPath := filepath.ToSlash(finalPath)
+	if !strings.Contains(normalizedOutput, `"path": `) || !strings.Contains(normalizedOutput, normalizedPath) {
 		t.Fatalf("expected json output with final path, got %s", stdout.String())
 	}
 }
