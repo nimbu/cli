@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -285,13 +286,15 @@ func TestCompactSiteLabel(t *testing.T) {
 }
 
 func TestDisplayPathFromRoot(t *testing.T) {
-	if got := displayPathFromRoot("/repo/theme", "/repo/theme"); got != "." {
+	root := filepath.FromSlash("/repo/theme")
+	if got := displayPathFromRoot(root, root); got != "." {
 		t.Fatalf("expected dot path, got %q", got)
 	}
-	if got := displayPathFromRoot("/repo/theme", "/repo/theme/apps/web"); got != "apps/web" {
+	if got := displayPathFromRoot(root, filepath.FromSlash("/repo/theme/apps/web")); got != filepath.FromSlash("apps/web") {
 		t.Fatalf("expected relative path, got %q", got)
 	}
-	if got := displayPathFromRoot("/repo/theme", "/outside/project"); got != "/outside/project" {
+	outside := filepath.FromSlash("/outside/project")
+	if got := displayPathFromRoot(root, outside); got != outside {
 		t.Fatalf("expected absolute fallback, got %q", got)
 	}
 }

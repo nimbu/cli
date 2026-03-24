@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -87,6 +88,10 @@ func TestExecuteRunsUpdateNotifierAfterSuccessfulCommandAndWritesOnlyToStderr(t 
 	configHome := filepath.Join(tempHome, ".config")
 	t.Setenv("HOME", tempHome)
 	t.Setenv("XDG_CONFIG_HOME", configHome)
+	if runtime.GOOS == "windows" {
+		// Windows uses %APPDATA% instead of XDG_CONFIG_HOME.
+		t.Setenv("APPDATA", configHome)
+	}
 
 	restore := stubUpdateNotifier(t, true, func(ctx context.Context, errWriter io.Writer, currentVersion string, style updatecheck.Style) {
 		if currentVersion == "" {

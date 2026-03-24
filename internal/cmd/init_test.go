@@ -237,7 +237,7 @@ func TestLoadInitManifestMissingIsActionable(t *testing.T) {
 		t.Fatal("expected missing manifest error")
 	}
 	for _, needle := range []string{
-		"bootstrap/manifest.yml",
+		filepath.Join("bootstrap", "manifest.yml"),
 		"zenjoy/theme-starterskit@vite-go-cli",
 		"--dir",
 		"bootstrap-ready",

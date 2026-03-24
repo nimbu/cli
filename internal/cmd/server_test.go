@@ -70,8 +70,12 @@ dev:
 	if resolved, err := filepath.EvalSymlinks(expectedTemplateRoot); err == nil {
 		expectedTemplateRoot = resolved
 	}
-	if cfg.TemplateRoot != expectedTemplateRoot {
-		t.Fatalf("template root mismatch: %q", cfg.TemplateRoot)
+	actualTemplateRoot := cfg.TemplateRoot
+	if resolved, err := filepath.EvalSymlinks(actualTemplateRoot); err == nil {
+		actualTemplateRoot = resolved
+	}
+	if actualTemplateRoot != expectedTemplateRoot {
+		t.Fatalf("template root mismatch: got %q, want %q", actualTemplateRoot, expectedTemplateRoot)
 	}
 	if cfg.ChildCommand != "pnpm" {
 		t.Fatalf("child command mismatch: %q", cfg.ChildCommand)
