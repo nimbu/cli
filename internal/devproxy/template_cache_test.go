@@ -3,6 +3,7 @@ package devproxy
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -80,6 +81,10 @@ func TestTemplateCacheStopIsIdempotent(t *testing.T) {
 }
 
 func TestTemplateCacheStaleFlagReturnedToConcurrentWaiters(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod cannot restrict read access on Windows")
+	}
+
 	root := t.TempDir()
 	templatesDir := filepath.Join(root, "templates")
 	if err := os.MkdirAll(templatesDir, 0o755); err != nil {

@@ -18,18 +18,23 @@ func captureStdout(t *testing.T, fn func() error) string {
 	}
 	os.Stdout = w
 
+	// Read in a goroutine to avoid deadlock on Windows where pipe buffers are small.
+	var buf bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		_, copyErr := io.Copy(&buf, r)
+		done <- copyErr
+	}()
+
 	callErr := fn()
 	_ = w.Close()
 	os.Stdout = origStdout
 
+	if readErr := <-done; readErr != nil {
+		t.Fatalf("read pipe: %v", readErr)
+	}
 	if callErr != nil {
 		t.Fatalf("call failed: %v", callErr)
-	}
-
-	var buf bytes.Buffer
-	_, err = io.Copy(&buf, r)
-	if err != nil {
-		t.Fatalf("read pipe: %v", err)
 	}
 
 	return buf.String()

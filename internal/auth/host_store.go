@@ -25,7 +25,7 @@ func NewHostStore(ring keyring.Keyring, host string) *HostStore {
 }
 
 func (s *HostStore) hostKey(base string) string {
-	return base + ":" + s.host
+	return base + "@" + s.host
 }
 
 func (s *HostStore) hostLabel(base string) string {
