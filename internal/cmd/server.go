@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"golang.org/x/term"
@@ -156,16 +155,16 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		ReadyURL: runtimeCfg.ReadyURL,
 	})
 
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, serverShutdownSignals()...)
+	defer signal.Stop(sigCh)
+
 	if err := child.Start(); err != nil {
 		return err
 	}
 	defer func() {
 		_ = child.Stop(5 * time.Second)
 	}()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(sigCh)
 
 	readyCh := make(chan error, 1)
 	go func() {
