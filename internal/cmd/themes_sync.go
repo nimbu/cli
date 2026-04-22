@@ -1,16 +1,23 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
+	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/config"
 	"github.com/nimbu/cli/internal/output"
 	"github.com/nimbu/cli/internal/themes"
 )
+
+var themeConflictRE = regexp.MustCompile(`Conflict \((.*)\)`)
 
 // ThemePushCmd uploads managed local theme files without deleting remote files.
 type ThemePushCmd struct {
@@ -115,6 +122,7 @@ func runThemeTransfer(ctx context.Context, flags *RootFlags, themeOverride strin
 	}()
 
 	var result themes.Result
+	opts.ConfirmOverwrite = confirmThemeOverwrite(flags)
 	if mode == "sync" {
 		result, err = themes.RunSync(ctx, client, resolved, opts)
 	} else {
@@ -124,6 +132,46 @@ func runThemeTransfer(ctx context.Context, flags *RootFlags, themeOverride strin
 		return finishSyncTimelineError(tl, err)
 	}
 	return writeThemeTransferResult(ctx, result)
+}
+
+func confirmThemeOverwrite(flags *RootFlags) func(context.Context, themes.Resource, error) (bool, error) {
+	reader := bufio.NewReader(os.Stdin)
+	return func(ctx context.Context, resource themes.Resource, err error) (bool, error) {
+		if flags != nil && flags.NoInput {
+			return false, fmt.Errorf("use --force to overwrite %s", resource.DisplayPath)
+		}
+		w := output.WriterFromContext(ctx)
+		if detail := themeConflictDetail(err); detail != "" {
+			_, _ = fmt.Fprintf(w.Err, "warning: %s\n", detail)
+		}
+		_, _ = fmt.Fprintf(w.Err, "overwrite %s? [y/N]: ", resource.DisplayPath)
+		answer, readErr := reader.ReadString('\n')
+		if readErr != nil && len(answer) == 0 {
+			return false, readErr
+		}
+		switch strings.ToLower(strings.TrimSpace(answer)) {
+		case "y", "yes":
+			_, _ = fmt.Fprintf(w.Err, "forcing upload of %s\n", resource.DisplayPath)
+			return true, nil
+		default:
+			_, _ = fmt.Fprintf(w.Err, "skipping upload of %s\n", resource.DisplayPath)
+			return false, nil
+		}
+	}
+}
+
+func themeConflictDetail(err error) string {
+	var apiErr *api.Error
+	if !errors.As(err, &apiErr) {
+		return ""
+	}
+	if match := themeConflictRE.FindStringSubmatch(apiErr.Message); len(match) == 2 {
+		return match[1]
+	}
+	if apiErr.StatusCode == http.StatusConflict {
+		return apiErr.Message
+	}
+	return ""
 }
 
 func resolveThemeProjectConfig() (string, config.ProjectConfig, []string, error) {
@@ -172,6 +220,11 @@ func writeThemeTransferResult(ctx context.Context, result themes.Result) error {
 				return err
 			}
 		}
+		for _, action := range result.Skipped {
+			if _, err := output.Fprintf(ctx, "skip\t%s\n", action.DisplayPath); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 
@@ -189,7 +242,16 @@ func writeThemeTransferResult(ctx context.Context, result themes.Result) error {
 			return err
 		}
 	}
-	if _, err := output.Fprintf(ctx, "%s complete: %d uploads, %d deletes\n", result.Mode, len(result.Uploaded), len(result.Deleted)); err != nil {
+	for _, action := range result.Skipped {
+		if _, err := output.Fprintf(ctx, "%sskip %s\n", prefix, action.DisplayPath); err != nil {
+			return err
+		}
+	}
+	skipped := ""
+	if len(result.Skipped) > 0 {
+		skipped = fmt.Sprintf(", %d skipped", len(result.Skipped))
+	}
+	if _, err := output.Fprintf(ctx, "%s complete: %d uploads, %d deletes%s\n", result.Mode, len(result.Uploaded), len(result.Deleted), skipped); err != nil {
 		return err
 	}
 	return nil

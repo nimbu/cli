@@ -1,6 +1,9 @@
 package themes
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // Kind identifies a remote theme resource collection.
 type Kind string
@@ -62,6 +65,7 @@ type Result struct {
 	Deleted          []Action `json:"deleted,omitempty"`
 	DryRun           bool     `json:"dry_run,omitempty"`
 	Mode             string   `json:"mode"`
+	Skipped          []Action `json:"skipped,omitempty"`
 	Theme            string   `json:"theme"`
 	Uploaded         []Action `json:"uploaded,omitempty"`
 	TimelineRendered bool     `json:"-"`
@@ -107,6 +111,8 @@ type Options struct {
 	JSOnly     bool
 	ImagesOnly bool
 	FontsOnly  bool
+
+	ConfirmOverwrite func(context.Context, Resource, error) (bool, error)
 }
 
 type resourceKey struct {

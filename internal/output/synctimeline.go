@@ -43,6 +43,7 @@ type catState struct {
 	label    string
 	total    int
 	done     int
+	skipped  int
 	finished bool
 }
 
@@ -182,6 +183,18 @@ func (tl *SyncTimeline) FileUploaded() {
 	tl.uploaded++
 }
 
+// FileSkipped records an intentionally skipped upload after user confirmation.
+func (tl *SyncTimeline) FileSkipped() {
+	tl.mu.Lock()
+	defer tl.mu.Unlock()
+	tl.clearActiveLocked()
+	if tl.activeCat >= 0 && tl.activeCat < len(tl.cats) {
+		tl.cats[tl.activeCat].skipped++
+	}
+	tl.skipped++
+	tl.activeFile = ""
+}
+
 // CategoryDone finalizes a category, writing a permanent completion line.
 func (tl *SyncTimeline) CategoryDone(index int) {
 	tl.mu.Lock()
@@ -197,6 +210,9 @@ func (tl *SyncTimeline) CategoryDone(index int) {
 	tl.activeFile = ""
 	cat := tl.cats[index]
 	summary := fmt.Sprintf("%d %s", cat.done, tl.pastVerb())
+	if cat.skipped > 0 {
+		summary = fmt.Sprintf("%d %s, %d skipped", cat.done, tl.pastVerb(), cat.skipped)
+	}
 
 	if tl.animated {
 		tl.writeLine(tl.renderRail())
@@ -473,7 +489,17 @@ func (tl *SyncTimeline) Footer() {
 	total := tl.uploaded + tl.deleted
 
 	var summary string
-	if tl.deleted > 0 {
+	if tl.skipped > 0 {
+		summary = fmt.Sprintf("%d %s, %d skipped in %s", tl.uploaded, tl.pastVerb(), tl.skipped, elapsed)
+		if tl.deleted > 0 {
+			summary = fmt.Sprintf("%d %s, %d %s, %d skipped in %s",
+				tl.uploaded, plural(tl.uploaded, "upload", "uploads"),
+				tl.deleted, plural(tl.deleted, "delete", "deletes"),
+				tl.skipped,
+				elapsed,
+			)
+		}
+	} else if tl.deleted > 0 {
 		noun := "upload"
 		nouns := "uploads"
 		if tl.mode == "pull" {
@@ -548,6 +574,14 @@ func (tl *SyncTimeline) Close() {
 	tl.clearActiveLocked()
 }
 
+// PreparePrompt clears live spinner output before a blocking prompt is printed.
+func (tl *SyncTimeline) PreparePrompt() {
+	tl.stopLoop()
+	tl.mu.Lock()
+	defer tl.mu.Unlock()
+	tl.clearActiveLocked()
+}
+
 // --- internal ---
 
 func (tl *SyncTimeline) stopLoop() {
@@ -603,10 +637,11 @@ func (tl *SyncTimeline) renderActiveLocked() {
 	} else if tl.activeCat >= 0 {
 		cat := tl.cats[tl.activeCat]
 		label := fmt.Sprintf("%-*s", tl.padWidth, cat.label)
+		progress := cat.done + cat.skipped
 		if tl.activeFile != "" {
-			line = fmt.Sprintf("%s %s — %d/%d  %s", spinner, label, cat.done, cat.total, tl.activeFile)
+			line = fmt.Sprintf("%s %s — %d/%d  %s", spinner, label, progress, cat.total, tl.activeFile)
 		} else {
-			line = fmt.Sprintf("%s %s — %d/%d", spinner, label, cat.done, cat.total)
+			line = fmt.Sprintf("%s %s — %d/%d", spinner, label, progress, cat.total)
 		}
 	}
 

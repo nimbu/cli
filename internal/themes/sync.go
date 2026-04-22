@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -49,7 +50,6 @@ func run(ctx context.Context, client *api.Client, cfg Config, opts Options, mode
 	// Sort uploads in dependency order
 	orderedUploads := SortByKindOrder(uploads)
 	uploadsByKind := GroupByKind(orderedUploads)
-	result.Uploaded = toActions(orderedUploads)
 	result.Deleted = toActions(deletes)
 
 	// Build category list for timeline
@@ -64,6 +64,7 @@ func run(ctx context.Context, client *api.Client, cfg Config, opts Options, mode
 
 	// Dry-run path
 	if opts.DryRun {
+		result.Uploaded = toActions(orderedUploads)
 		if tl != nil {
 			tl.RenderPlan(categories, len(deletes))
 			result.TimelineRendered = true
@@ -107,6 +108,41 @@ func run(ctx context.Context, client *api.Client, cfg Config, opts Options, mode
 			tl.SetActiveFile(resource.DisplayPath)
 		}
 		if err := Upsert(ctx, client, cfg.Theme, resource, opts.Force); err != nil {
+			if shouldHandleUploadConflict(err, opts) {
+				overwrite, promptErr := promptOverwriteConflict(ctx, tl, opts, resource, err)
+				if promptErr != nil {
+					if tl != nil {
+						tl.FileFailed(resource.DisplayPath, formatAPIError(promptErr))
+						tl.ErrorFooter()
+						result.TimelineRendered = true
+					}
+					return result, fmt.Errorf("confirm overwrite %s: %w", resource.DisplayPath, promptErr)
+				}
+				if !overwrite {
+					result.Skipped = append(result.Skipped, toAction(resource))
+					if tl != nil {
+						tl.FileSkipped()
+					}
+					continue
+				}
+				if tl != nil {
+					tl.SetActiveFile(resource.DisplayPath)
+				}
+				if err := Upsert(ctx, client, cfg.Theme, resource, true); err == nil {
+					result.Uploaded = append(result.Uploaded, toAction(resource))
+					if tl != nil {
+						tl.FileUploaded()
+					}
+					continue
+				} else {
+					if tl != nil {
+						tl.FileFailed(resource.DisplayPath, formatAPIError(err))
+						tl.ErrorFooter()
+						result.TimelineRendered = true
+					}
+					return result, fmt.Errorf("upload %s: %w", resource.DisplayPath, err)
+				}
+			}
 			if tl != nil {
 				tl.FileFailed(resource.DisplayPath, formatAPIError(err))
 				tl.ErrorFooter()
@@ -114,6 +150,7 @@ func run(ctx context.Context, client *api.Client, cfg Config, opts Options, mode
 			}
 			return result, fmt.Errorf("upload %s: %w", resource.DisplayPath, err)
 		}
+		result.Uploaded = append(result.Uploaded, toAction(resource))
 		if tl != nil {
 			tl.FileUploaded()
 		}
@@ -153,6 +190,25 @@ func run(ctx context.Context, client *api.Client, cfg Config, opts Options, mode
 		result.TimelineRendered = true
 	}
 	return result, nil
+}
+
+func shouldHandleUploadConflict(err error, opts Options) bool {
+	return !opts.Force && opts.ConfirmOverwrite != nil && isConflictError(err)
+}
+
+func promptOverwriteConflict(ctx context.Context, tl *output.SyncTimeline, opts Options, resource Resource, err error) (bool, error) {
+	if tl != nil {
+		tl.PreparePrompt()
+	}
+	return opts.ConfirmOverwrite(ctx, resource, err)
+}
+
+func isConflictError(err error) bool {
+	var apiErr *api.Error
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return apiErr.StatusCode == http.StatusConflict || strings.Contains(apiErr.Message, "Conflict")
 }
 
 func formatAPIError(err error) string {
@@ -325,12 +381,16 @@ func sortResourceSlice(resources map[resourceKey]Resource) []Resource {
 func toActions(resources []Resource) []Action {
 	actions := make([]Action, 0, len(resources))
 	for _, resource := range resources {
-		actions = append(actions, Action{
-			DisplayPath: resource.DisplayPath,
-			Kind:        resource.Kind,
-			LocalPath:   resource.LocalPath,
-			RemoteName:  resource.RemoteName,
-		})
+		actions = append(actions, toAction(resource))
 	}
 	return actions
+}
+
+func toAction(resource Resource) Action {
+	return Action{
+		DisplayPath: resource.DisplayPath,
+		Kind:        resource.Kind,
+		LocalPath:   resource.LocalPath,
+		RemoteName:  resource.RemoteName,
+	}
 }
