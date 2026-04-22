@@ -26,7 +26,10 @@ func TestConfirmThemeOverwriteReusesReaderAcrossPrompts(t *testing.T) {
 
 	originalStdin := os.Stdin
 	os.Stdin = input
-	t.Cleanup(func() { os.Stdin = originalStdin })
+	t.Cleanup(func() {
+		os.Stdin = originalStdin
+		_ = input.Close()
+	})
 
 	var stderr bytes.Buffer
 	ctx := output.WithWriter(context.Background(), &output.Writer{
