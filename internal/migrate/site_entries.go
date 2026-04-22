@@ -26,12 +26,19 @@ func CopySiteEntries(ctx context.Context, fromClient, toClient *api.Client, from
 	ordered := topoSortEntryChannels(channels, graph)
 
 	copier := &recordCopier{
-		fromClient: fromClient,
-		toClient:   toClient,
-		options:    opts,
-		mapping:    map[string]map[string]string{},
-		queued:     map[string]map[string]struct{}{},
-		channelMap: channelMap,
+		fromClient:             fromClient,
+		toClient:               toClient,
+		options:                opts,
+		mapping:                map[string]map[string]string{},
+		queued:                 map[string]map[string]struct{}{},
+		channelMap:             channelMap,
+		localizedTargetRecords: map[string]map[string]map[string]map[string]any{},
+	}
+	var localeWarnings []string
+	if channelsHaveLocalizedFields(channelMap, ordered) {
+		var locales []string
+		locales, localeWarnings = sharedNonDefaultContentLocales(ctx, fromClient, toClient, fromRef, toRef)
+		copier.locales = locales
 	}
 
 	var results []RecordCopyResult
@@ -43,6 +50,7 @@ func CopySiteEntries(ctx context.Context, fromClient, toClient *api.Client, from
 			continue
 		}
 		result := RecordCopyResult{From: fromRef, To: toRef, Resource: channel}
+		result.Warnings = append(result.Warnings, localeWarnings...)
 		copier.result = &result
 		detail := channelMap[channel]
 		info := buildSchemaInfo(channel, detail.Customizations)
@@ -50,8 +58,12 @@ func CopySiteEntries(ctx context.Context, fromClient, toClient *api.Client, from
 		if err != nil {
 			return results, err
 		}
-		copier.preMatchEntries(ctx, channel, channel, records, info)
-		_, warnings, err := copier.copyRecords(ctx, channel, channel, info, records)
+		localizedRecords, err := copier.listLocalizedRecords(ctx, channel, nil, info)
+		if err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("channel=%s: localized source fetch failed: %v", channel, err))
+		}
+		copier.preMatchEntries(ctx, channel, channel, records, localizedRecords, info)
+		_, warnings, err := copier.copyRecords(ctx, channel, channel, info, records, localizedRecords)
 		result.Warnings = warnings
 		results = append(results, result)
 		if err != nil {

@@ -1,0 +1,45 @@
+[
+  {
+    "id": "fixture-channel-project-approaches",
+    "slug": "project_approaches",
+    "name": "Project Approaches",
+    "label_field": "title",
+    "title_field": "title",
+    "customizations": [
+      {
+        "id": "fixture-field-title",
+        "name": "title",
+        "label": "Title",
+        "type": "text",
+        "localized": true
+      },
+      {
+        "id": "fixture-field-subtitle",
+        "name": "subtitle",
+        "label": "Subtitle",
+        "type": "text",
+        "localized": true
+      },
+      {
+        "id": "fixture-field-intro",
+        "name": "intro",
+        "label": "Intro",
+        "type": "html",
+        "localized": true
+      },
+      {
+        "id": "fixture-field-content",
+        "name": "content",
+        "label": "Content",
+        "type": "html",
+        "localized": true
+      },
+      {
+        "id": "fixture-field-image",
+        "name": "image",
+        "label": "Image",
+        "type": "file"
+      }
+    ]
+  }
+]

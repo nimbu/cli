@@ -90,6 +90,18 @@ func WithLocale(locale string) RequestOption {
 	}
 }
 
+// WithContentLocale sets the content locale for localized channel-entry fields.
+func WithContentLocale(locale string) RequestOption {
+	return func(o *requestOptions) {
+		if o.Query == nil {
+			o.Query = make(map[string]string)
+		}
+		if locale != "" {
+			o.Query["content_locale"] = locale
+		}
+	}
+}
+
 // WithFields sets the fields to include.
 func WithFields(fields string) RequestOption {
 	return func(o *requestOptions) {

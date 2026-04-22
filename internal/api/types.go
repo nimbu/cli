@@ -129,6 +129,71 @@ type Entry struct {
 	Fields    map[string]any `json:"fields,omitempty"`
 	CreatedAt time.Time      `json:"created_at,omitempty"`
 	UpdatedAt time.Time      `json:"updated_at,omitempty"`
+	Extra     map[string]any `json:"-"`
+}
+
+// MarshalJSON emits known entry fields plus custom top-level fields preserved
+// from the channel entry payload.
+func (e Entry) MarshalJSON() ([]byte, error) {
+	type alias Entry
+	data, err := json.Marshal(alias(e))
+	if err != nil {
+		return nil, err
+	}
+	if len(e.Extra) == 0 && !e.CreatedAt.IsZero() && !e.UpdatedAt.IsZero() {
+		return data, nil
+	}
+	var merged map[string]any
+	if err := json.Unmarshal(data, &merged); err != nil {
+		return nil, err
+	}
+	delete(merged, "Extra")
+	if e.CreatedAt.IsZero() {
+		delete(merged, "created_at")
+	}
+	if e.UpdatedAt.IsZero() {
+		delete(merged, "updated_at")
+	}
+	for k, v := range e.Extra {
+		if _, exists := merged[k]; !exists {
+			merged[k] = v
+		}
+	}
+	return json.Marshal(merged)
+}
+
+// UnmarshalJSON preserves custom top-level fields on channel entries.
+func (e *Entry) UnmarshalJSON(data []byte) error {
+	type alias Entry
+	var known alias
+	if err := json.Unmarshal(data, &known); err != nil {
+		return err
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	for _, key := range []string{
+		"id",
+		"slug",
+		"title",
+		"body",
+		"position",
+		"locale",
+		"published",
+		"fields",
+		"created_at",
+		"updated_at",
+	} {
+		delete(raw, key)
+	}
+
+	*e = Entry(known)
+	if len(raw) > 0 {
+		e.Extra = raw
+	}
+	return nil
 }
 
 // Page represents a page summary.

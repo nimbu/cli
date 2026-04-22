@@ -30,7 +30,7 @@ func (c *ChannelEntriesCountCmd) Run(ctx context.Context, flags *RootFlags) erro
 	path := "/channels/" + url.PathEscape(c.Channel) + "/entries/count"
 	var opts []api.RequestOption
 	if c.Locale != "" {
-		opts = append(opts, api.WithLocale(c.Locale))
+		opts = append(opts, api.WithContentLocale(c.Locale))
 	}
 
 	count, err := api.Count(ctx, client, path, opts...)

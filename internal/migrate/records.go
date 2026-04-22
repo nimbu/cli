@@ -30,11 +30,19 @@ type RecordCopyOptions struct {
 
 // RecordCopyItem captures one copied record.
 type RecordCopyItem struct {
-	Action     string `json:"action"`
-	Identifier string `json:"identifier"`
-	Resource   string `json:"resource"`
-	SourceID   string `json:"source_id,omitempty"`
-	TargetID   string `json:"target_id,omitempty"`
+	Action     string                    `json:"action"`
+	Identifier string                    `json:"identifier"`
+	Resource   string                    `json:"resource"`
+	SourceID   string                    `json:"source_id,omitempty"`
+	TargetID   string                    `json:"target_id,omitempty"`
+	Localized  []RecordLocalizedCopyItem `json:"localized,omitempty"`
+}
+
+// RecordLocalizedCopyItem captures a localized entry-field copy action.
+type RecordLocalizedCopyItem struct {
+	Locale string   `json:"locale"`
+	Action string   `json:"action"`
+	Fields []string `json:"fields,omitempty"`
 }
 
 // RecordCopyResult reports raw record copy output.
@@ -57,16 +65,19 @@ type unresolvedRef struct {
 }
 
 type recordCopier struct {
-	fromClient     *api.Client
-	toClient       *api.Client
-	options        RecordCopyOptions
-	result         *RecordCopyResult
-	mapping        map[string]map[string]string
-	preMatched     map[string]map[string]string // channel → sourceID → targetID (matched but content differs)
-	queued         map[string]map[string]struct{}
-	channelMap     map[string]api.ChannelDetail
-	deferredRefs   []deferredRef
-	unresolvedRefs []unresolvedRef
+	fromClient              *api.Client
+	toClient                *api.Client
+	options                 RecordCopyOptions
+	result                  *RecordCopyResult
+	mapping                 map[string]map[string]string
+	preMatched              map[string]map[string]string // channel → sourceID → targetID (matched but content differs)
+	preMatchedLocalizedOnly map[string]map[string]string // channel → sourceID → targetID (only localized fields differ)
+	queued                  map[string]map[string]struct{}
+	channelMap              map[string]api.ChannelDetail
+	locales                 []string
+	deferredRefs            []deferredRef
+	unresolvedRefs          []unresolvedRef
+	localizedTargetRecords  map[string]map[string]map[string]map[string]any
 }
 
 type schemaInfo struct {
@@ -78,6 +89,7 @@ type schemaInfo struct {
 	selectFields    []api.CustomField
 	multiFields     []api.CustomField
 	customerFields  []api.CustomField
+	localizedFields []api.CustomField
 }
 
 type pendingSelfRef struct {
@@ -113,13 +125,26 @@ func CopyChannelEntries(ctx context.Context, fromClient, toClient *api.Client, f
 	}
 	result := RecordCopyResult{From: fromRef.SiteRef, To: toRef.SiteRef, Resource: toRef.Channel}
 	copier := &recordCopier{
-		fromClient: fromClient,
-		toClient:   toClient,
-		options:    opts,
-		result:     &result,
-		mapping:    map[string]map[string]string{},
-		queued:     map[string]map[string]struct{}{},
-		channelMap: channelMap,
+		fromClient:             fromClient,
+		toClient:               toClient,
+		options:                opts,
+		result:                 &result,
+		mapping:                map[string]map[string]string{},
+		queued:                 map[string]map[string]struct{}{},
+		channelMap:             channelMap,
+		localizedTargetRecords: map[string]map[string]map[string]map[string]any{},
+	}
+	localizedChannels := []string{fromRef.Channel}
+	if opts.Recursive {
+		localizedChannels = make([]string, 0, len(channelMap))
+		for channel := range channelMap {
+			localizedChannels = append(localizedChannels, channel)
+		}
+	}
+	if channelsHaveLocalizedFields(channelMap, localizedChannels) {
+		locales, localeWarnings := sharedNonDefaultContentLocales(ctx, fromClient, toClient, fromRef.SiteRef, toRef.SiteRef)
+		copier.locales = locales
+		result.Warnings = append(result.Warnings, localeWarnings...)
 	}
 	if err := copier.copyChannel(ctx, fromRef.Channel, toRef.Channel, nil, true); err != nil {
 		return result, err
@@ -154,7 +179,7 @@ func CopyCustomers(ctx context.Context, fromClient, toClient *api.Client, fromRe
 	if err != nil {
 		return result, err
 	}
-	_, warnings, err := copier.copyRecords(ctx, "customers", "customers", info, records)
+	_, warnings, err := copier.copyRecords(ctx, "customers", "customers", info, records, nil)
 	result.Warnings = append(result.Warnings, warnings...)
 	return result, err
 }
@@ -171,6 +196,11 @@ func (c *recordCopier) copyChannel(ctx context.Context, sourceChannel string, ta
 	}
 	if len(records) == 0 {
 		return nil
+	}
+	localizedRecords, err := c.listLocalizedRecords(ctx, sourceChannel, ids, info)
+	if err != nil {
+		c.result.Warnings = append(c.result.Warnings, fmt.Sprintf("channel=%s: localized source fetch failed: %v", sourceChannel, err))
+		localizedRecords = nil
 	}
 
 	if c.options.CopyCustomers {
@@ -202,8 +232,8 @@ func (c *recordCopier) copyChannel(ctx context.Context, sourceChannel string, ta
 		}
 	}
 
-	c.preMatchEntries(ctx, sourceChannel, targetChannel, records, info)
-	_, warnings, err := c.copyRecords(ctx, sourceChannel, targetChannel, info, records)
+	c.preMatchEntries(ctx, sourceChannel, targetChannel, records, localizedRecords, info)
+	_, warnings, err := c.copyRecords(ctx, sourceChannel, targetChannel, info, records, localizedRecords)
 	c.result.Warnings = append(c.result.Warnings, warnings...)
 	return err
 }
@@ -218,21 +248,26 @@ func (c *recordCopier) copyCustomersByID(ctx context.Context, ids map[string]str
 	if err != nil {
 		return err
 	}
-	_, warnings, err := c.copyRecords(ctx, "customers", "customers", info, records)
+	_, warnings, err := c.copyRecords(ctx, "customers", "customers", info, records, nil)
 	c.result.Warnings = append(c.result.Warnings, warnings...)
 	return err
 }
 
 func (c *recordCopier) listRecords(ctx context.Context, sourceChannel string, ids map[string]struct{}) ([]map[string]any, error) {
+	return c.listRecordsWithOptions(ctx, sourceChannel, ids)
+}
+
+func (c *recordCopier) listRecordsWithOptions(ctx context.Context, sourceChannel string, ids map[string]struct{}, extra ...api.RequestOption) ([]map[string]any, error) {
 	params, err := buildRecordQuery(c.options, ids)
 	if err != nil {
 		return nil, err
 	}
-	var opts []api.RequestOption
+	opts := make([]api.RequestOption, 0, len(extra)+2)
 	if len(params) > 0 {
 		opts = append(opts, api.WithQuery(params))
 	}
 	opts = append(opts, api.WithParam("x-cdn-expires", "600"))
+	opts = append(opts, extra...)
 	path := "/customers"
 	if sourceChannel != "customers" {
 		path = "/channels/" + url.PathEscape(sourceChannel) + "/entries"
@@ -256,7 +291,7 @@ func (c *recordCopier) listRecords(ctx context.Context, sourceChannel string, id
 	return api.List[map[string]any](ctx, c.fromClient, path, opts...)
 }
 
-func (c *recordCopier) copyRecords(ctx context.Context, sourceChannel string, targetChannel string, info schemaInfo, records []map[string]any) (map[string]string, []string, error) {
+func (c *recordCopier) copyRecords(ctx context.Context, sourceChannel string, targetChannel string, info schemaInfo, records []map[string]any, localizedRecords map[string]map[string]map[string]any) (map[string]string, []string, error) {
 	mapped := c.ensureMapping(targetChannel)
 	var warnings []string
 	var pending []pendingSelfRef
@@ -268,8 +303,31 @@ func (c *recordCopier) copyRecords(ctx context.Context, sourceChannel string, ta
 				continue
 			}
 		}
+		identifier := recordIdentifier(record)
+		if targetID, ok := c.lookupPreMatchedLocalizedOnly(targetChannel, sourceID); ok {
+			localizedItems, err := c.updateLocalizedRecords(ctx, targetChannel, targetID, sourceID, identifier, info, localizedRecords)
+			if err != nil {
+				if isRecoverableRecordError(err) || c.options.AllowErrors {
+					warnings = append(warnings, fmt.Sprintf("%s localized update %s: %v", targetChannel, identifier, err))
+				} else {
+					return mapped, warnings, err
+				}
+			}
+			if sourceID != "" && targetID != "" {
+				mapped[sourceID] = targetID
+			}
+			c.result.Items = append(c.result.Items, RecordCopyItem{
+				Action:     "update",
+				Identifier: identifier,
+				Resource:   info.resource,
+				SourceID:   sourceID,
+				TargetID:   targetID,
+				Localized:  localizedItems,
+			})
+			continue
+		}
+
 		payload := deepCopyMap(record)
-		identifier := recordIdentifier(payload)
 		stripSystemFields(payload)
 		if err := c.prepareAttachments(ctx, payload, info); err != nil {
 			return mapped, warnings, err
@@ -296,6 +354,14 @@ func (c *recordCopier) copyRecords(ctx context.Context, sourceChannel string, ta
 		if sourceID != "" && targetID != "" {
 			mapped[sourceID] = targetID
 		}
+		localizedItems, err := c.updateLocalizedRecords(ctx, targetChannel, targetID, sourceID, identifier, info, localizedRecords)
+		if err != nil {
+			if isRecoverableRecordError(err) || c.options.AllowErrors {
+				warnings = append(warnings, fmt.Sprintf("%s localized update %s: %v", targetChannel, identifier, err))
+			} else {
+				return mapped, warnings, err
+			}
+		}
 		pending = append(pending, pendingSelfRef{channel: targetChannel, targetID: targetID, fields: selfFields})
 		if len(deferredFields) > 0 && targetID != "" {
 			c.deferredRefs = append(c.deferredRefs, deferredRef{
@@ -311,6 +377,7 @@ func (c *recordCopier) copyRecords(ctx context.Context, sourceChannel string, ta
 			Resource:   info.resource,
 			SourceID:   sourceID,
 			TargetID:   targetID,
+			Localized:  localizedItems,
 		})
 	}
 	for _, item := range pending {
@@ -390,6 +457,10 @@ func (c *recordCopier) upsertRecord(ctx context.Context, targetChannel string, s
 }
 
 func (c *recordCopier) updateRecord(ctx context.Context, targetChannel string, targetID string, payload map[string]any) error {
+	return c.updateRecordWithOptions(ctx, targetChannel, targetID, payload)
+}
+
+func (c *recordCopier) updateRecordWithOptions(ctx context.Context, targetChannel string, targetID string, payload map[string]any, opts ...api.RequestOption) error {
 	if len(payload) == 0 {
 		return nil
 	}
@@ -397,9 +468,9 @@ func (c *recordCopier) updateRecord(ctx context.Context, targetChannel string, t
 		return nil
 	}
 	if targetChannel == "customers" {
-		return c.toClient.Put(ctx, "/customers/"+url.PathEscape(targetID), payload, &map[string]any{})
+		return c.toClient.Put(ctx, "/customers/"+url.PathEscape(targetID), payload, &map[string]any{}, opts...)
 	}
-	return c.toClient.Put(ctx, "/channels/"+url.PathEscape(targetChannel)+"/entries/"+url.PathEscape(targetID), payload, &map[string]any{})
+	return c.toClient.Put(ctx, "/channels/"+url.PathEscape(targetChannel)+"/entries/"+url.PathEscape(targetID), payload, &map[string]any{}, opts...)
 }
 
 func (c *recordCopier) findExistingID(ctx context.Context, targetChannel string, payload map[string]any) (string, error) {

@@ -165,6 +165,9 @@ func (c *recordCopier) lookupMappedID(channel string, sourceID string) (string, 
 func buildSchemaInfo(resource string, fields []api.CustomField) schemaInfo {
 	info := schemaInfo{resource: resource}
 	for _, field := range fields {
+		if field.Localized {
+			info.localizedFields = append(info.localizedFields, field)
+		}
 		switch field.Type {
 		case "belongs_to", "belongs_to_many", "customer":
 			info.referenceFields = append(info.referenceFields, field)

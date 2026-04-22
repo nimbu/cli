@@ -1,0 +1,51 @@
+{
+  "id": "fixture-page-home",
+  "slug": "home",
+  "fullpath": "home",
+  "title": "Home",
+  "template": "home",
+  "locale": "en",
+  "published": true,
+  "items": {
+    "hero": {
+      "__type": "Editable",
+      "type": "hero",
+      "title": "Digital products that move people",
+      "text": "<p>Zenjoy designs and builds platforms with clear strategy, strong UX, and reliable technology.</p>",
+      "file": {
+        "__type": "File",
+        "id": "fixture-page-home-hero-file",
+        "filename": "home-hero.jpg",
+        "content_type": "image/jpeg",
+        "url": "https://cdn.example.test/zenjoy/home-hero.jpg",
+        "checksum": "fixture-checksum-home-hero",
+        "size": 123456,
+        "width": 1600,
+        "height": 900
+      }
+    },
+    "approach": {
+      "__type": "Editable",
+      "type": "repeatable",
+      "title": "Our approach",
+      "repeatables": [
+        {
+          "__type": "Repeatable",
+          "id": "fixture-repeatable-exploration",
+          "items": {
+            "title": {
+              "__type": "Editable",
+              "type": "text",
+              "text": "Exploration"
+            },
+            "body": {
+              "__type": "Editable",
+              "type": "html",
+              "text": "<p>We listen, map needs, and make agreements explicit.</p>"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

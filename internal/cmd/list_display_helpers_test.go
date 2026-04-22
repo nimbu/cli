@@ -22,6 +22,13 @@ func TestEntryDisplayTitle(t *testing.T) {
 		}
 	})
 
+	t.Run("title field value fallback", func(t *testing.T) {
+		got := entryDisplayTitle(api.Entry{ID: "1", Slug: "entry-1", Extra: map[string]any{"title_field_value": "Project Naam"}})
+		if got != "Project Naam" {
+			t.Fatalf("expected title_field_value, got %q", got)
+		}
+	})
+
 	t.Run("slug fallback", func(t *testing.T) {
 		got := entryDisplayTitle(api.Entry{ID: "1", Slug: "entry-1", Fields: map[string]any{"title": 123}})
 		if got != "entry-1" {

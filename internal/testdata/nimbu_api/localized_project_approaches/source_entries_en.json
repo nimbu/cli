@@ -1,0 +1,16 @@
+[
+  {
+    "id": "fixture-source-entry-start",
+    "slug": "start",
+    "title": "Exploration",
+    "subtitle": "Active Listening and Clear Agreements",
+    "intro": "<p><strong>Exploration</strong> <strong>•</strong> At Zenjoy, every project begins with listening.</p>",
+    "content": "<p>We clarify goals, stakeholders, and constraints before building.</p>",
+    "title_field_value": "Exploration",
+    "published": true,
+    "image": {
+      "filename": "exploratie.jpg",
+      "checksum": "fixture-checksum-source-image"
+    }
+  }
+]

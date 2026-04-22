@@ -3,6 +3,7 @@ package migrate
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -152,7 +153,7 @@ func TestPreMatchEntriesSkipIdentical(t *testing.T) {
 		{"id": "src-1", "slug": "hello", "title": "Hello"},
 	}
 	info := schemaInfo{resource: "articles"}
-	copier.preMatchEntries(context.Background(), "articles", "articles", source, info)
+	copier.preMatchEntries(context.Background(), "articles", "articles", source, nil, info)
 
 	if id, ok := copier.mapping["articles"]["src-1"]; !ok || id != "tgt-1" {
 		t.Fatalf("expected mapping src-1→tgt-1, got %v", copier.mapping)
@@ -181,7 +182,7 @@ func TestPreMatchEntriesContentDiffers(t *testing.T) {
 		{"id": "src-1", "slug": "hello", "title": "New Title"},
 	}
 	info := schemaInfo{resource: "articles"}
-	copier.preMatchEntries(context.Background(), "articles", "articles", source, info)
+	copier.preMatchEntries(context.Background(), "articles", "articles", source, nil, info)
 
 	// Should NOT be in mapping (content differs)
 	if _, ok := copier.mapping["articles"]["src-1"]; ok {
@@ -193,6 +194,161 @@ func TestPreMatchEntriesContentDiffers(t *testing.T) {
 	}
 	if len(copier.result.Items) != 0 {
 		t.Fatalf("expected no items for content-different entry, got %v", copier.result.Items)
+	}
+}
+
+func TestCopyChannelEntriesCreatesLocalizedValues(t *testing.T) {
+	result, targetEN, putEN := runLocalizedEntryCopyTest(t, nil, nil)
+
+	if len(result.Warnings) != 0 {
+		t.Fatalf("expected no warnings, got %v", result.Warnings)
+	}
+	if len(result.Items) != 1 || result.Items[0].Action != "create" {
+		t.Fatalf("expected create item, got %#v", result.Items)
+	}
+	if len(result.Items[0].Localized) != 1 || result.Items[0].Localized[0].Locale != "en" || result.Items[0].Localized[0].Action != "update" {
+		t.Fatalf("expected localized EN update item, got %#v", result.Items[0].Localized)
+	}
+	if !*putEN {
+		t.Fatal("expected localized EN PUT")
+	}
+	if got := stringValue((*targetEN)["title"]); got != "Hello" {
+		t.Fatalf("expected target EN title copied, got %q", got)
+	}
+}
+
+func TestCopyChannelEntriesUpdatesExistingLocalizedValues(t *testing.T) {
+	targetDefault := map[string]any{"id": "tgt-1", "slug": "hello", "title": "Hallo"}
+	targetEN := map[string]any{"id": "tgt-1", "slug": "hello", "title": "Old"}
+	result, updatedTargetEN, putEN := runLocalizedEntryCopyTest(t, targetDefault, targetEN)
+
+	if len(result.Warnings) != 0 {
+		t.Fatalf("expected no warnings, got %v", result.Warnings)
+	}
+	if len(result.Items) != 1 || result.Items[0].Action != "update" {
+		t.Fatalf("expected update item for localized difference, got %#v", result.Items)
+	}
+	if !*putEN {
+		t.Fatal("expected localized EN PUT for existing entry")
+	}
+	if got := stringValue((*updatedTargetEN)["title"]); got != "Hello" {
+		t.Fatalf("expected target EN title updated, got %q", got)
+	}
+}
+
+func runLocalizedEntryCopyTest(t *testing.T, initialTargetDefault, initialTargetEN map[string]any) (RecordCopyResult, *map[string]any, *bool) {
+	t.Helper()
+
+	sourceDefault := map[string]any{"id": "src-1", "slug": "hello", "title": "Hallo"}
+	sourceEN := map[string]any{"id": "src-1", "slug": "hello", "title": "Hello"}
+	targetDefault := cloneTestRecord(initialTargetDefault)
+	targetEN := cloneTestRecord(initialTargetEN)
+	putEN := false
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		site := r.Header.Get("X-Nimbu-Site")
+		switch r.URL.Path {
+		case "/sites/source/settings", "/sites/target/settings":
+			writeTestJSON(t, w, map[string]any{"default_locale": "nl", "locales": []string{"nl", "en"}})
+		case "/channels":
+			writeTestJSON(t, w, []map[string]any{{
+				"id":   "c1",
+				"slug": "articles",
+				"name": "Articles",
+				"customizations": []map[string]any{{
+					"name":      "title",
+					"type":      "text",
+					"localized": true,
+				}},
+			}})
+		case "/channels/articles/entries":
+			if r.Method == http.MethodPost && site == "target" {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatalf("decode create body: %v", err)
+				}
+				body["id"] = "tgt-1"
+				targetDefault = body
+				writeTestJSON(t, w, body)
+				return
+			}
+			if r.Method != http.MethodGet {
+				http.NotFound(w, r)
+				return
+			}
+			locale := r.URL.Query().Get("content_locale")
+			switch {
+			case site == "source" && locale == "en":
+				writeTestJSON(t, w, []map[string]any{sourceEN})
+			case site == "source":
+				writeTestJSON(t, w, []map[string]any{sourceDefault})
+			case site == "target" && locale == "en" && targetEN != nil:
+				writeTestJSON(t, w, []map[string]any{targetEN})
+			case site == "target" && locale == "en":
+				writeTestJSON(t, w, []map[string]any{})
+			case site == "target" && targetDefault != nil:
+				writeTestJSON(t, w, []map[string]any{targetDefault})
+			default:
+				writeTestJSON(t, w, []map[string]any{})
+			}
+		case "/channels/articles/entries/tgt-1":
+			if r.Method != http.MethodPut || site != "target" {
+				http.NotFound(w, r)
+				return
+			}
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode update body: %v", err)
+			}
+			if r.URL.Query().Get("content_locale") == "en" {
+				putEN = true
+				targetEN = cloneTestRecord(targetDefault)
+				for key, value := range body {
+					targetEN[key] = value
+				}
+				writeTestJSON(t, w, targetEN)
+				return
+			}
+			for key, value := range body {
+				targetDefault[key] = value
+			}
+			targetDefault["id"] = "tgt-1"
+			writeTestJSON(t, w, targetDefault)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	fromClient := api.New(srv.URL, "").WithSite("source")
+	toClient := api.New(srv.URL, "").WithSite("target")
+	result, err := CopyChannelEntries(context.Background(), fromClient, toClient,
+		ChannelRef{SiteRef: SiteRef{BaseURL: srv.URL, Site: "source"}, Channel: "articles"},
+		ChannelRef{SiteRef: SiteRef{BaseURL: srv.URL, Site: "target"}, Channel: "articles"},
+		RecordCopyOptions{Upsert: "slug"},
+	)
+	if err != nil {
+		t.Fatalf("copy channel entries: %v", err)
+	}
+	return result, &targetEN, &putEN
+}
+
+func cloneTestRecord(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func writeTestJSON(t *testing.T, w http.ResponseWriter, value any) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		t.Fatalf("encode response: %v", err)
 	}
 }
 

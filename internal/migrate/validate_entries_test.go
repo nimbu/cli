@@ -300,6 +300,46 @@ func TestValidateChannelAllMatch(t *testing.T) {
 	}
 }
 
+func TestValidateLocalizedEntryReportsMismatch(t *testing.T) {
+	info := schemaInfo{
+		resource:        "project_approaches",
+		localizedFields: []api.CustomField{{Name: "title", Type: "text", Localized: true}},
+	}
+	warnings := validateLocalizedEntry(
+		"project_approaches",
+		"start",
+		"en",
+		map[string]any{"title": "Exploration"},
+		map[string]any{"title": "Exploratie"},
+		info,
+	)
+	if len(warnings) != 1 {
+		t.Fatalf("expected one warning, got %v", warnings)
+	}
+	want := `channel=project_approaches entry=start locale=en field=title: mismatch (source="Exploration", target="Exploratie")`
+	if warnings[0] != want {
+		t.Fatalf("unexpected warning:\nwant %q\n got %q", want, warnings[0])
+	}
+}
+
+func TestValidateLocalizedEntryPassesWhenValuesMatch(t *testing.T) {
+	info := schemaInfo{
+		resource:        "project_approaches",
+		localizedFields: []api.CustomField{{Name: "title", Type: "text", Localized: true}},
+	}
+	warnings := validateLocalizedEntry(
+		"project_approaches",
+		"start",
+		"en",
+		map[string]any{"title": "Exploration"},
+		map[string]any{"title": "Exploration"},
+		info,
+	)
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings, got %v", warnings)
+	}
+}
+
 func TestValidateEntryFileChecksumMismatch(t *testing.T) {
 	info := schemaInfo{
 		resource:   "articles",

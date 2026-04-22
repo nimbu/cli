@@ -16,6 +16,7 @@ import (
 
 func newSitesGetTestContext(t *testing.T, apiURL string, mode output.Mode) (context.Context, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
+	t.Setenv("NIMBU_TOKEN", "test-token")
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()

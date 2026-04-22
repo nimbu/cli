@@ -129,6 +129,51 @@ func TestPagesGetDownloadsAssetsAndReturnsJSONDocument(t *testing.T) {
 	}
 }
 
+func TestPagesGetUsesHomeCassette(t *testing.T) {
+	var gotLocale string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/pages/home":
+			gotLocale = r.URL.Query().Get("locale")
+			writeFixtureResponse(t, w, "../testdata/nimbu_api/zenjoy_get/page_home_en.json", nil)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	cmd := &PagesGetCmd{
+		QueryFlags: QueryFlags{Locale: "en"},
+		Page:       "home",
+	}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run pages get: %v", err)
+	}
+	if gotLocale != "en" {
+		t.Fatalf("expected locale=en, got %q", gotLocale)
+	}
+
+	var page map[string]any
+	if err := json.Unmarshal(out.Bytes(), &page); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if page["locale"] != "en" || page["fullpath"] != "home" {
+		t.Fatalf("unexpected page identity from cassette: %#v", page)
+	}
+	items := page["items"].(map[string]any)
+	hero := items["hero"].(map[string]any)
+	file := hero["file"].(map[string]any)
+	if hero["title"] != "Digital products that move people" || file["checksum"] != "fixture-checksum-home-hero" {
+		t.Fatalf("expected rich hero editable with file metadata, got hero=%#v file=%#v", hero, file)
+	}
+	approach := items["approach"].(map[string]any)
+	repeatables := approach["repeatables"].([]any)
+	if len(repeatables) != 1 {
+		t.Fatalf("expected nested repeatable from cassette, got %#v", repeatables)
+	}
+}
+
 func TestMenusUpdateUsesPatchReplaceAndStripsTargetPage(t *testing.T) {
 	var gotMethod string
 	var gotReplace string
@@ -172,6 +217,42 @@ func TestMenusUpdateUsesPatchReplaceAndStripsTargetPage(t *testing.T) {
 	first := items[0].(map[string]any)
 	if _, ok := first["target_page"]; ok {
 		t.Fatalf("expected target_page stripped, got %#v", first)
+	}
+}
+
+func TestMenusGetUsesMainCassette(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/menus/main":
+			writeFixtureResponse(t, w, "../testdata/nimbu_api/zenjoy_get/menu_main.json", nil)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	cmd := &MenusGetCmd{Menu: "main"}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run menus get: %v", err)
+	}
+
+	var menu map[string]any
+	if err := json.Unmarshal(out.Bytes(), &menu); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	items := menu["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("expected two top-level menu items, got %#v", items)
+	}
+	home := items[0].(map[string]any)
+	if home["title"] != "Home" || home["target_page"] == nil {
+		t.Fatalf("expected target_page preserved in GET output, got %#v", home)
+	}
+	work := items[1].(map[string]any)
+	children := work["children"].([]any)
+	if len(children) != 1 {
+		t.Fatalf("expected nested child menu item, got %#v", children)
 	}
 }
 
@@ -222,6 +303,263 @@ func TestChannelsGetHumanOutputIncludesDependencies(t *testing.T) {
 		if !strings.Contains(got, needle) {
 			t.Fatalf("expected %q in output, got:\n%s", needle, got)
 		}
+	}
+}
+
+func TestChannelsGetUsesProjectApproachesCassette(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/channels/project_approaches":
+			writeFixtureResponse(t, w, "../testdata/nimbu_api/localized_project_approaches/channels.json", firstFixtureArrayItem)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	cmd := &ChannelsGetCmd{Channel: "project_approaches"}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run channels get: %v", err)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	fields := body["customizations"].([]any)
+	localized := map[string]bool{}
+	for _, raw := range fields {
+		field := raw.(map[string]any)
+		if field["localized"] == true {
+			localized[field["name"].(string)] = true
+		}
+	}
+	for _, name := range []string{"title", "subtitle", "intro", "content"} {
+		if !localized[name] {
+			t.Fatalf("expected localized field %q in cassette output: %#v", name, localized)
+		}
+	}
+}
+
+func TestChannelsFieldsUsesProjectApproachesCassette(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/channels/project_approaches":
+			writeFixtureResponse(t, w, "../testdata/nimbu_api/localized_project_approaches/channels.json", firstFixtureArrayItem)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	cmd := &ChannelsFieldsCmd{Channel: "project_approaches"}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run channels fields: %v", err)
+	}
+
+	var fields []map[string]any
+	if err := json.Unmarshal(out.Bytes(), &fields); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if len(fields) != 5 {
+		t.Fatalf("expected 5 fields from cassette, got %d: %#v", len(fields), fields)
+	}
+	if fields[0]["name"] != "title" || fields[0]["localized"] != true {
+		t.Fatalf("expected localized title field first, got %#v", fields[0])
+	}
+}
+
+func TestChannelEntriesGetUsesContentLocaleAndPreservesCustomFields(t *testing.T) {
+	var gotContentLocale string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/channels/project_approaches/entries/start":
+			gotContentLocale = r.URL.Query().Get("content_locale")
+			writeFixtureResponse(t, w, "../testdata/nimbu_api/localized_project_approaches/source_entries_en.json", firstFixtureArrayItem)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	cmd := &ChannelEntriesGetCmd{
+		QueryFlags: QueryFlags{Locale: "en"},
+		Channel:    "project_approaches",
+		Entry:      "start",
+	}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run entries get: %v", err)
+	}
+	if gotContentLocale != "en" {
+		t.Fatalf("expected content_locale=en, got %q", gotContentLocale)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if body["title"] != "Exploration" || body["subtitle"] != "Active Listening and Clear Agreements" {
+		t.Fatalf("expected localized custom fields in JSON, got %#v", body)
+	}
+}
+
+func TestChannelEntriesGetFallsBackToSlugLookupWithContentLocale(t *testing.T) {
+	var gotDirectContentLocale string
+	var gotListContentLocale string
+	var gotWhere string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/channels/project_approaches/entries/start":
+			gotDirectContentLocale = r.URL.Query().Get("content_locale")
+			http.NotFound(w, r)
+		case "/channels/project_approaches/entries":
+			gotListContentLocale = r.URL.Query().Get("content_locale")
+			gotWhere = r.URL.Query().Get("where")
+			writeFixtureResponse(t, w, "../testdata/nimbu_api/localized_project_approaches/source_entries_en.json", nil)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	cmd := &ChannelEntriesGetCmd{
+		QueryFlags: QueryFlags{Locale: "en"},
+		Channel:    "project_approaches",
+		Entry:      "start",
+	}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run entries get: %v", err)
+	}
+	if gotDirectContentLocale != "en" || gotListContentLocale != "en" {
+		t.Fatalf("expected content_locale=en on both requests, got direct=%q list=%q", gotDirectContentLocale, gotListContentLocale)
+	}
+	if gotWhere != `_slug:"start"` {
+		t.Fatalf("unexpected where query: %q", gotWhere)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if body["title"] != "Exploration" || body["subtitle"] != "Active Listening and Clear Agreements" {
+		t.Fatalf("expected localized slug fallback output, got %#v", body)
+	}
+}
+
+func TestChannelEntriesListUsesContentLocaleAndPreservesCustomFields(t *testing.T) {
+	var gotContentLocale string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user":
+			_, _ = w.Write([]byte(`{"id":"u1"}`))
+		case "/channels/project_approaches/entries":
+			gotContentLocale = r.URL.Query().Get("content_locale")
+			writeFixtureResponse(t, w, "../testdata/nimbu_api/localized_project_approaches/source_entries_en.json", nil)
+		case "/channels/project_approaches/entries/count":
+			_, _ = w.Write([]byte(`{"count":1}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	cmd := &ChannelEntriesListCmd{
+		QueryFlags: QueryFlags{Locale: "en"},
+		Channel:    "project_approaches",
+		Page:       1,
+		PerPage:    25,
+	}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run entries list: %v", err)
+	}
+	if gotContentLocale != "en" {
+		t.Fatalf("expected content_locale=en, got %q", gotContentLocale)
+	}
+	var body []map[string]any
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if len(body) != 1 || body[0]["title"] != "Exploration" || body[0]["subtitle"] != "Active Listening and Clear Agreements" {
+		t.Fatalf("expected localized custom fields in JSON, got %#v", body)
+	}
+}
+
+func TestChannelEntriesUpdateUsesContentLocale(t *testing.T) {
+	var gotContentLocale string
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/channels/project_approaches/entries/start":
+			gotContentLocale = r.URL.Query().Get("content_locale")
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"id":"e1","slug":"start","title":"Exploration"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	cmd := &ChannelEntriesUpdateCmd{
+		Channel:     "project_approaches",
+		Entry:       "start",
+		Locale:      "en",
+		Assignments: []string{"title=Exploration"},
+	}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run entries update: %v", err)
+	}
+	if gotContentLocale != "en" {
+		t.Fatalf("expected content_locale=en, got %q", gotContentLocale)
+	}
+	if gotBody["title"] != "Exploration" {
+		t.Fatalf("unexpected update body: %#v", gotBody)
+	}
+}
+
+func TestChannelEntriesUpdateFallsBackToSlugLookupWithContentLocale(t *testing.T) {
+	var directContentLocale string
+	var lookupContentLocale string
+	var updateContentLocale string
+	var updatePath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/channels/project_approaches/entries/start":
+			directContentLocale = r.URL.Query().Get("content_locale")
+			http.NotFound(w, r)
+		case "/channels/project_approaches/entries":
+			lookupContentLocale = r.URL.Query().Get("content_locale")
+			writeFixtureResponse(t, w, "../testdata/nimbu_api/localized_project_approaches/source_entries_en.json", nil)
+		case "/channels/project_approaches/entries/fixture-source-entry-start":
+			updatePath = r.URL.Path
+			updateContentLocale = r.URL.Query().Get("content_locale")
+			writeFixtureResponse(t, w, "../testdata/nimbu_api/localized_project_approaches/source_entries_en.json", firstFixtureArrayItem)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	cmd := &ChannelEntriesUpdateCmd{
+		Channel:     "project_approaches",
+		Entry:       "start",
+		Locale:      "en",
+		Assignments: []string{"title=Exploration"},
+	}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run entries update: %v", err)
+	}
+	if directContentLocale != "en" || lookupContentLocale != "en" || updateContentLocale != "en" {
+		t.Fatalf("expected content_locale=en throughout, got direct=%q lookup=%q update=%q", directContentLocale, lookupContentLocale, updateContentLocale)
+	}
+	if updatePath != "/channels/project_approaches/entries/fixture-source-entry-start" {
+		t.Fatalf("expected ID update path, got %q", updatePath)
 	}
 }
 
@@ -481,6 +819,35 @@ func newContractTestContext(t *testing.T, apiURL string, mode output.Mode) (cont
 	ctx = output.WithMode(ctx, mode)
 	ctx = output.WithWriter(ctx, &output.Writer{Out: out, Err: errOut, Mode: mode, NoTTY: true})
 	return ctx, out, errOut
+}
+
+func writeFixtureResponse(t *testing.T, w http.ResponseWriter, path string, transform func(*testing.T, []byte) []byte) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", path, err)
+	}
+	if transform != nil {
+		data = transform(t, data)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(data)
+}
+
+func firstFixtureArrayItem(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var items []map[string]any
+	if err := json.Unmarshal(data, &items); err != nil {
+		t.Fatalf("decode fixture array: %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatal("fixture array is empty")
+	}
+	out, err := json.Marshal(items[0])
+	if err != nil {
+		t.Fatalf("encode fixture item: %v", err)
+	}
+	return out
 }
 
 func newContractTestContextWithWriter(t *testing.T, apiURL string, mode output.Mode, writer *output.Writer) (context.Context, *bytes.Buffer, *bytes.Buffer) {

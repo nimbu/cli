@@ -11,7 +11,7 @@ import (
 // records by slug (+ title_field_value fallback). Content-identical matches are
 // added to the mapping and emitted as "skip" items. Content-different matches are
 // stored in preMatched for fast lookup during upsert.
-func (c *recordCopier) preMatchEntries(ctx context.Context, sourceChannel, targetChannel string, sourceRecords []map[string]any, info schemaInfo) {
+func (c *recordCopier) preMatchEntries(ctx context.Context, sourceChannel, targetChannel string, sourceRecords []map[string]any, localizedSourceRecords map[string]map[string]map[string]any, info schemaInfo) {
 	if targetChannel == "customers" {
 		return // customers use email-based matching via findExistingID
 	}
@@ -23,6 +23,7 @@ func (c *recordCopier) preMatchEntries(ctx context.Context, sourceChannel, targe
 	if len(targetRecords) == 0 {
 		return
 	}
+	localizedTargetRecords := c.listTargetLocalizedRecords(ctx, targetChannel, info)
 
 	// Build target indexes: slug → entry, title_field_value → entry
 	bySlug := make(map[string]map[string]any, len(targetRecords))
@@ -42,6 +43,12 @@ func (c *recordCopier) preMatchEntries(ctx context.Context, sourceChannel, targe
 	}
 	if c.preMatched[targetChannel] == nil {
 		c.preMatched[targetChannel] = map[string]string{}
+	}
+	if c.preMatchedLocalizedOnly == nil {
+		c.preMatchedLocalizedOnly = map[string]map[string]string{}
+	}
+	if c.preMatchedLocalizedOnly[targetChannel] == nil {
+		c.preMatchedLocalizedOnly[targetChannel] = map[string]string{}
 	}
 
 	for _, source := range sourceRecords {
@@ -72,7 +79,9 @@ func (c *recordCopier) preMatchEntries(ctx context.Context, sourceChannel, targe
 			continue
 		}
 
-		if contentEqual(source, target, info) {
+		defaultEqual := contentEqual(source, target, info)
+		localizedEqual := localizedVariantsEqual(sourceID, targetID, localizedSourceRecords, localizedTargetRecords, info, c.locales)
+		if defaultEqual && localizedEqual {
 			// Content identical — skip
 			mapped[sourceID] = targetID
 			c.result.Items = append(c.result.Items, RecordCopyItem{
@@ -81,7 +90,10 @@ func (c *recordCopier) preMatchEntries(ctx context.Context, sourceChannel, targe
 				Resource:   targetChannel,
 				SourceID:   sourceID,
 				TargetID:   targetID,
+				Localized:  localizedCopyItemsForSource(sourceID, localizedSourceRecords, info, c.locales, "skip"),
 			})
+		} else if defaultEqual {
+			c.preMatchedLocalizedOnly[targetChannel][sourceID] = targetID
 		} else {
 			// Content differs — pre-match for fast upsert
 			c.preMatched[targetChannel][sourceID] = targetID
@@ -95,6 +107,18 @@ func (c *recordCopier) lookupPreMatched(channel, sourceID string) (string, bool)
 		return "", false
 	}
 	if m, ok := c.preMatched[channel]; ok {
+		if targetID, ok := m[sourceID]; ok {
+			return targetID, true
+		}
+	}
+	return "", false
+}
+
+func (c *recordCopier) lookupPreMatchedLocalizedOnly(channel, sourceID string) (string, bool) {
+	if c.preMatchedLocalizedOnly == nil {
+		return "", false
+	}
+	if m, ok := c.preMatchedLocalizedOnly[channel]; ok {
 		if targetID, ok := m[sourceID]; ok {
 			return targetID, true
 		}

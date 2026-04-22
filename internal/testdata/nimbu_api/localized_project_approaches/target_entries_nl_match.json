@@ -1,0 +1,16 @@
+[
+  {
+    "id": "fixture-target-entry-start",
+    "slug": "start",
+    "title": "Exploratie",
+    "subtitle": "Actief luisteren en heldere afspraken",
+    "intro": "<p><strong>Exploratie</strong>&nbsp;<strong>• </strong>Bij Zenjoy begint elk project met luisteren.</p>",
+    "content": "<p>We brengen doelen, stakeholders en randvoorwaarden helder in kaart.</p>",
+    "title_field_value": "Exploratie",
+    "published": true,
+    "image": {
+      "filename": "exploratie.jpg",
+      "checksum": "fixture-checksum-source-image"
+    }
+  }
+]

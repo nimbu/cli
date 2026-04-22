@@ -1,0 +1,35 @@
+{
+  "id": "fixture-menu-main",
+  "slug": "main",
+  "handle": "main",
+  "name": "Main navigation",
+  "items": [
+    {
+      "id": "fixture-menu-item-home",
+      "title": "Home",
+      "url": "/en",
+      "position": 1,
+      "target_page": {
+        "id": "fixture-page-home",
+        "fullpath": "home",
+        "title": "Home"
+      },
+      "children": []
+    },
+    {
+      "id": "fixture-menu-item-work",
+      "title": "Work",
+      "url": "/en/cases",
+      "position": 2,
+      "children": [
+        {
+          "id": "fixture-menu-item-cases",
+          "title": "Cases",
+          "url": "/en/cases",
+          "position": 1,
+          "children": []
+        }
+      ]
+    }
+  ]
+}

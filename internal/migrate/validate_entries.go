@@ -30,6 +30,13 @@ func ValidateEntries(ctx context.Context, fromClient, toClient *api.Client,
 	var warnings []string
 	channels := sortedKeys(mapping)
 	total := len(channels)
+	var locales []string
+	if total > 0 && channelsHaveLocalizedFields(channelMap, channels) {
+		var localeWarnings []string
+		locales, localeWarnings = sharedNonDefaultContentLocales(ctx, fromClient, toClient,
+			SiteRef{Site: clientSite(fromClient)}, SiteRef{Site: clientSite(toClient)})
+		warnings = append(warnings, localeWarnings...)
+	}
 
 	for i, channel := range channels {
 		idMap := mapping[channel]
@@ -60,6 +67,8 @@ func ValidateEntries(ctx context.Context, fromClient, toClient *api.Client,
 
 		w := validateChannel(channel, idMap, sourceIndex, targetIndex, info)
 		warnings = append(warnings, w...)
+		w = validateLocalizedChannel(ctx, fromClient, toClient, channel, idMap, info, locales)
+		warnings = append(warnings, w...)
 	}
 
 	return warnings
@@ -67,9 +76,10 @@ func ValidateEntries(ctx context.Context, fromClient, toClient *api.Client,
 
 // fetchEnrichedEntries lists all entries for a channel with enriched metadata
 // and indexes them by ID.
-func fetchEnrichedEntries(ctx context.Context, client *api.Client, channel string) (map[string]map[string]any, error) {
+func fetchEnrichedEntries(ctx context.Context, client *api.Client, channel string, opts ...api.RequestOption) (map[string]map[string]any, error) {
 	path := "/channels/" + url.PathEscape(channel) + "/entries"
-	entries, err := api.List[map[string]any](ctx, client, path, enrichedFetchOpts()...)
+	requestOpts := append(enrichedFetchOpts(), opts...)
+	entries, err := api.List[map[string]any](ctx, client, path, requestOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +90,82 @@ func fetchEnrichedEntries(ctx context.Context, client *api.Client, channel strin
 		}
 	}
 	return index, nil
+}
+
+func validateLocalizedChannel(ctx context.Context, fromClient, toClient *api.Client, channel string, idMap map[string]string, info schemaInfo, locales []string) []string {
+	if len(info.localizedFields) == 0 || len(locales) == 0 {
+		return nil
+	}
+	var warnings []string
+	sourceByLocale := map[string]map[string]map[string]any{}
+	targetByLocale := map[string]map[string]map[string]any{}
+	for _, locale := range locales {
+		sourceIndex, err := fetchEnrichedEntries(ctx, fromClient, channel, api.WithContentLocale(locale))
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("channel=%s locale=%s: localized source fetch failed: %v", channel, locale, err))
+			continue
+		}
+		targetIndex, err := fetchEnrichedEntries(ctx, toClient, channel, api.WithContentLocale(locale))
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("channel=%s locale=%s: localized target fetch failed: %v", channel, locale, err))
+			continue
+		}
+		sourceByLocale[locale] = sourceIndex
+		targetByLocale[locale] = targetIndex
+	}
+	for sourceID, targetID := range idMap {
+		for _, locale := range locales {
+			source := sourceByLocale[locale][sourceID]
+			if source == nil {
+				continue
+			}
+			target := targetByLocale[locale][targetID]
+			if target == nil {
+				warnings = append(warnings, fmt.Sprintf("channel=%s entry=%s locale=%s: missing localized target entry (expected targetID=%s)",
+					channel, recordIdentifier(source), locale, targetID))
+				continue
+			}
+			warnings = append(warnings, validateLocalizedEntry(channel, recordIdentifier(source), locale, source, target, info)...)
+		}
+	}
+	return warnings
+}
+
+func validateLocalizedEntry(channel, identifier, locale string, source, target map[string]any, info schemaInfo) []string {
+	var warnings []string
+	prefix := fmt.Sprintf("channel=%s entry=%s locale=%s", channel, identifier, locale)
+	for _, field := range info.localizedFields {
+		sourceVal, ok := source[field.Name]
+		if !ok {
+			continue
+		}
+		targetVal := target[field.Name]
+		if w := compareLocalizedField(prefix, field, sourceVal, targetVal); w != "" {
+			warnings = append(warnings, w)
+		}
+	}
+	return warnings
+}
+
+func compareLocalizedField(prefix string, field api.CustomField, source, target any) string {
+	if field.Type == "" || field.Type == "string" || field.Type == "text" || field.Type == "html" || field.Type == "markdown" {
+		return compareLocalizedScalarField(prefix, field.Name, source, target)
+	}
+	return compareField(prefix, field.Name, field.Type, source, target)
+}
+
+func compareLocalizedScalarField(prefix, fieldName string, source, target any) string {
+	if reflect.DeepEqual(source, target) {
+		return ""
+	}
+	if ss, ok := source.(string); ok {
+		if ts, ok := target.(string); ok {
+			if strings.TrimSpace(ss) == strings.TrimSpace(ts) {
+				return ""
+			}
+		}
+	}
+	return fmt.Sprintf("%s field=%s: mismatch (source=%q, target=%q)", prefix, fieldName, fmt.Sprint(source), fmt.Sprint(target))
 }
 
 // validateChannel compares source→target entry pairs for one channel.
@@ -435,4 +521,11 @@ func sortedKeys(m map[string]map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func clientSite(client *api.Client) string {
+	if client == nil {
+		return ""
+	}
+	return client.Site
 }

@@ -35,7 +35,7 @@ func (c *ChannelEntriesListCmd) Run(ctx context.Context, flags *RootFlags) error
 	}
 
 	path := "/channels/" + url.PathEscape(c.Channel) + "/entries"
-	opts, err := listRequestOptions(&c.QueryFlags)
+	opts, err := channelEntryListRequestOptions(&c.QueryFlags)
 	if err != nil {
 		return fmt.Errorf("list entries: %w", err)
 	}
@@ -106,10 +106,46 @@ func entryDisplayTitle(entry api.Entry) string {
 			}
 		}
 	}
+	if entry.Extra != nil {
+		for _, key := range []string{"title", "title_field_value", "name"} {
+			if title := extraString(entry.Extra, key); title != "" {
+				return title
+			}
+		}
+	}
 
 	if strings.TrimSpace(entry.Slug) != "" {
 		return entry.Slug
 	}
 
 	return entry.ID
+}
+
+func extraString(values map[string]any, key string) string {
+	raw, ok := values[key]
+	if !ok {
+		return ""
+	}
+	text, ok := raw.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(text)
+}
+
+func channelEntryListRequestOptions(flags *QueryFlags, extra ...api.RequestOption) ([]api.RequestOption, error) {
+	if flags == nil {
+		return listRequestOptions(flags, extra...)
+	}
+	requestFlags := *flags
+	locale := requestFlags.Locale
+	requestFlags.Locale = ""
+	opts, err := listRequestOptions(&requestFlags, extra...)
+	if err != nil {
+		return nil, err
+	}
+	if locale != "" {
+		opts = append(opts, api.WithContentLocale(locale))
+	}
+	return opts, nil
 }
