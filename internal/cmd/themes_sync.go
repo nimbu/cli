@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -168,13 +169,22 @@ func themeTransferTimelineLabel(ctx context.Context, client *api.Client, theme, 
 	themeLabel := strings.TrimSpace(theme)
 	siteLabel := strings.TrimSpace(site)
 
-	info, err := fetchThemeInfo(ctx, client, theme)
-	if err == nil {
-		if value := strings.TrimSpace(info.ThemeShortID); value != "" {
-			themeLabel = value
+	if theme != "" {
+		var bundle themeGetBundle
+		path := "/themes/" + url.PathEscape(theme)
+		if err := client.Get(ctx, path, &bundle); err == nil {
+			if value := strings.TrimSpace(bundle.Theme.Short); value != "" {
+				themeLabel = value
+			}
 		}
-		if value := strings.TrimSpace(info.SiteShortID); value != "" {
-			siteLabel = value
+	}
+	if site != "" {
+		var resolvedSite api.Site
+		path := "/sites/" + url.PathEscape(site)
+		if err := client.Get(ctx, path, &resolvedSite); err == nil {
+			if value := strings.TrimSpace(resolvedSite.Subdomain); value != "" {
+				siteLabel = value
+			}
 		}
 	}
 

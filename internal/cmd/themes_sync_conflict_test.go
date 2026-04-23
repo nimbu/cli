@@ -60,19 +60,23 @@ func TestConfirmThemeOverwriteReusesReaderAcrossPrompts(t *testing.T) {
 	}
 }
 
-func TestThemeTransferTimelineLabelUsesThemeInfoShortIDs(t *testing.T) {
+func TestThemeTransferTimelineLabelUsesThemeSlugAndSiteSubdomain(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/themes/69b27878d0e7a2292b1bba9a/info" {
+		switch r.URL.Path {
+		case "/themes/69b27878d0e7a2292b1bba9a":
+			_, _ = w.Write([]byte(`{"theme":{"id":"69b27878d0e7a2292b1bba9a","name":"Theme Zenjoy 2026","short":"theme-zenjoy-2026"}}`))
+		case "/sites/gegl96z":
+			_, _ = w.Write([]byte(`{"id":"site-1","subdomain":"zenjoy"}`))
+		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"theme_short_id":"storefront","site_short_id":"acme"}`))
 	}))
 	defer server.Close()
 
 	client := api.New(server.URL, "")
-	got := themeTransferTimelineLabel(context.Background(), client, "69b27878d0e7a2292b1bba9a", "site-1")
+	got := themeTransferTimelineLabel(context.Background(), client, "69b27878d0e7a2292b1bba9a", "gegl96z")
 
-	if got != "storefront (acme)" {
+	if got != "theme-zenjoy-2026 (zenjoy)" {
 		t.Fatalf("unexpected label: %q", got)
 	}
 }
