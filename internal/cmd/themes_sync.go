@@ -114,7 +114,11 @@ func runThemeTransfer(ctx context.Context, flags *RootFlags, themeOverride strin
 		return err
 	}
 
-	ctx, tl := syncWithTimeline(ctx, mode, resolved.Theme, opts.DryRun)
+	timelineLabel := resolved.Theme
+	if output.IsHuman(ctx) {
+		timelineLabel = themeTransferTimelineLabel(ctx, client, resolved.Theme, site)
+	}
+	ctx, tl := syncWithTimeline(ctx, mode, timelineLabel, opts.DryRun)
 	defer func() {
 		if tl != nil {
 			tl.Close()
@@ -158,6 +162,29 @@ func confirmThemeOverwrite(flags *RootFlags) func(context.Context, themes.Resour
 			return false, nil
 		}
 	}
+}
+
+func themeTransferTimelineLabel(ctx context.Context, client *api.Client, theme, site string) string {
+	themeLabel := strings.TrimSpace(theme)
+	siteLabel := strings.TrimSpace(site)
+
+	info, err := fetchThemeInfo(ctx, client, theme)
+	if err == nil {
+		if value := strings.TrimSpace(info.ThemeShortID); value != "" {
+			themeLabel = value
+		}
+		if value := strings.TrimSpace(info.SiteShortID); value != "" {
+			siteLabel = value
+		}
+	}
+
+	if themeLabel == "" {
+		themeLabel = strings.TrimSpace(theme)
+	}
+	if siteLabel == "" {
+		return themeLabel
+	}
+	return fmt.Sprintf("%s (%s)", themeLabel, siteLabel)
 }
 
 func themeConflictDetail(err error) string {
