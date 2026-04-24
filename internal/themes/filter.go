@@ -16,21 +16,35 @@ var (
 
 type selectionFilter struct {
 	cfg              Config
-	onlySet          map[string]struct{}
+	selectors        []themeSelector
 	hasCategory      bool
 	liquidOnly       bool
 	categoryMatchers map[string][]globMatcher
 }
 
+type selectorKind int
+
+const (
+	selectorPath selectorKind = iota
+	selectorGlob
+)
+
+type themeSelector struct {
+	raw     string
+	pattern string
+	kind    selectorKind
+	matcher globMatcher
+}
+
 func compileSelectionFilter(cfg Config, opts Options) (*selectionFilter, error) {
-	onlySet, err := explicitOnlySet(cfg, opts.Only)
+	selectors, err := explicitSelectors(opts)
 	if err != nil {
 		return nil, err
 	}
 
 	filter := &selectionFilter{
 		cfg:              cfg,
-		onlySet:          onlySet,
+		selectors:        selectors,
 		liquidOnly:       opts.LiquidOnly,
 		categoryMatchers: map[string][]globMatcher{},
 	}
@@ -74,86 +88,137 @@ func (f *selectionFilter) Match(resource Resource) bool {
 		return true
 	}
 	projectPath, ok := projectPathForResource(f.cfg, resource)
-	if len(f.onlySet) > 0 {
-		if !ok {
-			return false
-		}
-		if _, exists := f.onlySet[projectPath]; !exists {
-			return false
-		}
+	explicitMatch := ok && f.matchesExplicit(projectPath)
+	if len(f.selectors) > 0 && !f.hasCategory {
+		return explicitMatch
 	}
 	if !f.hasCategory {
 		return true
 	}
-	return matchesResourceCategory(resource, projectPath, f.categoryMatchers, f.liquidOnly)
+	categoryMatch := matchesResourceCategory(resource, projectPath, f.categoryMatchers, f.liquidOnly)
+	if len(f.selectors) > 0 {
+		return explicitMatch || categoryMatch
+	}
+	return categoryMatch
 }
 
 // FilterResources applies selection flags to resources.
 func FilterResources(cfg Config, resources []Resource, opts Options) ([]Resource, error) {
-	onlySet, err := explicitOnlySet(cfg, opts.Only)
+	filter, err := compileSelectionFilter(cfg, opts)
 	if err != nil {
 		return nil, err
 	}
-
-	var hasCategory bool
-	categoryMatchers := map[string][]globMatcher{}
-	if opts.CSSOnly {
-		hasCategory = true
-		matchers, err := compileMatchers(cssPatterns)
-		if err != nil {
-			return nil, err
-		}
-		categoryMatchers["css"] = matchers
-	}
-	if opts.JSOnly {
-		hasCategory = true
-		matchers, err := compileMatchers(jsPatterns)
-		if err != nil {
-			return nil, err
-		}
-		categoryMatchers["js"] = matchers
-	}
-	if opts.ImagesOnly {
-		hasCategory = true
-		matchers, err := compileMatchers(imagePatterns)
-		if err != nil {
-			return nil, err
-		}
-		categoryMatchers["images"] = matchers
-	}
-	if opts.FontsOnly {
-		hasCategory = true
-		matchers, err := compileMatchers(fontPatterns)
-		if err != nil {
-			return nil, err
-		}
-		categoryMatchers["fonts"] = matchers
-	}
-	if opts.LiquidOnly {
-		hasCategory = true
-	}
-
-	if len(onlySet) == 0 && !hasCategory {
-		return append([]Resource{}, resources...), nil
+	if err := filter.validateExplicitSelectors(resources); err != nil {
+		return nil, err
 	}
 
 	filtered := make([]Resource, 0, len(resources))
 	for _, resource := range resources {
-		projectPath, ok := projectPathForResource(cfg, resource)
-		if len(onlySet) > 0 {
-			if !ok {
-				continue
-			}
-			if _, exists := onlySet[projectPath]; !exists {
-				continue
-			}
-		}
-		if hasCategory && !matchesResourceCategory(resource, projectPath, categoryMatchers, opts.LiquidOnly) {
+		if !filter.Match(resource) {
 			continue
 		}
 		filtered = append(filtered, resource)
 	}
 	return filtered, nil
+}
+
+func explicitSelectors(opts Options) ([]themeSelector, error) {
+	values := make([]string, 0, len(opts.Only)+len(opts.Selectors))
+	values = append(values, opts.Only...)
+	values = append(values, opts.Selectors...)
+	if len(values) == 0 {
+		return nil, nil
+	}
+	selectors := make([]themeSelector, 0, len(values))
+	for _, value := range values {
+		selector, ok, err := compileThemeSelector(value)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		selectors = append(selectors, selector)
+	}
+	if len(selectors) == 0 {
+		return nil, nil
+	}
+	return selectors, nil
+}
+
+func compileThemeSelector(value string) (themeSelector, bool, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return themeSelector{}, false, nil
+	}
+	if filepath.IsAbs(trimmed) {
+		return themeSelector{}, false, fmt.Errorf("theme selector must be project-relative: %s", value)
+	}
+	normalized := normalizePath(trimmed)
+	if normalized == "." || normalized == "" {
+		return themeSelector{}, false, fmt.Errorf("invalid theme selector: %s", value)
+	}
+	if strings.HasPrefix(normalized, "../") || normalized == ".." {
+		return themeSelector{}, false, fmt.Errorf("theme selector must stay inside project root: %s", value)
+	}
+
+	selector := themeSelector{raw: value, pattern: normalized, kind: selectorPath}
+	if strings.ContainsAny(normalized, "*?") {
+		matcher, err := compileMatcher(normalized)
+		if err != nil {
+			return themeSelector{}, false, err
+		}
+		selector.kind = selectorGlob
+		selector.matcher = matcher
+	}
+	return selector, true, nil
+}
+
+func compileMatcher(pattern string) (globMatcher, error) {
+	re, err := globToRegexp(pattern)
+	if err != nil {
+		return globMatcher{}, err
+	}
+	return globMatcher{pattern: pattern, re: re}, nil
+}
+
+func (f *selectionFilter) matchesExplicit(projectPath string) bool {
+	for _, selector := range f.selectors {
+		if selector.Match(projectPath) {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *selectionFilter) validateExplicitSelectors(resources []Resource) error {
+	for _, selector := range f.selectors {
+		matched := false
+		for _, resource := range resources {
+			projectPath, ok := projectPathForResource(f.cfg, resource)
+			if !ok {
+				continue
+			}
+			if selector.Match(projectPath) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("theme selector matched no managed files: %s", selector.raw)
+		}
+	}
+	return nil
+}
+
+func (s themeSelector) Match(projectPath string) bool {
+	projectPath = normalizePath(projectPath)
+	switch s.kind {
+	case selectorGlob:
+		return s.matcher.re.MatchString(projectPath)
+	default:
+		return projectPath == s.pattern || hasPathPrefix(projectPath, s.pattern)
+	}
 }
 
 func explicitOnlySet(cfg Config, values []string) (map[string]struct{}, error) {

@@ -361,9 +361,12 @@ Notes:
 - `code/**` and `content/**` are intentionally excluded from builtin theme sync.
 - `--build` runs `sync.build` from `nimbu.yml` before collecting files.
 - `--all` uploads the full managed file set.
-- `--only` narrows uploads to specific managed project-relative paths.
+- Positional selectors narrow uploads to specific managed files, directories, or
+  globs.
+- `--only` is the flag form of the same selector behavior and can be repeated.
 - `--liquid-only`, `--css-only`, `--js-only`, `--images-only`, and `--fonts-only`
-  filter the managed set before upload/sync.
+  select managed resource categories before upload/sync.
+- Explicit selectors and category flags are additive.
 - `--prune` is only available on `themes sync` and deletes managed remote extras.
 
 Examples:
@@ -371,7 +374,9 @@ Examples:
 ```bash
 nimbu themes push --build
 nimbu themes push --liquid-only
+nimbu themes push javascript/*.js stylesheets/*.css layouts/default.liquid snippets/bundle_app.liquid
 nimbu themes push --only snippets/header.liquid --only stylesheets/theme.css
+nimbu themes push --js-only --css-only layouts/default.liquid snippets/bundle_app.liquid
 nimbu themes push --all --theme storefront
 nimbu themes pull --theme storefront
 nimbu themes diff --theme storefront

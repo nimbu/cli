@@ -27,7 +27,8 @@ type ThemePushCmd struct {
 	DryRun     bool     `help:"Print planned uploads without changing remote state" name:"dry-run"`
 	Since      string   `help:"Compare against this git ref instead of HEAD (e.g. origin/main)"`
 	Theme      string   `help:"Override theme from nimbu.yml"`
-	Only       []string `help:"Only upload these project-relative files" name:"only"`
+	Only       []string `help:"Only upload these file, directory, or glob selectors" name:"only"`
+	Selectors  []string `arg:"" optional:"" help:"File, directory, or glob selectors to upload"`
 	LiquidOnly bool     `help:"Only upload liquid resources" name:"liquid-only"`
 	CSSOnly    bool     `help:"Only upload stylesheet assets" name:"css-only"`
 	JSOnly     bool     `help:"Only upload JavaScript assets" name:"js-only"`
@@ -44,6 +45,7 @@ func (c *ThemePushCmd) Run(ctx context.Context, flags *RootFlags) error {
 		Force:      flags != nil && flags.Force,
 		Since:      c.Since,
 		Only:       c.Only,
+		Selectors:  c.Selectors,
 		LiquidOnly: c.LiquidOnly,
 		CSSOnly:    c.CSSOnly,
 		JSOnly:     c.JSOnly,
@@ -60,7 +62,8 @@ type ThemeSyncCmd struct {
 	Prune      bool     `help:"Delete managed remote theme files missing locally"`
 	Since      string   `help:"Compare against this git ref instead of HEAD (e.g. origin/main)"`
 	Theme      string   `help:"Override theme from nimbu.yml"`
-	Only       []string `help:"Only sync these project-relative files" name:"only"`
+	Only       []string `help:"Only sync these file, directory, or glob selectors" name:"only"`
+	Selectors  []string `arg:"" optional:"" help:"File, directory, or glob selectors to sync"`
 	LiquidOnly bool     `help:"Only sync liquid resources" name:"liquid-only"`
 	CSSOnly    bool     `help:"Only sync stylesheet assets" name:"css-only"`
 	JSOnly     bool     `help:"Only sync JavaScript assets" name:"js-only"`
@@ -78,6 +81,7 @@ func (c *ThemeSyncCmd) Run(ctx context.Context, flags *RootFlags) error {
 		Prune:      c.Prune,
 		Since:      c.Since,
 		Only:       c.Only,
+		Selectors:  c.Selectors,
 		LiquidOnly: c.LiquidOnly,
 		CSSOnly:    c.CSSOnly,
 		JSOnly:     c.JSOnly,

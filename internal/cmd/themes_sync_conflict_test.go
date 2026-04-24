@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -90,5 +91,54 @@ func TestThemeTransferTimelineLabelFallsBackWhenThemeInfoUnavailable(t *testing.
 
 	if got != "69b27878d0e7a2292b1bba9a (site-1)" {
 		t.Fatalf("unexpected label: %q", got)
+	}
+}
+
+func TestThemePushAcceptsPositionalSelectors(t *testing.T) {
+	parser, cli, err := newParser()
+	if err != nil {
+		t.Fatalf("new parser: %v", err)
+	}
+
+	if _, err := parser.Parse([]string{
+		"themes",
+		"push",
+		"javascript/*.js",
+		"stylesheets/*.css",
+		"layouts/default.liquid",
+		"snippets/bundle_app.liquid",
+	}); err != nil {
+		t.Fatalf("parse themes push selectors: %v", err)
+	}
+
+	want := []string{
+		"javascript/*.js",
+		"stylesheets/*.css",
+		"layouts/default.liquid",
+		"snippets/bundle_app.liquid",
+	}
+	if got := cli.Themes.Push.Selectors; !reflect.DeepEqual(got, want) {
+		t.Fatalf("selectors = %#v, want %#v", got, want)
+	}
+}
+
+func TestThemeSyncAcceptsPositionalSelectors(t *testing.T) {
+	parser, cli, err := newParser()
+	if err != nil {
+		t.Fatalf("new parser: %v", err)
+	}
+
+	if _, err := parser.Parse([]string{
+		"themes",
+		"sync",
+		"stylesheets/*.css",
+		"snippets/bundle_app.liquid",
+	}); err != nil {
+		t.Fatalf("parse themes sync selectors: %v", err)
+	}
+
+	want := []string{"stylesheets/*.css", "snippets/bundle_app.liquid"}
+	if got := cli.Themes.Sync.Selectors; !reflect.DeepEqual(got, want) {
+		t.Fatalf("selectors = %#v, want %#v", got, want)
 	}
 }

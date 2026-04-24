@@ -227,8 +227,26 @@ func planOperations(ctx context.Context, client *api.Client, cfg Config, opts Op
 	uploadMap := map[resourceKey]Resource{}
 	deleteMap := map[resourceKey]Resource{}
 
-	if len(opts.Only) > 0 && opts.Since != "" {
-		_, _ = fmt.Fprintf(os.Stderr, "warning: --since is ignored when --only is set\n")
+	if hasExplicitSelectors(opts) && opts.Since != "" {
+		_, _ = fmt.Fprintf(os.Stderr, "warning: --since is ignored when explicit theme selectors are set\n")
+	}
+
+	var remoteResources []Resource
+	if mode == "sync" && opts.Prune {
+		var err error
+		remoteResources, err = FetchRemoteResources(ctx, client, cfg.Theme)
+		if err != nil {
+			return nil, nil, err
+		}
+		for i := range remoteResources {
+			if localPath, ok := localPathForRemote(cfg, remoteResources[i]); ok {
+				remoteResources[i].LocalPath = localPath
+			}
+		}
+	}
+
+	if err := selection.validateExplicitSelectors(append(allLocal, remoteResources...)); err != nil {
+		return nil, nil, err
 	}
 
 	if scopeUsesAllFiles(opts, selection.hasCategory) {
@@ -295,17 +313,9 @@ func planOperations(ctx context.Context, client *api.Client, cfg Config, opts Op
 	}
 
 	if mode == "sync" && opts.Prune {
-		remoteResources, err := FetchRemoteResources(ctx, client, cfg.Theme)
-		if err != nil {
-			return nil, nil, err
-		}
 		for _, remote := range remoteResources {
 			if !remoteInManagedScope(cfg, remote) {
 				continue
-			}
-			localPath, ok := localPathForRemote(cfg, remote)
-			if ok {
-				remote.LocalPath = localPath
 			}
 			if !selection.Match(remote) {
 				continue
@@ -323,7 +333,11 @@ func planOperations(ctx context.Context, client *api.Client, cfg Config, opts Op
 // scopeUsesAllFiles returns true when the option/filter combination means we
 // should iterate all local files instead of relying on git change detection.
 func scopeUsesAllFiles(opts Options, hasCategory bool) bool {
-	return opts.All || len(opts.Only) > 0 || (hasCategory && opts.Since == "")
+	return opts.All || hasExplicitSelectors(opts) || (hasCategory && opts.Since == "")
+}
+
+func hasExplicitSelectors(opts Options) bool {
+	return len(opts.Only) > 0 || len(opts.Selectors) > 0
 }
 
 func mapByKey(resources []Resource) map[resourceKey]Resource {

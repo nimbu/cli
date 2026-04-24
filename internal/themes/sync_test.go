@@ -41,6 +41,7 @@ func TestScopeUsesAllFiles(t *testing.T) {
 		{name: "default no flags", opts: Options{}, hasCategory: false, want: false},
 		{name: "all flag", opts: Options{All: true}, hasCategory: false, want: true},
 		{name: "only flag", opts: Options{Only: []string{"templates/page.liquid"}}, hasCategory: false, want: true},
+		{name: "positional selector", opts: Options{Selectors: []string{"templates/page.liquid"}}, hasCategory: false, want: true},
 		{name: "category alone", opts: Options{}, hasCategory: true, want: true},
 		{name: "category with since", opts: Options{Since: "origin/main"}, hasCategory: true, want: false},
 		{name: "only with since", opts: Options{Only: []string{"templates/page.liquid"}, Since: "origin/main"}, hasCategory: false, want: true},
