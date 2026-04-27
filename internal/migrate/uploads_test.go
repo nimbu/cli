@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -16,15 +15,20 @@ import (
 
 func TestCopyUploadsReusesAndCreatesUploadsAndBuildsRewritePlan(t *testing.T) {
 	var assetHits []string
-	var uploadNames []string
+	var uploadPayloads []map[string]any
 	baseURL := ""
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/uploads" && r.Header.Get("X-Nimbu-Site") == "source":
-			_, _ = w.Write([]byte(`[{"id":"src-reuse","name":"hero.jpg","url":"` + baseURL + `/cdn/hero.jpg?download=1","size":4},{"id":"src-new","name":"fresh.jpg","url":"` + baseURL + `/cdn/fresh.jpg","size":5},{"id":"src-skip","name":"missing.jpg","size":7},{"id":"src-amb","name":"dup.jpg","url":"` + baseURL + `/cdn/dup.jpg","size":3}]`))
+			_, _ = w.Write([]byte(`[
+				{"id":"src-reuse","url":"` + baseURL + `/uploads/src-reuse","source":{"filename":"hero.jpg","url":"` + baseURL + `/cdn/hero.jpg?download=1","content_type":"image/jpeg","size":4}},
+				{"id":"src-new","url":"` + baseURL + `/uploads/src-new","source":{"filename":"fresh.jpg","url":"` + baseURL + `/cdn/fresh.jpg","content_type":"image/jpeg","size":5}},
+				{"id":"src-skip","name":"missing.jpg","size":7},
+				{"id":"src-amb","url":"` + baseURL + `/uploads/src-amb","source":{"filename":"dup.jpg","url":"` + baseURL + `/cdn/dup.jpg","content_type":"image/jpeg","size":3}}
+			]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/uploads" && r.Header.Get("X-Nimbu-Site") == "target":
-			_, _ = w.Write([]byte(`[{"id":"target-reuse","name":"hero.jpg","url":"https://cdn.target.test/reused-hero.jpg","size":4},{"id":"target-dup-1","name":"dup.jpg","url":"https://cdn.target.test/dup-1.jpg","size":3},{"id":"target-dup-2","name":"dup.jpg","url":"https://cdn.target.test/dup-2.jpg","size":3}]`))
+			_, _ = w.Write([]byte(`[{"id":"target-reuse","url":"https://api.target.test/uploads/reused-hero","source":{"filename":"hero.jpg","url":"https://cdn.target.test/reused-hero.jpg","size":4}},{"id":"target-dup-1","name":"dup.jpg","url":"https://cdn.target.test/dup-1.jpg","size":3},{"id":"target-dup-2","name":"dup.jpg","url":"https://cdn.target.test/dup-2.jpg","size":3}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/sites/source":
 			_, _ = w.Write([]byte(`{"id":"source","subdomain":"source","domain":"old-site.test"}`))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/cdn/"):
@@ -40,27 +44,32 @@ func TestCopyUploadsReusesAndCreatesUploadsAndBuildsRewritePlan(t *testing.T) {
 				http.NotFound(w, r)
 			}
 		case r.Method == http.MethodPost && r.URL.Path == "/uploads" && r.Header.Get("X-Nimbu-Site") == "target":
-			if err := r.ParseMultipartForm(1 << 20); err != nil {
-				t.Fatalf("parse multipart form: %v", err)
+			if got := r.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+				t.Fatalf("expected JSON upload payload, got content-type %q", got)
 			}
-			file, header, err := r.FormFile("file")
-			if err != nil {
-				t.Fatalf("read uploaded file: %v", err)
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode upload payload: %v", err)
 			}
-			defer func() { _ = file.Close() }()
-			body, err := io.ReadAll(file)
-			if err != nil {
-				t.Fatalf("read uploaded bytes: %v", err)
+			uploadPayloads = append(uploadPayloads, body)
+			source, ok := body["source"].(map[string]any)
+			if !ok {
+				t.Fatalf("missing source payload: %#v", body)
 			}
-			uploadNames = append(uploadNames, header.Filename+":"+string(body))
 			var payload string
-			switch header.Filename {
+			switch source["filename"] {
 			case "fresh.jpg":
-				payload = `{"id":"uploaded-fresh","name":"fresh.jpg","url":"https://cdn.target.test/fresh.jpg","size":5}`
+				if source["attachment"] != base64.StdEncoding.EncodeToString([]byte("fresh")) {
+					t.Fatalf("unexpected fresh attachment: %#v", source["attachment"])
+				}
+				payload = `{"id":"uploaded-fresh","url":"https://api.target.test/uploads/fresh","source":{"filename":"fresh.jpg","url":"https://cdn.target.test/fresh.jpg","size":5}}`
 			case "dup.jpg":
-				payload = `{"id":"uploaded-dup","name":"dup.jpg","url":"https://cdn.target.test/dup.jpg","size":3}`
+				if source["attachment"] != base64.StdEncoding.EncodeToString([]byte("dup")) {
+					t.Fatalf("unexpected dup attachment: %#v", source["attachment"])
+				}
+				payload = `{"id":"uploaded-dup","url":"https://api.target.test/uploads/dup","source":{"filename":"dup.jpg","url":"https://cdn.target.test/dup.jpg","size":3}}`
 			default:
-				t.Fatalf("unexpected upload filename: %s", header.Filename)
+				t.Fatalf("unexpected upload filename: %#v", source["filename"])
 			}
 			_, _ = w.Write([]byte(payload))
 		default:
@@ -99,12 +108,8 @@ func TestCopyUploadsReusesAndCreatesUploadsAndBuildsRewritePlan(t *testing.T) {
 	if len(result.Warnings) != 2 {
 		t.Fatalf("expected 2 warnings, got %#v", result.Warnings)
 	}
-	if len(uploadNames) != 2 {
-		t.Fatalf("expected 2 uploads to target, got %#v", uploadNames)
-	}
-	uploadedSet := strings.Join(sortedStrings(uploadNames), ",")
-	if uploadedSet != "dup.jpg:dup,fresh.jpg:fresh" {
-		t.Fatalf("unexpected uploaded payloads: %s", uploadedSet)
+	if len(uploadPayloads) != 2 {
+		t.Fatalf("expected 2 uploads to target, got %#v", uploadPayloads)
 	}
 	assetSet := strings.Join(sortedStrings(assetHits), ",")
 	if assetSet != "/cdn/dup.jpg,/cdn/fresh.jpg" {
@@ -116,6 +121,55 @@ func TestCopyUploadsReusesAndCreatesUploadsAndBuildsRewritePlan(t *testing.T) {
 		if !strings.Contains(rewritten, want) {
 			t.Fatalf("expected rewritten string to contain %q, got %s", want, rewritten)
 		}
+	}
+}
+
+func TestDownloadUploadBytesRejectsSizeMismatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/cdn/asset.svg" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte("<svg></svg>"))
+	}))
+	defer srv.Close()
+
+	client := api.New(srv.URL, "")
+	_, err := downloadUploadBytes(context.Background(), client, srv.URL+"/cdn/asset.svg", 444)
+	if err == nil {
+		t.Fatal("expected size mismatch error")
+	}
+	if !strings.Contains(err.Error(), "size mismatch") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCreateUploadRejectsTargetSizeMismatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/cdn/asset.svg":
+			_, _ = w.Write([]byte("<svg></svg>"))
+		case r.Method == http.MethodPost && r.URL.Path == "/uploads":
+			_, _ = w.Write([]byte(`{"id":"uploaded","source":{"filename":"asset.svg","url":"https://cdn.target.test/asset.svg","size":1}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	fromClient := api.New(srv.URL, "").WithSite("source")
+	toClient := api.New(srv.URL, "").WithSite("target")
+	_, err := createUpload(context.Background(), fromClient, toClient, api.Upload{
+		Name:     "asset.svg",
+		URL:      srv.URL + "/cdn/asset.svg",
+		Size:     int64(len("<svg></svg>")),
+		MimeType: "image/svg+xml",
+	})
+	if err == nil {
+		t.Fatal("expected target size mismatch error")
+	}
+	if !strings.Contains(err.Error(), "size mismatch") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -338,38 +392,6 @@ func TestCopyTranslationsRewritesKnownUploadURLs(t *testing.T) {
 	}
 	if created.Values["nl"] != `<img src="https://cdn.target.test/hero.jpg">` {
 		t.Fatalf("unexpected localized translation rewrite: %s", created.Values["nl"])
-	}
-}
-
-func TestNewUploadMultipartBody(t *testing.T) {
-	body, err := newMultipartBytesBody([]byte("hello"), "asset.txt")
-	if err != nil {
-		t.Fatalf("build multipart body: %v", err)
-	}
-	data, err := io.ReadAll(body.Reader)
-	if err != nil {
-		t.Fatalf("read body: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/uploads", strings.NewReader(string(data)))
-	req.Header.Set("Content-Type", body.ContentType)
-	if err := req.ParseMultipartForm(1 << 20); err != nil {
-		t.Fatalf("parse multipart request: %v", err)
-	}
-	file, header, err := req.FormFile("file")
-	if err != nil {
-		t.Fatalf("read form file: %v", err)
-	}
-	defer func() { _ = file.Close() }()
-	payload, err := io.ReadAll(file)
-	if err != nil {
-		t.Fatalf("read multipart payload: %v", err)
-	}
-	if header.Filename != "asset.txt" {
-		t.Fatalf("unexpected filename: %s", header.Filename)
-	}
-	if string(payload) != "hello" {
-		t.Fatalf("unexpected payload: %s", string(payload))
 	}
 }
 

@@ -24,6 +24,7 @@ type RecordCopyOptions struct {
 	PerPage        int
 	Query          string
 	Recursive      bool
+	Stage          string
 	Upsert         string
 	Where          string
 }
@@ -82,6 +83,7 @@ type recordCopier struct {
 
 type schemaInfo struct {
 	resource        string
+	stage           string
 	referenceFields []api.CustomField
 	selfRefs        []api.CustomField
 	fileFields      []api.CustomField
@@ -161,6 +163,9 @@ func CopyCustomers(ctx context.Context, fromClient, toClient *api.Client, fromRe
 	if opts.PasswordLength <= 0 {
 		opts.PasswordLength = 12
 	}
+	if opts.Stage == "" {
+		opts.Stage = "Customers"
+	}
 	result := RecordCopyResult{From: fromRef, To: toRef, Resource: "customers"}
 	copier := &recordCopier{
 		fromClient: fromClient,
@@ -175,6 +180,7 @@ func CopyCustomers(ctx context.Context, fromClient, toClient *api.Client, fromRe
 		return result, err
 	}
 	info := buildSchemaInfo("customers", fields)
+	info.stage = copier.stageName()
 	records, err := copier.listRecords(ctx, "customers", nil)
 	if err != nil {
 		return result, err
@@ -184,12 +190,20 @@ func CopyCustomers(ctx context.Context, fromClient, toClient *api.Client, fromRe
 	return result, err
 }
 
+func (c *recordCopier) stageName() string {
+	if c != nil && c.options.Stage != "" {
+		return c.options.Stage
+	}
+	return "Channel Entries"
+}
+
 func (c *recordCopier) copyChannel(ctx context.Context, sourceChannel string, targetChannel string, ids map[string]struct{}, root bool) error {
 	if !c.queueRequest(targetChannel, ids) {
 		return nil
 	}
 	detail := c.channelMap[sourceChannel]
 	info := buildSchemaInfo(targetChannel, detail.Customizations)
+	info.stage = c.stageName()
 	records, err := c.listRecords(ctx, sourceChannel, ids)
 	if err != nil {
 		return err
@@ -244,6 +258,7 @@ func (c *recordCopier) copyCustomersByID(ctx context.Context, ids map[string]str
 		return err
 	}
 	info := buildSchemaInfo("customers", fields)
+	info.stage = c.stageName()
 	records, err := c.listRecords(ctx, "customers", ids)
 	if err != nil {
 		return err
@@ -295,8 +310,13 @@ func (c *recordCopier) copyRecords(ctx context.Context, sourceChannel string, ta
 	mapped := c.ensureMapping(targetChannel)
 	var warnings []string
 	var pending []pendingSelfRef
+	stage := c.stageName()
+	if info.stage != "" {
+		stage = info.stage
+	}
+	info.stage = stage
 	for i, record := range records {
-		emitStageItem(ctx, "Channel Entries", recordIdentifier(record), int64(i+1), int64(len(records)))
+		emitStageItem(ctx, stage, recordIdentifier(record), int64(i+1), int64(len(records)))
 		sourceID := stringValue(record["id"])
 		if sourceID != "" {
 			if _, ok := mapped[sourceID]; ok {

@@ -78,15 +78,15 @@ func TestSortByKindOrder(t *testing.T) {
 		t.Fatal("SortByKindOrder mutated the input slice")
 	}
 
-	// Expected order: layouts (alpha), snippets (alpha), templates (alpha), assets (alpha)
+	// Expected fallback order: snippets (alpha), layouts (alpha), templates (alpha), assets (alpha)
 	expected := []struct {
 		kind Kind
 		path string
 	}{
-		{KindLayout, "layouts/blank.liquid"},
-		{KindLayout, "layouts/default.liquid"},
 		{KindSnippet, "snippets/footer.liquid"},
 		{KindSnippet, "snippets/nav.liquid"},
+		{KindLayout, "layouts/blank.liquid"},
+		{KindLayout, "layouts/default.liquid"},
 		{KindTemplate, "templates/blog.liquid"},
 		{KindTemplate, "templates/page.liquid"},
 		{KindAsset, "assets/a.png"},

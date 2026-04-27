@@ -10,7 +10,7 @@ type CopyObserver interface {
 	StageDone(name, summary string)
 	StageSkip(name, reason string)
 	SubStageDone(stage, sub, summary string)
-	Warning(msg string)
+	StageWarning(stage, msg string)
 }
 
 type observerCtxKey struct{}
@@ -35,4 +35,4 @@ func (nopObserver) StageItem(string, string, int64, int64) {}
 func (nopObserver) StageDone(string, string)               {}
 func (nopObserver) StageSkip(string, string)               {}
 func (nopObserver) SubStageDone(string, string, string)    {}
-func (nopObserver) Warning(string)                         {}
+func (nopObserver) StageWarning(string, string)            {}

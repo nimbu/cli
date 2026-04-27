@@ -2,10 +2,9 @@ package themes
 
 import "sort"
 
-// KindOrder defines dependency-based upload order:
-// layouts first (templates reference them), then snippets (templates include them),
-// then templates, then assets.
-var KindOrder = []Kind{KindLayout, KindSnippet, KindTemplate, KindAsset}
+// KindOrder defines fallback transfer order when no more specific ordering is
+// required.
+var KindOrder = []Kind{KindSnippet, KindLayout, KindTemplate, KindAsset}
 
 var kindRank = func() map[Kind]int {
 	m := make(map[Kind]int, len(KindOrder))
@@ -24,17 +23,24 @@ func GroupByKind(resources []Resource) map[Kind][]Resource {
 	return grouped
 }
 
-// SortByKindOrder returns a new slice sorted in dependency order (KindOrder),
-// then alphabetically by DisplayPath within each kind.
+// SortByKindOrder returns a new slice sorted by KindOrder, then alphabetically
+// by DisplayPath within each kind.
 func SortByKindOrder(resources []Resource) []Resource {
 	sorted := make([]Resource, len(resources))
 	copy(sorted, resources)
 	sort.SliceStable(sorted, func(i, j int) bool {
-		ri, rj := kindRank[sorted[i].Kind], kindRank[sorted[j].Kind]
-		if ri != rj {
-			return ri < rj
-		}
-		return sorted[i].DisplayPath < sorted[j].DisplayPath
+		return resourceLess(sorted[i], sorted[j])
 	})
 	return sorted
+}
+
+func resourceLess(a, b Resource) bool {
+	ar, br := kindRank[a.Kind], kindRank[b.Kind]
+	if ar != br {
+		return ar < br
+	}
+	if a.DisplayPath == b.DisplayPath {
+		return a.Kind < b.Kind
+	}
+	return a.DisplayPath < b.DisplayPath
 }

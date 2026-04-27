@@ -243,6 +243,12 @@ func resolveThemeProjectConfig() (string, config.ProjectConfig, []string, error)
 }
 
 func writeThemeTransferResult(ctx context.Context, result themes.Result) error {
+	if output.IsHuman(ctx) {
+		w := output.WriterFromContext(ctx)
+		for _, warning := range result.Warnings {
+			_, _ = fmt.Fprintf(w.Err, "warning: %s\n", warning)
+		}
+	}
 	if result.TimelineRendered {
 		return nil
 	}

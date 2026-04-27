@@ -46,7 +46,7 @@ func CopySiteEntries(ctx context.Context, fromClient, toClient *api.Client, from
 	for i, channel := range ordered {
 		emitStageItem(ctx, "Channel Entries", channel, int64(i+1), int64(total))
 		if _, ok := channelMap[channel]; !ok {
-			emitWarning(ctx, fmt.Sprintf("unknown channel %q, skipping", channel))
+			emitStageWarning(ctx, "Channel Entries", fmt.Sprintf("unknown channel %q, skipping", channel))
 			continue
 		}
 		result := RecordCopyResult{From: fromRef, To: toRef, Resource: channel}
@@ -97,7 +97,7 @@ func CopySiteEntries(ctx context.Context, fromClient, toClient *api.Client, from
 		}
 		emitStageDone(ctx, "Unresolved References", fmt.Sprintf("%d fields need manual update", len(unresolved)))
 		for _, w := range unresolved {
-			emitWarning(ctx, w)
+			emitStageWarning(ctx, "Unresolved References", w)
 		}
 	}
 
@@ -109,7 +109,7 @@ func CopySiteEntries(ctx context.Context, fromClient, toClient *api.Client, from
 	}
 	emitStageDone(ctx, "Validation", fmt.Sprintf("%d issues", len(validationWarnings)))
 	for _, w := range validationWarnings {
-		emitWarning(ctx, w)
+		emitStageWarning(ctx, "Validation", w)
 	}
 
 	return results, nil

@@ -1,16 +1,12 @@
 package migrate
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/nimbu/cli/internal/api"
@@ -235,21 +231,13 @@ func uploadHost(raw string) string {
 }
 
 func createUpload(ctx context.Context, fromClient, toClient *api.Client, source api.Upload) (api.Upload, error) {
-	tempDir, err := os.MkdirTemp("", "nimbu-upload-copy-*")
-	if err != nil {
-		return api.Upload{}, err
-	}
-	defer func() { _ = os.RemoveAll(tempDir) }()
-
 	filename := uploadFilename(source)
-	localPath := filepath.Join(tempDir, filepath.Base(filename))
-	if err := downloadUploadToFile(ctx, fromClient, source.URL, localPath); err != nil {
-		return api.Upload{}, err
-	}
-	body, err := newUploadMultipartBody(localPath, filename)
+	data, err := downloadUploadBytes(ctx, fromClient, source.URL, source.Size)
 	if err != nil {
 		return api.Upload{}, err
 	}
+
+	body := api.NewUploadCreatePayload(filename, data, source.MimeType)
 	var created api.Upload
 	if err := toClient.Post(ctx, "/uploads", body, &created); err != nil {
 		return api.Upload{}, err
@@ -257,109 +245,30 @@ func createUpload(ctx context.Context, fromClient, toClient *api.Client, source 
 	if strings.TrimSpace(created.URL) == "" {
 		return api.Upload{}, fmt.Errorf("target upload %q missing url", created.ID)
 	}
+	if strings.TrimSpace(created.Name) == "" {
+		return api.Upload{}, fmt.Errorf("target upload %q missing name", created.ID)
+	}
+	if source.Size > 0 && created.Size != source.Size {
+		return api.Upload{}, fmt.Errorf("target upload %q size mismatch: got %d bytes, want %d", created.ID, created.Size, source.Size)
+	}
 	return created, nil
 }
 
-func downloadUploadToFile(ctx context.Context, client *api.Client, rawURL string, target string) error {
+func downloadUploadBytes(ctx context.Context, client *api.Client, rawURL string, expectedSize int64) ([]byte, error) {
 	resp, resolvedURL, err := openDownloadResponse(ctx, client, rawURL)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("download %s: HTTP %d", resolvedURL, resp.StatusCode)
+		return nil, fmt.Errorf("download %s: HTTP %d", resolvedURL, resp.StatusCode)
 	}
-	file, err := os.Create(target)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("create temp upload file: %w", err)
+		return nil, fmt.Errorf("read upload bytes: %w", err)
 	}
-	defer func() { _ = file.Close() }()
-	if _, err := io.Copy(file, resp.Body); err != nil {
-		return fmt.Errorf("write temp upload file: %w", err)
+	if expectedSize > 0 && int64(len(data)) != expectedSize {
+		return nil, fmt.Errorf("download %s: size mismatch: got %d bytes, want %d", resolvedURL, len(data), expectedSize)
 	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close temp upload file: %w", err)
-	}
-	return nil
-}
-
-func newUploadMultipartBody(path string, filename string) (api.RequestBody, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return api.RequestBody{}, fmt.Errorf("stat file: %w", err)
-	}
-
-	headerBuf := &strings.Builder{}
-	writer := multipart.NewWriter(headerBuf)
-	if _, err := writer.CreateFormFile("file", filename); err != nil {
-		return api.RequestBody{}, fmt.Errorf("create form file: %w", err)
-	}
-	headerLen := headerBuf.Len()
-	if err := writer.Close(); err != nil {
-		return api.RequestBody{}, fmt.Errorf("close multipart writer: %w", err)
-	}
-	payload := []byte(headerBuf.String())
-	header := append([]byte(nil), payload[:headerLen]...)
-	footer := append([]byte(nil), payload[headerLen:]...)
-	contentType := writer.FormDataContentType()
-	contentLength := int64(len(header)) + info.Size() + int64(len(footer))
-
-	buildReader := func() (io.ReadCloser, error) {
-		file, err := os.Open(path)
-		if err != nil {
-			return nil, fmt.Errorf("open file: %w", err)
-		}
-		reader := io.MultiReader(strings.NewReader(string(header)), file, strings.NewReader(string(footer)))
-		return &uploadMultipartReadCloser{Reader: reader, file: file}, nil
-	}
-
-	reader, err := buildReader()
-	if err != nil {
-		return api.RequestBody{}, err
-	}
-	return api.RequestBody{
-		Reader: reader,
-		GetBody: func() (io.ReadCloser, error) {
-			return buildReader()
-		},
-		ContentType:   contentType,
-		ContentLength: contentLength,
-	}, nil
-}
-
-type uploadMultipartReadCloser struct {
-	io.Reader
-	file *os.File
-}
-
-func (r *uploadMultipartReadCloser) Close() error {
-	if r.file == nil {
-		return nil
-	}
-	return r.file.Close()
-}
-
-func newMultipartBytesBody(data []byte, filename string) (api.RequestBody, error) {
-	var payload bytes.Buffer
-	writer := multipart.NewWriter(&payload)
-	part, err := writer.CreateFormFile("file", filename)
-	if err != nil {
-		return api.RequestBody{}, fmt.Errorf("create form file: %w", err)
-	}
-	if _, err := part.Write(data); err != nil {
-		return api.RequestBody{}, fmt.Errorf("write multipart payload: %w", err)
-	}
-	if err := writer.Close(); err != nil {
-		return api.RequestBody{}, fmt.Errorf("close multipart writer: %w", err)
-	}
-
-	body := payload.Bytes()
-	return api.RequestBody{
-		Reader: bytes.NewReader(body),
-		GetBody: func() (io.ReadCloser, error) {
-			return io.NopCloser(bytes.NewReader(body)), nil
-		},
-		ContentType:   writer.FormDataContentType(),
-		ContentLength: int64(len(body)),
-	}, nil
+	return data, nil
 }

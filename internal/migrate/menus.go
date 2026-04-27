@@ -23,13 +23,37 @@ type MenuCopyResult struct {
 	Items []MenuCopyItem `json:"items,omitempty"`
 }
 
-// CopyMenus copies nested menu documents. When overwriteExisting is false, existing menus are skipped.
+// MenuCopyOptions controls menu copy behavior.
+type MenuCopyOptions struct {
+	DryRun          bool
+	ErrorOnExisting bool
+	Existing        ExistingContentAction
+	Media           *MediaRewritePlan
+	ResolveExisting ExistingContentResolver
+}
+
+// CopyMenus copies nested menu documents. When overwriteExisting is false, existing menus return an error.
 func CopyMenus(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, query string, overwriteExisting bool, media *MediaRewritePlan, dryRun bool) (MenuCopyResult, error) {
+	opts := MenuCopyOptions{
+		DryRun:   dryRun,
+		Existing: ExistingContentUpdate,
+		Media:    media,
+	}
+	if !overwriteExisting {
+		opts.ErrorOnExisting = true
+	}
+	return CopyMenusWithOptions(ctx, fromClient, toClient, fromRef, toRef, query, opts)
+}
+
+// CopyMenusWithOptions copies nested menu documents.
+func CopyMenusWithOptions(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, query string, opts MenuCopyOptions) (MenuCopyResult, error) {
 	menus, err := listMenuDocuments(ctx, fromClient, query)
 	if err != nil {
 		return MenuCopyResult{From: fromRef, To: toRef, Query: query}, err
 	}
+	opts.Existing = normalizeExistingContentAction(opts.Existing)
 	result := MenuCopyResult{From: fromRef, To: toRef, Query: query}
+	reviewAll := ExistingContentAction("")
 	for i, menu := range menus {
 		slug := api.MenuDocumentSlug(menu)
 		emitStageItem(ctx, "Menus", slug, int64(i+1), int64(len(menus)))
@@ -37,18 +61,28 @@ func CopyMenus(ctx context.Context, fromClient, toClient *api.Client, fromRef, t
 			continue
 		}
 		sanitizeMenuDocument(menu)
-		if media != nil {
-			media.RewriteValue("menus."+slug, menu)
+		if opts.Media != nil {
+			opts.Media.RewriteValue("menus."+slug, menu)
 		}
 		var existing api.MenuDocument
 		err := toClient.Get(ctx, "/menus/"+url.PathEscape(slug), &existing)
 		switch {
 		case err == nil:
-			if !overwriteExisting {
+			if opts.ErrorOnExisting {
 				return result, fmt.Errorf("menu %s already exists; rerun with --force to overwrite", slug)
 			}
+			existingAction, err := resolveExistingItem(ctx, opts.ResolveExisting, ExistingContentPrompt{
+				Type: "Menus", Item: slug, Source: fromRef.Site, Target: toRef.Site,
+			}, opts.Existing, &reviewAll)
+			if err != nil {
+				return result, err
+			}
+			if existingAction == ExistingContentSkip {
+				result.Items = append(result.Items, MenuCopyItem{Slug: slug, Action: "skip"})
+				continue
+			}
 			action := "update"
-			if dryRun {
+			if opts.DryRun {
 				action = "dry-run:" + action
 			} else if _, err := api.PatchMenuDocument(ctx, toClient, slug, menu); err != nil {
 				return result, fmt.Errorf("update menu %s: %w", slug, err)
@@ -56,7 +90,7 @@ func CopyMenus(ctx context.Context, fromClient, toClient *api.Client, fromRef, t
 			result.Items = append(result.Items, MenuCopyItem{Slug: slug, Action: action})
 		case api.IsNotFound(err):
 			action := "create"
-			if dryRun {
+			if opts.DryRun {
 				action = "dry-run:" + action
 			} else if err := toClient.Post(ctx, "/menus", menu, &existing); err != nil {
 				return result, fmt.Errorf("create menu %s: %w", slug, err)

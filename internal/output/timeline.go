@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
+	"golang.org/x/term"
 )
 
 var brailleSpinner = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -25,10 +28,15 @@ type CopyTimeline struct {
 	frame    int
 	active   *activeStage
 	lines    int // lines used by active stage display (for clearing)
-	stopCh   chan struct{}
-	doneCh   chan struct{}
-	stopOnce sync.Once
-	closed   bool
+
+	terminalWidth   int
+	pendingWarnings map[string][]string
+	warningStages   []string
+	lastDoneStage   string
+	stopCh          chan struct{}
+	doneCh          chan struct{}
+	stopOnce        sync.Once
+	closed          bool
 }
 
 type completedSubItem struct {
@@ -66,14 +74,15 @@ func NewCopyTimeline(ctx context.Context, dryRun bool) *CopyTimeline {
 	}
 
 	tl := &CopyTimeline{
-		writer:   out,
-		termOut:  termenv.NewOutput(out, termenv.WithProfile(profile)),
-		useColor: useColor,
-		animated: w.ErrIsTTY(),
-		dryRun:   dryRun,
-		started:  time.Now(),
-		stopCh:   make(chan struct{}),
-		doneCh:   make(chan struct{}),
+		writer:          out,
+		termOut:         termenv.NewOutput(out, termenv.WithProfile(profile)),
+		useColor:        useColor,
+		animated:        w.ErrIsTTY() && !w.NoSpin,
+		dryRun:          dryRun,
+		started:         time.Now(),
+		pendingWarnings: map[string][]string{},
+		stopCh:          make(chan struct{}),
+		doneCh:          make(chan struct{}),
 	}
 
 	if tl.animated {
@@ -159,6 +168,8 @@ func (tl *CopyTimeline) StageDone(name, summary string) {
 	}
 	line := marker + " " + tl.formatStageLine(name, summary)
 	tl.writeLine(line)
+	tl.lastDoneStage = name
+	tl.flushStageWarningsLocked(name)
 }
 
 // StageSkip marks a stage as skipped with a reason.
@@ -180,6 +191,8 @@ func (tl *CopyTimeline) StageSkip(name, reason string) {
 		text = tl.colorDim(text)
 	}
 	tl.writeLine(marker + " " + text)
+	tl.lastDoneStage = name
+	tl.flushStageWarningsLocked(name)
 }
 
 // SubStageDone records a completed sub-item within the active stage.
@@ -207,18 +220,32 @@ func (tl *CopyTimeline) SubStageDone(stage, sub, summary string) {
 	}
 }
 
-// Warning prints a warning message under the rail.
-func (tl *CopyTimeline) Warning(msg string) {
+// StageWarning records or prints a warning owned by one timeline stage.
+func (tl *CopyTimeline) StageWarning(stage, msg string) {
 	tl.mu.Lock()
 	defer tl.mu.Unlock()
 
-	tl.clearActiveLocked()
-
-	text := "⚠ " + msg
-	if tl.useColor {
-		text = tl.termOut.String(text).Foreground(tl.termOut.Color("#f59e0b")).String()
+	if tl.active != nil && tl.active.name == stage {
+		tl.clearActiveLocked()
+		tl.queueStageWarningLocked(stage, msg)
+		if tl.animated {
+			tl.renderActiveLocked()
+		}
+		return
 	}
-	tl.writeLine(tl.renderRail() + "  " + text)
+
+	tl.clearActiveLocked()
+	if stage != "" && stage == tl.lastDoneStage {
+		tl.writeWarningLocked(msg)
+	} else {
+		if stage != "" {
+			msg = stage + ": " + msg
+		}
+		tl.writeWarningLocked(msg)
+	}
+	if tl.active != nil && tl.animated {
+		tl.renderActiveLocked()
+	}
 }
 
 // Footer renders the closing summary line (└ Done! Done in Xs).
@@ -236,6 +263,7 @@ func (tl *CopyTimeline) Footer() {
 	tl.closed = true
 
 	tl.clearActiveLocked()
+	tl.flushAllPendingWarningsLocked()
 	elapsed := formatElapsed(time.Since(tl.started))
 
 	corner := "└"
@@ -273,6 +301,7 @@ func (tl *CopyTimeline) ErrorFooter(msg string) {
 	tl.closed = true
 
 	tl.clearActiveLocked()
+	tl.flushAllPendingWarningsLocked()
 
 	corner := "└"
 	label := "Error!"
@@ -292,6 +321,17 @@ func (tl *CopyTimeline) ErrorFooter(msg string) {
 // Does NOT render the footer — call Footer() first if the operation succeeded.
 // Idempotent: safe to call multiple times.
 func (tl *CopyTimeline) Close() {
+	tl.stopLoop()
+
+	tl.mu.Lock()
+	defer tl.mu.Unlock()
+
+	tl.clearActiveLocked()
+	tl.flushAllPendingWarningsLocked()
+}
+
+// PreparePrompt clears live spinner output before a blocking prompt is printed.
+func (tl *CopyTimeline) PreparePrompt() {
 	tl.stopLoop()
 
 	tl.mu.Lock()
@@ -366,7 +406,7 @@ func (tl *CopyTimeline) renderActiveLocked() {
 	}
 
 	// Write connector rail
-	_, _ = fmt.Fprint(tl.writer, tl.renderRail()+"\n")
+	tl.writeActiveLineLocked(tl.renderRail())
 	n := 1
 
 	// Write completed sub-items
@@ -375,19 +415,38 @@ func (tl *CopyTimeline) renderActiveLocked() {
 		if tl.useColor {
 			marker = tl.colorDim(marker)
 		}
-		_, _ = fmt.Fprint(tl.writer, tl.renderRail()+"  "+marker+" "+tl.formatStageLine(sub.name, sub.summary)+"\n")
+		tl.writeActiveLineLocked(tl.renderRail() + "  " + marker + " " + tl.formatStageLine(sub.name, sub.summary))
 		n++
 	}
 
 	// Write active spinner line (indented if sub-items present)
 	if len(stage.subItems) > 0 {
-		_, _ = fmt.Fprint(tl.writer, tl.renderRail()+"  "+line+"\n")
+		tl.writeActiveLineLocked(tl.renderRail() + "  " + line)
 	} else {
-		_, _ = fmt.Fprint(tl.writer, line+"\n")
+		tl.writeActiveLineLocked(line)
 	}
 	n++
 
 	tl.lines = n
+}
+
+func (tl *CopyTimeline) writeActiveLineLocked(line string) {
+	_, _ = fmt.Fprint(tl.writer, tl.fitActiveLine(line)+"\n")
+}
+
+func (tl *CopyTimeline) fitActiveLine(line string) string {
+	width := tl.terminalWidth
+	if width <= 0 {
+		width = terminalWidth(tl.writer)
+	}
+	if width <= 1 {
+		return line
+	}
+	maxWidth := width - 1
+	if ansi.StringWidth(line) <= maxWidth {
+		return line
+	}
+	return ansi.Truncate(line, maxWidth, "…")
 }
 
 func (tl *CopyTimeline) clearActiveLocked() {
@@ -429,6 +488,61 @@ func (tl *CopyTimeline) renderRail() string {
 
 func (tl *CopyTimeline) writeLine(line string) {
 	_, _ = fmt.Fprintln(tl.writer, line)
+}
+
+func (tl *CopyTimeline) queueStageWarningLocked(stage, msg string) {
+	if tl.pendingWarnings == nil {
+		tl.pendingWarnings = map[string][]string{}
+	}
+	if len(tl.pendingWarnings[stage]) == 0 {
+		tl.warningStages = append(tl.warningStages, stage)
+	}
+	tl.pendingWarnings[stage] = append(tl.pendingWarnings[stage], msg)
+}
+
+func (tl *CopyTimeline) flushStageWarningsLocked(stage string) {
+	if len(tl.pendingWarnings) == 0 {
+		return
+	}
+	warnings := tl.pendingWarnings[stage]
+	delete(tl.pendingWarnings, stage)
+	for _, warning := range warnings {
+		tl.writeWarningLocked(warning)
+	}
+}
+
+func (tl *CopyTimeline) flushAllPendingWarningsLocked() {
+	for _, stage := range tl.warningStages {
+		warnings := tl.pendingWarnings[stage]
+		delete(tl.pendingWarnings, stage)
+		for _, warning := range warnings {
+			if stage != "" {
+				warning = stage + ": " + warning
+			}
+			tl.writeWarningLocked(warning)
+		}
+	}
+	tl.warningStages = nil
+}
+
+func (tl *CopyTimeline) writeWarningLocked(msg string) {
+	text := "⚠ " + msg
+	if tl.useColor {
+		text = tl.termOut.String(text).Foreground(tl.termOut.Color("#f59e0b")).String()
+	}
+	tl.writeLine(tl.renderRail() + "  " + text)
+}
+
+func terminalWidth(w io.Writer) int {
+	file, ok := w.(*os.File)
+	if !ok {
+		return 0
+	}
+	width, _, err := term.GetSize(int(file.Fd()))
+	if err != nil || width <= 0 {
+		return 0
+	}
+	return width
 }
 
 // Color helpers

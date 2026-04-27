@@ -10,14 +10,15 @@ import (
 
 // SiteCopyOptions controls site copy orchestration.
 type SiteCopyOptions struct {
-	AllowErrors   bool
-	CopyCustomers bool
-	DryRun        bool
-	Include       []string
-	Only          []string
-	Recursive     bool
-	Upsert        string
-	Force         bool
+	AllowErrors      bool
+	ConflictResolver ExistingContentResolver
+	CopyCustomers    bool
+	DryRun           bool
+	Include          []string
+	Only             []string
+	Recursive        bool
+	Upsert           string
+	Force            bool
 }
 
 // SiteCopyResult groups stage outputs.
@@ -46,9 +47,25 @@ type SiteCopyResult struct {
 // CopySite orchestrates a broad site migration.
 func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, opts SiteCopyOptions) (SiteCopyResult, error) {
 	result := SiteCopyResult{From: fromRef, To: toRef, DryRun: opts.DryRun}
+	conflicts := newExistingContentDecider(opts.Force || opts.DryRun, opts.ConflictResolver)
 
 	emitStageStart(ctx, "Channels")
-	channelsResult, err := CopyAllChannels(ctx, fromClient, toClient, fromRef, toRef, opts.DryRun)
+	channelExistingAction := ExistingContentUpdate
+	channelSourceCount, channelExistingCount, err := countExistingChannels(ctx, fromClient, toClient)
+	if err != nil {
+		return result, err
+	}
+	if channelExistingCount > 0 {
+		channelExistingAction, err = conflicts.decide(ctx, ExistingContentPrompt{Type: "Channels", Source: fromRef.Site, Target: toRef.Site, SourceCount: channelSourceCount, ExistingCount: channelExistingCount})
+		if err != nil {
+			return result, err
+		}
+	}
+	channelsResult, err := CopyAllChannelsWithOptions(ctx, fromClient, toClient, fromRef, toRef, ChannelCopyOptions{
+		DryRun:          opts.DryRun,
+		Existing:        channelExistingAction,
+		ResolveExisting: opts.ConflictResolver,
+	})
 	if err != nil {
 		return result, err
 	}
@@ -64,7 +81,7 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 	result.Warnings = append(result.Warnings, uploadsResult.Warnings...)
 	emitStageDone(ctx, "Uploads", fmt.Sprintf("%d files", len(uploadsResult.Items)))
 	for _, w := range uploadsResult.Warnings {
-		emitWarning(ctx, w)
+		emitStageWarning(ctx, "Uploads", w)
 	}
 
 	recordOpts := RecordCopyOptions{
@@ -90,20 +107,36 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 	}
 
 	emitStageStart(ctx, "Customer Config")
-	customerConfig, err := CopyCustomizations(ctx, CustomizationService{Kind: CustomizationCustomers}, fromClient, toClient, fromRef, toRef, opts.DryRun)
+	customerConfigAction, err := customizationExistingAction(ctx, conflicts, CustomizationService{Kind: CustomizationCustomers}, toClient, fromRef, toRef, "Customer Config")
+	if err != nil {
+		return result, err
+	}
+	customerConfig, err := CopyCustomizationsWithOptions(ctx, CustomizationService{Kind: CustomizationCustomers}, fromClient, toClient, fromRef, toRef, CustomizationCopyOptions{
+		DryRun:   opts.DryRun,
+		Existing: customerConfigAction,
+		Stage:    "Customer Config",
+	})
 	if err != nil {
 		return result, err
 	}
 	result.CustomerConfig = customerConfig
-	emitStageDone(ctx, "Customer Config", fmt.Sprintf("%d fields", customerConfig.FieldCount))
+	emitStageDone(ctx, "Customer Config", customizationCopySummary(customerConfig))
 
 	emitStageStart(ctx, "Product Config")
-	productConfig, err := CopyCustomizations(ctx, CustomizationService{Kind: CustomizationProducts}, fromClient, toClient, fromRef, toRef, opts.DryRun)
+	productConfigAction, err := customizationExistingAction(ctx, conflicts, CustomizationService{Kind: CustomizationProducts}, toClient, fromRef, toRef, "Product Config")
+	if err != nil {
+		return result, err
+	}
+	productConfig, err := CopyCustomizationsWithOptions(ctx, CustomizationService{Kind: CustomizationProducts}, fromClient, toClient, fromRef, toRef, CustomizationCopyOptions{
+		DryRun:   opts.DryRun,
+		Existing: productConfigAction,
+		Stage:    "Product Config",
+	})
 	if err != nil {
 		return result, err
 	}
 	result.ProductConfig = productConfig
-	emitStageDone(ctx, "Product Config", fmt.Sprintf("%d fields", productConfig.FieldCount))
+	emitStageDone(ctx, "Product Config", customizationCopySummary(productConfig))
 
 	emitStageStart(ctx, "Roles")
 	rolesResult, err := CopyRoles(ctx, fromClient, toClient, fromRef, toRef, opts.DryRun)
@@ -148,13 +181,14 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 		msg := fmt.Sprintf("resolve target theme: %v", err)
 		result.Warnings = append(result.Warnings, msg)
 		emitStageSkip(ctx, "Theme", msg)
-	} else if themeResult, err := themes.RunCopy(ctx, fromClient, themes.CopyRef{BaseURL: fromRef.BaseURL, Site: fromRef.Site, Theme: sourceTheme}, toClient, themes.CopyRef{BaseURL: toRef.BaseURL, Site: toRef.Site, Theme: targetTheme}, themes.CopyOptions{DryRun: opts.DryRun, Force: opts.Force}); err != nil {
+	} else if themeResult, err := themes.RunCopy(ctx, fromClient, themes.CopyRef{BaseURL: fromRef.BaseURL, Site: fromRef.Site, Theme: sourceTheme}, toClient, themes.CopyRef{BaseURL: toRef.BaseURL, Site: toRef.Site, Theme: targetTheme}, themes.CopyOptions{DryRun: opts.DryRun, Force: opts.Force, ContinueOnError: true}); err != nil {
 		msg := fmt.Sprintf("%v", err)
 		result.Warnings = append(result.Warnings, msg)
 		emitStageSkip(ctx, "Theme", msg)
 	} else {
 		result.Theme = themeResult
-		emitStageDone(ctx, "Theme", fmt.Sprintf("%d assets", len(themeResult.Items)))
+		result.Warnings = append(result.Warnings, themeResult.Warnings...)
+		emitStageDone(ctx, "Theme", fmt.Sprintf("%d copied, %d skipped", len(themeResult.Items), len(themeResult.Skipped)))
 	}
 
 	emitStageStart(ctx, "Pages")
@@ -165,12 +199,28 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 	result.Pages = pagesResult
 	emitStageDone(ctx, "Pages", fmt.Sprintf("%d synced", len(pagesResult.Items)))
 	for _, w := range pagesResult.Warnings {
-		emitWarning(ctx, w)
+		emitStageWarning(ctx, "Pages", w)
 	}
 	result.Warnings = append(result.Warnings, pagesResult.Warnings...)
 
 	emitStageStart(ctx, "Menus")
-	menusResult, err := CopyMenus(ctx, fromClient, toClient, fromRef, toRef, "*", opts.Force, media, opts.DryRun)
+	menuExistingAction := ExistingContentUpdate
+	menuSourceCount, menuExistingCount, err := countExistingMenus(ctx, fromClient, toClient, "*")
+	if err != nil {
+		return result, err
+	}
+	if menuExistingCount > 0 {
+		menuExistingAction, err = conflicts.decide(ctx, ExistingContentPrompt{Type: "Menus", Source: fromRef.Site, Target: toRef.Site, SourceCount: menuSourceCount, ExistingCount: menuExistingCount})
+		if err != nil {
+			return result, err
+		}
+	}
+	menusResult, err := CopyMenusWithOptions(ctx, fromClient, toClient, fromRef, toRef, "*", MenuCopyOptions{
+		DryRun:          opts.DryRun,
+		Existing:        menuExistingAction,
+		Media:           media,
+		ResolveExisting: opts.ConflictResolver,
+	})
 	if err != nil {
 		return result, err
 	}
@@ -209,7 +259,7 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 	result.Translations = translationsResult
 	emitStageDone(ctx, "Translations", fmt.Sprintf("%d synced", len(translationsResult.Items)))
 	for _, w := range media.Warnings() {
-		emitWarning(ctx, w)
+		emitStageWarning(ctx, "Translations", w)
 	}
 	result.Warnings = append(result.Warnings, media.Warnings()...)
 
@@ -230,4 +280,71 @@ func activeThemeID(ctx context.Context, client *api.Client) (string, error) {
 		return items[0].ID, nil
 	}
 	return "", fmt.Errorf("no themes found")
+}
+
+func countExistingChannels(ctx context.Context, fromClient, toClient *api.Client) (int, int, error) {
+	source, err := api.ListChannelDetails(ctx, fromClient)
+	if err != nil {
+		return 0, 0, err
+	}
+	target, err := api.ListChannelDetails(ctx, toClient)
+	if err != nil {
+		return 0, 0, err
+	}
+	targetBySlug := make(map[string]struct{}, len(target))
+	for _, channel := range target {
+		if channel.Slug != "" {
+			targetBySlug[channel.Slug] = struct{}{}
+		}
+	}
+	existing := 0
+	for _, channel := range source {
+		if _, ok := targetBySlug[channel.Slug]; ok && channel.Slug != "" {
+			existing++
+		}
+	}
+	return len(source), existing, nil
+}
+
+func customizationExistingAction(ctx context.Context, conflicts *existingContentDecider, service CustomizationService, toClient *api.Client, fromRef, toRef SiteRef, label string) (ExistingContentAction, error) {
+	target, err := service.Load(ctx, toClient)
+	if err != nil && !api.IsNotFound(err) {
+		return "", err
+	}
+	if len(target) == 0 {
+		return ExistingContentUpdate, nil
+	}
+	return conflicts.decide(ctx, ExistingContentPrompt{Type: label, Source: fromRef.Site, Target: toRef.Site})
+}
+
+func customizationCopySummary(result CustomizationCopyResult) string {
+	if result.Action == "skip" {
+		return "skipped"
+	}
+	return fmt.Sprintf("%d fields", result.FieldCount)
+}
+
+func countExistingMenus(ctx context.Context, fromClient, toClient *api.Client, query string) (int, int, error) {
+	source, err := listMenuDocuments(ctx, fromClient, query)
+	if err != nil {
+		return 0, 0, err
+	}
+	target, err := listMenuDocuments(ctx, toClient, query)
+	if err != nil {
+		return 0, 0, err
+	}
+	targetBySlug := make(map[string]struct{}, len(target))
+	for _, menu := range target {
+		if slug := api.MenuDocumentSlug(menu); slug != "" {
+			targetBySlug[slug] = struct{}{}
+		}
+	}
+	existing := 0
+	for _, menu := range source {
+		slug := api.MenuDocumentSlug(menu)
+		if _, ok := targetBySlug[slug]; ok && slug != "" {
+			existing++
+		}
+	}
+	return len(source), existing, nil
 }

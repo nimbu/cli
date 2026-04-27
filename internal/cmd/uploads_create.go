@@ -1,11 +1,8 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"mime/multipart"
 	"os"
 	"path/filepath"
 
@@ -70,11 +67,14 @@ func (c *UploadsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	task := output.ProgressFromContext(ctx).Transfer("upload "+filename, 0)
-	body, err := newMultipartFileBody(c.File, filename, task)
+	content, err := os.ReadFile(c.File)
 	if err != nil {
 		task.Fail(err)
 		return err
 	}
+	task.SetTotal(int64(len(content)))
+	task.Add(int64(len(content)))
+	body := api.NewUploadCreatePayload(filename, content, "")
 	var upload api.Upload
 	if err := client.Post(ctx, "/uploads", body, &upload); err != nil {
 		task.Fail(err)
@@ -96,65 +96,4 @@ func (c *UploadsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		}
 		return nil
 	})
-}
-
-func newMultipartFileBody(path string, filename string, task *output.Task) (api.RequestBody, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return api.RequestBody{}, fmt.Errorf("stat file: %w", err)
-	}
-
-	headerBuf := &bytes.Buffer{}
-	writer := multipart.NewWriter(headerBuf)
-	if _, err := writer.CreateFormFile("file", filename); err != nil {
-		return api.RequestBody{}, fmt.Errorf("create form file: %w", err)
-	}
-	headerLen := headerBuf.Len()
-	if err := writer.Close(); err != nil {
-		return api.RequestBody{}, fmt.Errorf("close multipart writer: %w", err)
-	}
-	payload := headerBuf.Bytes()
-	header := append([]byte(nil), payload[:headerLen]...)
-	footer := append([]byte(nil), payload[headerLen:]...)
-	contentType := writer.FormDataContentType()
-	contentLength := int64(len(header)) + info.Size() + int64(len(footer))
-	task.SetTotal(contentLength)
-
-	buildReader := func(reset bool) (io.ReadCloser, error) {
-		if reset {
-			task.ResetProgress()
-		}
-		file, err := os.Open(path)
-		if err != nil {
-			return nil, fmt.Errorf("open file: %w", err)
-		}
-		reader := io.MultiReader(bytes.NewReader(header), file, bytes.NewReader(footer))
-		return &multipartBodyReadCloser{Reader: task.WrapReader(reader), file: file}, nil
-	}
-
-	reader, err := buildReader(false)
-	if err != nil {
-		return api.RequestBody{}, err
-	}
-
-	return api.RequestBody{
-		Reader: reader,
-		GetBody: func() (io.ReadCloser, error) {
-			return buildReader(true)
-		},
-		ContentType:   contentType,
-		ContentLength: contentLength,
-	}, nil
-}
-
-type multipartBodyReadCloser struct {
-	io.Reader
-	file *os.File
-}
-
-func (r *multipartBodyReadCloser) Close() error {
-	if r.file == nil {
-		return nil
-	}
-	return r.file.Close()
 }

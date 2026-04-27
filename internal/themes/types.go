@@ -68,6 +68,7 @@ type Result struct {
 	Skipped          []Action `json:"skipped,omitempty"`
 	Theme            string   `json:"theme"`
 	Uploaded         []Action `json:"uploaded,omitempty"`
+	Warnings         []string `json:"warnings,omitempty"`
 	TimelineRendered bool     `json:"-"`
 }
 

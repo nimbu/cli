@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/nimbu/cli/internal/api"
@@ -169,6 +170,74 @@ func TestRunPushForceBypassesConflictPrompt(t *testing.T) {
 	}
 }
 
+func TestRunPushOrdersUploadsByLiquidDependencies(t *testing.T) {
+	root := t.TempDir()
+	writeThemeTestFile(t, root, "snippets/atoms/button.liquid", "button")
+	writeThemeTestFile(t, root, "snippets/body.liquid", `{% include "atoms/button.liquid" %}`)
+	writeThemeTestFile(t, root, "layouts/default.liquid", "layout")
+	writeThemeTestFile(t, root, "templates/page.liquid", `{% layout "default.liquid" %}{% include "body" %}`)
+	writeThemeTestFile(t, root, "images/logo.svg", "<svg></svg>")
+
+	var uploads []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/themes/demo/snippets", "/themes/demo/layouts", "/themes/demo/templates", "/themes/demo/assets":
+			uploads = append(uploads, r.URL.Path)
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	result, err := RunPush(context.Background(), api.New(server.URL, ""), themeAllRootsTestConfig(root), Options{All: true})
+	if err != nil {
+		t.Fatalf("RunPush: %v", err)
+	}
+
+	got := actionPaths(result.Uploaded)
+	want := []string{
+		"snippets/atoms/button.liquid",
+		"snippets/body.liquid",
+		"layouts/default.liquid",
+		"templates/page.liquid",
+		"logo.svg",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("uploaded order = %#v, want %#v", got, want)
+	}
+	wantUploads := []string{
+		"/themes/demo/snippets",
+		"/themes/demo/snippets",
+		"/themes/demo/layouts",
+		"/themes/demo/templates",
+		"/themes/demo/assets",
+	}
+	if !reflect.DeepEqual(uploads, wantUploads) {
+		t.Fatalf("request order = %#v, want %#v", uploads, wantUploads)
+	}
+}
+
+func TestUploadCategoriesFollowOrderedResourceRuns(t *testing.T) {
+	got := uploadCategoriesForOrderedResources([]Resource{
+		{Kind: KindLayout},
+		{Kind: KindSnippet},
+		{Kind: KindSnippet},
+		{Kind: KindLayout},
+	})
+
+	wantLabels := []string{"layouts", "snippets", "layouts"}
+	wantCounts := []int{1, 2, 1}
+	if len(got) != len(wantLabels) {
+		t.Fatalf("categories = %#v", got)
+	}
+	for i, category := range got {
+		if category.Label != wantLabels[i] || category.Count != wantCounts[i] {
+			t.Fatalf("category[%d] = %#v, want label=%q count=%d", i, category, wantLabels[i], wantCounts[i])
+		}
+	}
+}
+
 func themeTestConfig(root string) Config {
 	return Config{
 		ProjectRoot: root,
@@ -179,6 +248,27 @@ func themeTestConfig(root string) Config {
 			LocalPath: "templates",
 		}},
 	}
+}
+
+func themeAllRootsTestConfig(root string) Config {
+	return Config{
+		ProjectRoot: root,
+		Theme:       "demo",
+		Roots: []RootSpec{
+			{AbsPath: filepath.Join(root, "snippets"), Kind: KindSnippet, LocalPath: "snippets"},
+			{AbsPath: filepath.Join(root, "layouts"), Kind: KindLayout, LocalPath: "layouts"},
+			{AbsPath: filepath.Join(root, "templates"), Kind: KindTemplate, LocalPath: "templates"},
+			{AbsPath: filepath.Join(root, "images"), Kind: KindAsset, LocalPath: "images", RemoteBase: ""},
+		},
+	}
+}
+
+func actionPaths(actions []Action) []string {
+	paths := make([]string, len(actions))
+	for i, action := range actions {
+		paths[i] = action.DisplayPath
+	}
+	return paths
 }
 
 func writeThemeTestFile(t *testing.T, root, rel, content string) {

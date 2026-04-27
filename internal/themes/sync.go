@@ -47,18 +47,14 @@ func run(ctx context.Context, client *api.Client, cfg Config, opts Options, mode
 		return result, err
 	}
 
-	// Sort uploads in dependency order
-	orderedUploads := SortByKindOrder(uploads)
-	uploadsByKind := GroupByKind(orderedUploads)
-	result.Deleted = toActions(deletes)
-
-	// Build category list for timeline
-	var categories []output.SyncCategory
-	for _, k := range KindOrder {
-		if n := len(uploadsByKind[k]); n > 0 {
-			categories = append(categories, output.SyncCategory{Label: k.Collection(), Count: n})
-		}
+	// Sort uploads in dependency order.
+	orderedUploads, dependencyWarnings, err := orderUploadsByDependencies(uploads)
+	if err != nil {
+		return result, err
 	}
+	result.Warnings = append(result.Warnings, dependencyWarnings...)
+	result.Deleted = toActions(deletes)
+	categories := uploadCategoriesForOrderedResources(orderedUploads)
 
 	tl := output.SyncTimelineFromContext(ctx)
 
@@ -88,9 +84,8 @@ func run(ctx context.Context, client *api.Client, cfg Config, opts Options, mode
 	}
 
 	// Upload loop (dependency-ordered).
-	// catIdx tracks position in the categories slice, which is built from the
-	// same KindOrder iteration as orderedUploads — so kind transitions in the
-	// sorted uploads always align 1:1 with category indices.
+	// Categories are built from the same ordered upload stream, so the timeline
+	// remains correct even if an unusual dependency creates repeated kind runs.
 	catIdx := -1
 	currentKind := Kind("")
 	for _, resource := range orderedUploads {
@@ -221,6 +216,43 @@ func formatAPIError(err error) string {
 		return apiErr.Message
 	}
 	return err.Error()
+}
+
+func orderUploadsByDependencies(resources []Resource) ([]Resource, []string, error) {
+	items := make([]ResourceContent, 0, len(resources))
+	for _, resource := range resources {
+		item := ResourceContent{Resource: resource}
+		if resource.Kind != KindAsset {
+			content, err := readFile(resource.AbsPath)
+			if err != nil {
+				return nil, nil, fmt.Errorf("read %s: %w", resource.DisplayPath, err)
+			}
+			item.Content = content
+		}
+		items = append(items, item)
+	}
+	orderedItems, warnings := OrderResourceContentByLiquidDependencies(items)
+	ordered := make([]Resource, len(orderedItems))
+	for i, item := range orderedItems {
+		ordered[i] = item.Resource
+	}
+	return ordered, warnings, nil
+}
+
+func uploadCategoriesForOrderedResources(resources []Resource) []output.SyncCategory {
+	if len(resources) == 0 {
+		return nil
+	}
+	categories := make([]output.SyncCategory, 0, len(resources))
+	for _, resource := range resources {
+		label := resource.Kind.Collection()
+		if len(categories) == 0 || categories[len(categories)-1].Label != label {
+			categories = append(categories, output.SyncCategory{Label: label, Count: 1})
+			continue
+		}
+		categories[len(categories)-1].Count++
+	}
+	return categories
 }
 
 func planOperations(ctx context.Context, client *api.Client, cfg Config, opts Options, mode string, allLocal []Resource, localByKey map[resourceKey]Resource, selection *selectionFilter) ([]Resource, []Resource, error) {

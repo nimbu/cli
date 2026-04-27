@@ -722,7 +722,7 @@ func (u *Upload) UnmarshalJSON(data []byte) error {
 		if u.Name == "" {
 			u.Name = payload.Source.Filename
 		}
-		if u.URL == "" {
+		if payload.Source.URL != "" {
 			u.URL = payload.Source.URL
 		}
 		if u.MimeType == "" {

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nimbu/cli/internal/config"
+	"github.com/nimbu/cli/internal/migrate"
 	"github.com/nimbu/cli/internal/output"
 )
 
@@ -122,6 +124,75 @@ func TestSitesCopyDryRunDoesNotWrite(t *testing.T) {
 	}
 	if writes != 0 {
 		t.Fatalf("expected no writes during dry-run, got %d", writes)
+	}
+}
+
+func TestReadSiteCopyConflictDecisionParsesDefaultAndBulkChoices(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		action   migrate.ExistingContentAction
+		applyAll bool
+	}{
+		{name: "default update", input: "\n", action: migrate.ExistingContentUpdate},
+		{name: "review items", input: "r\n", action: migrate.ExistingContentReview},
+		{name: "skip this type", input: "n\n", action: migrate.ExistingContentSkip},
+		{name: "update all remaining", input: "a\n", action: migrate.ExistingContentUpdate, applyAll: true},
+		{name: "skip all remaining", input: "s\n", action: migrate.ExistingContentSkip, applyAll: true},
+		{name: "abort", input: "q\n", action: migrate.ExistingContentAbort},
+		{name: "help then update", input: "?\ny\n", action: migrate.ExistingContentUpdate},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out strings.Builder
+			got, err := readSiteCopyConflictDecision(
+				bufio.NewReader(strings.NewReader(tt.input)),
+				&out,
+				migrate.ExistingContentPrompt{Type: "Menus", Source: "source", Target: "target"},
+			)
+			if err != nil {
+				t.Fatalf("read decision: %v", err)
+			}
+			if got.Action != tt.action || got.ApplyToAll != tt.applyAll {
+				t.Fatalf("decision = %#v, want action=%q applyAll=%v", got, tt.action, tt.applyAll)
+			}
+			if strings.Count(out.String(), "already exist") > 1 {
+				t.Fatalf("prompt repeated full summary after help:\n%s", out.String())
+			}
+		})
+	}
+}
+
+func TestReadSiteCopyItemConflictDecisionParsesBulkChoices(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		action   migrate.ExistingContentAction
+		applyAll bool
+	}{
+		{name: "default update item", input: "\n", action: migrate.ExistingContentUpdate},
+		{name: "skip item", input: "n\n", action: migrate.ExistingContentSkip},
+		{name: "update remaining items", input: "a\n", action: migrate.ExistingContentUpdate, applyAll: true},
+		{name: "skip remaining items", input: "s\n", action: migrate.ExistingContentSkip, applyAll: true},
+		{name: "abort", input: "q\n", action: migrate.ExistingContentAbort},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out strings.Builder
+			got, err := readSiteCopyItemConflictDecision(
+				bufio.NewReader(strings.NewReader(tt.input)),
+				&out,
+				migrate.ExistingContentPrompt{Type: "Channels", Item: "articles", Source: "source", Target: "target"},
+			)
+			if err != nil {
+				t.Fatalf("read item decision: %v", err)
+			}
+			if got.Action != tt.action || got.ApplyToAll != tt.applyAll {
+				t.Fatalf("decision = %#v, want action=%q applyAll=%v", got, tt.action, tt.applyAll)
+			}
+		})
 	}
 }
 

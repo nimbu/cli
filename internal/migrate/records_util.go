@@ -25,7 +25,7 @@ func (c *recordCopier) prepareAttachments(ctx context.Context, payload map[strin
 		}
 		file, ok := raw.(map[string]any)
 		if !ok {
-			emitWarning(ctx, fmt.Sprintf("%s.%s: unexpected file format %T, skipping attachment", info.resource, field.Name, raw))
+			emitStageWarning(ctx, info.stage, fmt.Sprintf("%s.%s: unexpected file format %T, skipping attachment", info.resource, field.Name, raw))
 			continue
 		}
 		if err := c.embedFile(ctx, file); err != nil {
@@ -39,7 +39,7 @@ func (c *recordCopier) prepareAttachments(ctx context.Context, payload map[strin
 		}
 		gallery, ok := raw.(map[string]any)
 		if !ok {
-			emitWarning(ctx, fmt.Sprintf("%s.%s: unexpected gallery format %T, skipping", info.resource, field.Name, raw))
+			emitStageWarning(ctx, info.stage, fmt.Sprintf("%s.%s: unexpected gallery format %T, skipping", info.resource, field.Name, raw))
 			continue
 		}
 		gallery["__type"] = "Gallery"

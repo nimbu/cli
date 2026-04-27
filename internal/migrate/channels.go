@@ -26,6 +26,14 @@ type ChannelCopyResult struct {
 	Placeholders []string          `json:"placeholders,omitempty"`
 }
 
+// ChannelCopyOptions controls channel copy behavior.
+type ChannelCopyOptions struct {
+	DryRun          bool
+	Existing        ExistingContentAction
+	ResolveExisting ExistingContentResolver
+	reviewAll       *ExistingContentAction
+}
+
 // ChannelDiffResult reports channel-level and field-level differences.
 type ChannelDiffResult struct {
 	From        ChannelRef `json:"from"`
@@ -49,7 +57,7 @@ func CopyChannel(ctx context.Context, fromClient, toClient *api.Client, fromRef,
 	if err != nil {
 		return ChannelCopyResult{From: fromRef.SiteRef, To: toRef.SiteRef}, err
 	}
-	item, err := copyChannelDetail(ctx, toClient, detail, toRef.Channel, false)
+	item, err := copyChannelDetail(ctx, toClient, detail, toRef.Channel, ChannelCopyOptions{Existing: ExistingContentUpdate})
 	if err != nil {
 		return ChannelCopyResult{From: fromRef.SiteRef, To: toRef.SiteRef}, err
 	}
@@ -58,19 +66,30 @@ func CopyChannel(ctx context.Context, fromClient, toClient *api.Client, fromRef,
 
 // CopyAllChannels copies all channels from source to target.
 func CopyAllChannels(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, dryRun bool) (ChannelCopyResult, error) {
+	return CopyAllChannelsWithOptions(ctx, fromClient, toClient, fromRef, toRef, ChannelCopyOptions{
+		DryRun:   dryRun,
+		Existing: ExistingContentUpdate,
+	})
+}
+
+// CopyAllChannelsWithOptions copies all channels from source to target.
+func CopyAllChannelsWithOptions(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, opts ChannelCopyOptions) (ChannelCopyResult, error) {
 	channels, err := api.ListChannelDetails(ctx, fromClient)
 	if err != nil {
 		return ChannelCopyResult{From: fromRef, To: toRef}, err
 	}
+	opts.Existing = normalizeExistingContentAction(opts.Existing)
 
 	graph := api.BuildChannelDependencyGraph(channels)
 	ordered := topoSortChannels(channels, graph)
 	result := ChannelCopyResult{From: fromRef, To: toRef}
 	total := len(ordered)
+	reviewAll := ExistingContentAction("")
+	opts.reviewAll = &reviewAll
 	for i, channel := range ordered {
 		emitStageItem(ctx, "Channels", channel.Slug, int64(i+1), int64(total))
 		if graph.HasCircularDependencies(channel.Slug) {
-			created, err := ensureCircularPlaceholder(ctx, toClient, channel.Slug, dryRun)
+			created, err := ensureCircularPlaceholder(ctx, toClient, channel.Slug, opts.DryRun)
 			if err != nil {
 				return result, err
 			}
@@ -78,7 +97,7 @@ func CopyAllChannels(ctx context.Context, fromClient, toClient *api.Client, from
 				result.Placeholders = append(result.Placeholders, channel.Slug)
 			}
 		}
-		item, err := copyChannelDetail(ctx, toClient, channel, channel.Slug, dryRun)
+		item, err := copyChannelDetail(ctx, toClient, channel, channel.Slug, opts)
 		if err != nil {
 			return result, fmt.Errorf("copy channel %s: %w", channel.Slug, err)
 		}
@@ -136,7 +155,7 @@ func ChannelTypeScript(detail api.ChannelDetail) string {
 	return strings.Join(lines, "\n")
 }
 
-func copyChannelDetail(ctx context.Context, client *api.Client, detail api.ChannelDetail, targetSlug string, dryRun bool) (ChannelCopyItem, error) {
+func copyChannelDetail(ctx context.Context, client *api.Client, detail api.ChannelDetail, targetSlug string, opts ChannelCopyOptions) (ChannelCopyItem, error) {
 	wasSubmittable := detail.Submittable
 	sourceFieldIDs := detail.SubmittableFieldIDs
 
@@ -147,15 +166,24 @@ func copyChannelDetail(ctx context.Context, client *api.Client, detail api.Chann
 	err := client.Get(ctx, path, &existing)
 	switch {
 	case err == nil:
+		existingAction, err := resolveExistingItem(ctx, opts.ResolveExisting, ExistingContentPrompt{
+			Type: "Channels", Item: targetSlug, Source: detail.Slug, Target: targetSlug,
+		}, opts.Existing, opts.reviewAll)
+		if err != nil {
+			return ChannelCopyItem{}, err
+		}
+		if existingAction == ExistingContentSkip {
+			return ChannelCopyItem{Source: detail.Slug, Target: targetSlug, Action: "skip"}, nil
+		}
 		action = "update"
 		payload["customizations"] = mergeCustomizations(detail.Customizations, existing.Customizations)
-		if dryRun {
+		if opts.DryRun {
 			action = "dry-run:" + action
 		} else if err := client.Patch(ctx, path, payload, &existing); err != nil {
 			return ChannelCopyItem{}, err
 		}
 	case api.IsNotFound(err):
-		if dryRun {
+		if opts.DryRun {
 			action = "dry-run:" + action
 		} else if err := client.Post(ctx, "/channels", payload, &existing); err != nil {
 			return ChannelCopyItem{}, err
@@ -164,7 +192,7 @@ func copyChannelDetail(ctx context.Context, client *api.Client, detail api.Chann
 		return ChannelCopyItem{}, err
 	}
 
-	if wasSubmittable && !dryRun && len(sourceFieldIDs) > 0 {
+	if wasSubmittable && !opts.DryRun && len(sourceFieldIDs) > 0 {
 		if err := enableSubmittable(ctx, client, detail, targetSlug, sourceFieldIDs); err != nil {
 			return ChannelCopyItem{}, err
 		}

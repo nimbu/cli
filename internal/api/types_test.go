@@ -72,6 +72,7 @@ func TestUploadUnmarshalNestedSourceMetadata(t *testing.T) {
 	var u Upload
 	err := json.Unmarshal([]byte(`{
 		"id":"u1",
+		"url":"https://api.example.test/uploads/u1",
 		"source":{
 			"filename":"hero.jpg",
 			"url":"https://cdn.example.test/hero.jpg",
@@ -87,7 +88,7 @@ func TestUploadUnmarshalNestedSourceMetadata(t *testing.T) {
 		t.Fatalf("expected filename from source, got %q", u.Name)
 	}
 	if u.URL != "https://cdn.example.test/hero.jpg" {
-		t.Fatalf("expected url from source, got %q", u.URL)
+		t.Fatalf("expected source url to override api url, got %q", u.URL)
 	}
 	if u.MimeType != "image/jpeg" {
 		t.Fatalf("expected mime type from source, got %q", u.MimeType)

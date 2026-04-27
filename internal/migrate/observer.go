@@ -39,6 +39,6 @@ func emitSubStageDone(ctx context.Context, stage, sub, summary string) {
 	observer.ObserverFromContext(ctx).SubStageDone(stage, sub, summary)
 }
 
-func emitWarning(ctx context.Context, msg string) {
-	observer.ObserverFromContext(ctx).Warning(msg)
+func emitStageWarning(ctx context.Context, stage, msg string) {
+	observer.ObserverFromContext(ctx).StageWarning(stage, msg)
 }
