@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -73,6 +75,7 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 	proxy, err := devproxy.New(devproxy.Config{
 		APIURL:            client.BaseURL,
 		Debug:             flags.Debug,
+		DevToken:          runtimeCfg.DevToken,
 		EventsJSON:        c.EventsJSON,
 		ExcludeRules:      runtimeCfg.RouteExclude,
 		Host:              runtimeCfg.ProxyHost,
@@ -101,18 +104,7 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("parse proxy URL: %w", err)
 	}
 
-	childEnv := make(map[string]string, len(runtimeCfg.ChildEnv)+4)
-	for key, value := range runtimeCfg.ChildEnv {
-		childEnv[key] = value
-	}
-	childEnv["NIMBU_PROXY_URL"] = proxy.URL()
-	childEnv["NIMBU_PROXY_HOST"] = proxyURL.Hostname()
-	childEnv["NIMBU_PROXY_PORT"] = proxyURL.Port()
-	if site != "" {
-		if _, exists := childEnv["NIMBU_SITE"]; !exists {
-			childEnv["NIMBU_SITE"] = site
-		}
-	}
+	childEnv := buildServerChildEnv(runtimeCfg, proxyURL, proxy.URL(), site)
 
 	summary := serverSummary{
 		APIHost:      serverAPIHost(client.BaseURL),
@@ -278,6 +270,23 @@ func stopDevProxy(proxy *devproxy.Server) {
 	cancel()
 }
 
+func buildServerChildEnv(runtimeCfg serverRuntimeConfig, proxyURL *url.URL, proxyURLString string, site string) map[string]string {
+	childEnv := make(map[string]string, len(runtimeCfg.ChildEnv)+5)
+	for key, value := range runtimeCfg.ChildEnv {
+		childEnv[key] = value
+	}
+	childEnv["NIMBU_PROXY_URL"] = proxyURLString
+	childEnv["NIMBU_PROXY_HOST"] = proxyURL.Hostname()
+	childEnv["NIMBU_PROXY_PORT"] = proxyURL.Port()
+	childEnv["NIMBU_DEV_PROXY_TOKEN"] = runtimeCfg.DevToken
+	if site != "" {
+		if _, exists := childEnv["NIMBU_SITE"]; !exists {
+			childEnv["NIMBU_SITE"] = site
+		}
+	}
+	return childEnv
+}
+
 func (c *ServerCmd) validateLogin(ctx context.Context, client *api.Client) error {
 	var user map[string]any
 	// use raw Request to avoid scope-specific endpoints; /user is already used in toolbelt.
@@ -293,6 +302,7 @@ type serverRuntimeConfig struct {
 	ChildCWD          string
 	ChildEnv          map[string]string
 	MaxBodyMB         int
+	DevToken          string
 	ProjectRoot       string
 	ProxyHost         string
 	ProxyPort         int
@@ -460,10 +470,23 @@ func (c *ServerCmd) resolveRuntimeConfig() (serverRuntimeConfig, []string, error
 			return serverRuntimeConfig{}, warnings, fmt.Errorf("invalid ready URL: %w", parseErr)
 		}
 	}
+	token, err := generateDevProxyToken()
+	if err != nil {
+		return serverRuntimeConfig{}, warnings, fmt.Errorf("generate dev proxy token: %w", err)
+	}
+	cfg.DevToken = token
 
 	cfg.RouteInclude = normalizeRules(cfg.RouteInclude)
 	cfg.RouteExclude = normalizeRules(cfg.RouteExclude)
 	return cfg, warnings, nil
+}
+
+func generateDevProxyToken() (string, error) {
+	var raw [32]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(raw[:]), nil
 }
 
 func resolveFromProjectRoot(projectRoot string, value string) string {

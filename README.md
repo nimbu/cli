@@ -290,8 +290,6 @@ dev:
       - "5173"
     cwd: .
     ready_url: http://127.0.0.1:5173
-    env:
-      NIMBU_PROXY_URL: http://127.0.0.1:4568
   routes:
     include:
       - POST /.well-known/*
@@ -332,12 +330,55 @@ Runtime notes:
 - Use `--quiet-requests` to hide request lines.
 - Child should proxy simulator requests to `NIMBU_PROXY_URL`.
 - Vite starters may still accept `VITE_NIMBU_PROXY_URL` as a compatibility fallback, but `NIMBU_PROXY_URL` is the preferred name.
+- `nimbu server` passes `NIMBU_DEV_PROXY_TOKEN` to the child dev server. Tools such as Vite can use it with `NIMBU_PROXY_URL` to register in-memory template overlays at `PUT /__nimbu/dev/templates/overlays` and clear them with `DELETE /__nimbu/dev/templates/overlays`.
+- Template overlays are local-only, are never written to disk, and override disk templates with the same type/path while the dev proxy is running.
 
 Override example:
 
 ```bash
 nimbu server --cmd pnpm --arg vite --arg --port --arg 5173 --ready-url http://127.0.0.1:5173
 ```
+
+### Dev Server Integration
+
+Any dev server can integrate with `nimbu server` by reading the runtime environment that the CLI injects into the child process:
+
+```bash
+NIMBU_PROXY_URL        # Full simulator proxy URL, for example http://127.0.0.1:4568
+NIMBU_PROXY_HOST       # Proxy host
+NIMBU_PROXY_PORT       # Proxy port
+NIMBU_DEV_PROXY_TOKEN  # Per-process token for local dev proxy APIs
+NIMBU_SITE             # Current site ID, when available
+```
+
+The generated values override matching keys from `dev.server.env`, so project config cannot accidentally point the child at an old proxy or stale token.
+
+Dev server responsibilities:
+
+- Serve assets and HMR from the child dev server as usual.
+- Proxy page and form requests that should render through Nimbu to `NIMBU_PROXY_URL`.
+- Use `NIMBU_DEV_PROXY_TOKEN` only for local calls to `NIMBU_PROXY_URL`; do not expose it to browser code.
+- Fail startup or show a clear terminal error if required overlay registration fails while `NIMBU_DEV_PROXY_TOKEN` is present.
+
+Template overlays let a dev server provide virtual Liquid files without writing generated snippets to disk. Register the complete current overlay set with:
+
+```http
+PUT /__nimbu/dev/templates/overlays
+X-Nimbu-Dev-Token: <NIMBU_DEV_PROXY_TOKEN>
+Content-Type: application/json
+
+{
+  "templates": [
+    {
+      "type": "snippets",
+      "path": "bundle_app.liquid",
+      "content": "{% assign app_bundle_build_timestamp = \"dev\" %}\n"
+    }
+  ]
+}
+```
+
+The `type` must be `layouts`, `templates`, or `snippets`; `path` is relative to that type and must end in `.liquid` or `.liquid.haml`. `PUT` replaces the full overlay set, so send every active virtual template each time. Send `{"templates":[]}` or call `DELETE /__nimbu/dev/templates/overlays` to clear overlays.
 
 ### Theme Push/Sync Commands
 

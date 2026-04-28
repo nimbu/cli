@@ -10,13 +10,25 @@ import (
 	"fmt"
 	"io"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"sort"
 	"strings"
 )
 
-func buildCompressedTemplates(root string) (compressed string, fingerprint string, err error) {
+// TemplateOverlay is an in-memory template replacement supplied by the local dev server.
+type TemplateOverlay struct {
+	Content string `json:"content"`
+	Path    string `json:"path"`
+	Type    string `json:"type"`
+}
+
+func buildCompressedTemplates(root string, overlays []TemplateOverlay) (compressed string, fingerprint string, err error) {
 	entries, err := collectTemplateEntries(root)
+	if err != nil {
+		return "", "", err
+	}
+	normalized, err := normalizedOverlays(overlays)
 	if err != nil {
 		return "", "", err
 	}
@@ -37,6 +49,10 @@ func buildCompressedTemplates(root string) (compressed string, fingerprint strin
 		_, _ = io.WriteString(hash, entry.Content)
 		_, _ = io.WriteString(hash, "\n")
 	}
+	for _, overlay := range normalized {
+		templates[overlay.Type][overlay.Path] = overlay.Content
+		writeOverlayHash(hash, overlay)
+	}
 
 	jsonData, err := json.Marshal(templates)
 	if err != nil {
@@ -55,8 +71,12 @@ func buildCompressedTemplates(root string) (compressed string, fingerprint strin
 	return base64.StdEncoding.EncodeToString(buf.Bytes()), hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func computeTemplateFingerprint(root string) (string, error) {
+func computeTemplateFingerprint(root string, overlays []TemplateOverlay) (string, error) {
 	entries, err := collectTemplateEntries(root)
+	if err != nil {
+		return "", err
+	}
+	normalized, err := normalizedOverlays(overlays)
 	if err != nil {
 		return "", err
 	}
@@ -71,7 +91,78 @@ func computeTemplateFingerprint(root string) (string, error) {
 		_, _ = io.WriteString(hash, entry.Content)
 		_, _ = io.WriteString(hash, "\n")
 	}
+	for _, overlay := range normalized {
+		writeOverlayHash(hash, overlay)
+	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func writeOverlayHash(hash io.Writer, overlay TemplateOverlay) {
+	_, _ = io.WriteString(hash, "overlay|")
+	_, _ = io.WriteString(hash, overlay.Type)
+	_, _ = io.WriteString(hash, "|")
+	_, _ = io.WriteString(hash, overlay.Path)
+	_, _ = io.WriteString(hash, "|")
+	_, _ = io.WriteString(hash, fmt.Sprintf("%d\n", len(overlay.Content)))
+	_, _ = io.WriteString(hash, overlay.Content)
+	_, _ = io.WriteString(hash, "\n")
+}
+
+func templateTypeAllowed(value string) bool {
+	for _, dir := range templateDirs {
+		if value == dir {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeOverlayPath(value string) (string, error) {
+	slashed := strings.ReplaceAll(strings.TrimSpace(value), "\\", "/")
+	clean := pathpkg.Clean(slashed)
+	if clean == "." || clean == "" ||
+		strings.HasPrefix(slashed, "/") ||
+		strings.HasPrefix(clean, "../") ||
+		clean == ".." ||
+		filepath.IsAbs(value) ||
+		isWindowsDrivePath(clean) {
+		return "", fmt.Errorf("invalid overlay path %q", value)
+	}
+	return clean, nil
+}
+
+func isWindowsDrivePath(value string) bool {
+	return len(value) >= 2 && value[1] == ':'
+}
+
+func normalizedOverlays(overlays []TemplateOverlay) ([]TemplateOverlay, error) {
+	out := make([]TemplateOverlay, 0, len(overlays))
+	seen := map[string]struct{}{}
+	for _, overlay := range overlays {
+		if !templateTypeAllowed(overlay.Type) {
+			return nil, fmt.Errorf("invalid overlay template type %q", overlay.Type)
+		}
+		cleanPath, err := normalizeOverlayPath(overlay.Path)
+		if err != nil {
+			return nil, err
+		}
+		if !isTemplateFile(cleanPath) {
+			return nil, fmt.Errorf("overlay template path must end in .liquid or .liquid.haml: %s", cleanPath)
+		}
+		key := overlay.Type + "/" + cleanPath
+		if _, ok := seen[key]; ok {
+			return nil, fmt.Errorf("duplicate overlay template %s", key)
+		}
+		seen[key] = struct{}{}
+		out = append(out, TemplateOverlay{Type: overlay.Type, Path: cleanPath, Content: overlay.Content})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Type == out[j].Type {
+			return out[i].Path < out[j].Path
+		}
+		return out[i].Type < out[j].Type
+	})
+	return out, nil
 }
 
 type templateEntry struct {

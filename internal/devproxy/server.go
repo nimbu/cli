@@ -2,9 +2,11 @@ package devproxy
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -25,6 +27,7 @@ type SimulatorClient interface {
 type Config struct {
 	APIURL            string
 	Debug             bool
+	DevToken          string
 	EventsJSON        bool
 	ExcludeRules      []string
 	Host              string
@@ -150,6 +153,7 @@ func (s *Server) URL() string {
 
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health", s.handleHealth)
+	mux.HandleFunc("/__nimbu/dev/templates/overlays", s.handleTemplateOverlays)
 
 	for _, staticDir := range []string{"images", "fonts", "css", "stylesheets", "js", "javascripts"} {
 		prefix := "/" + staticDir + "/"
@@ -175,6 +179,62 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = jsonNewEncoder(w, status)
+}
+
+type templateOverlayRequest struct {
+	Templates []TemplateOverlay `json:"templates"`
+}
+
+type templateOverlayResponse struct {
+	OK    bool `json:"ok"`
+	Count int  `json:"count"`
+}
+
+func (s *Server) handleTemplateOverlays(w http.ResponseWriter, req *http.Request) {
+	if !validDevToken(s.config.DevToken, req.Header.Get("X-Nimbu-Dev-Token")) {
+		writeJSONError(w, http.StatusUnauthorized, "Unauthorized", "invalid dev proxy token")
+		return
+	}
+
+	switch req.Method {
+	case http.MethodDelete:
+		if err := s.cache.SetOverlays(nil); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Template Overlay Error", err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = jsonNewEncoder(w, templateOverlayResponse{OK: true, Count: 0})
+	case http.MethodPut:
+		var payload templateOverlayRequest
+		decoder := json.NewDecoder(http.MaxBytesReader(w, req.Body, 1<<20))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&payload); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "Bad Request", err.Error())
+			return
+		}
+		var trailing any
+		if err := decoder.Decode(&trailing); err != io.EOF {
+			writeJSONError(w, http.StatusBadRequest, "Bad Request", "request body must contain a single JSON object")
+			return
+		}
+		if err := s.cache.SetOverlays(payload.Templates); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "Bad Request", err.Error())
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = jsonNewEncoder(w, templateOverlayResponse{OK: true, Count: len(payload.Templates)})
+	default:
+		w.Header().Set("Allow", "PUT, DELETE")
+		writeJSONError(w, http.StatusMethodNotAllowed, "Method Not Allowed", "overlay endpoint only accepts PUT or DELETE")
+	}
+}
+
+func validDevToken(expected string, actual string) bool {
+	if expected == "" || actual == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(expected), []byte(actual)) == 1
 }
 
 func (s *Server) handleCatchAll(w http.ResponseWriter, req *http.Request) {
