@@ -183,4 +183,7 @@ func TestCompileSelectionFilterRejectsInvalidSelector(t *testing.T) {
 	if _, err := compileSelectionFilter(cfg, Options{Selectors: []string{"/tmp/theme.css"}}); err == nil {
 		t.Fatal("expected absolute selector error")
 	}
+	if _, err := compileSelectionFilter(cfg, Options{Selectors: []string{`C:\tmp\theme.css`}}); err == nil {
+		t.Fatal("expected Windows drive selector error")
+	}
 }
