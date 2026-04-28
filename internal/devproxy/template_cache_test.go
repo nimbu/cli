@@ -145,3 +145,87 @@ func TestTemplateCacheStaleFlagReturnedToConcurrentWaiters(t *testing.T) {
 		}
 	}
 }
+
+func TestTemplateCacheSetOverlaysInvalidatesPayload(t *testing.T) {
+	root := t.TempDir()
+	templatesDir := filepath.Join(root, "templates")
+	if err := os.MkdirAll(templatesDir, 0o755); err != nil {
+		t.Fatalf("mkdir templates: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(templatesDir, "index.liquid"), []byte("hello"), 0o644); err != nil {
+		t.Fatalf("write template: %v", err)
+	}
+
+	cache := NewTemplateCache(root, false, 2*time.Second, &Logger{})
+	if err := cache.Start(); err != nil {
+		t.Fatalf("start cache: %v", err)
+	}
+	defer func() { _ = cache.Stop() }()
+
+	first, stale, err := cache.GetCompressed()
+	if err != nil {
+		t.Fatalf("first get compressed: %v", err)
+	}
+	if stale {
+		t.Fatal("first payload should not be stale")
+	}
+
+	if err := cache.SetOverlays([]TemplateOverlay{
+		{Type: "snippets", Path: "bundle_app.liquid", Content: "virtual bundle"},
+	}); err != nil {
+		t.Fatalf("set overlays: %v", err)
+	}
+
+	second, stale, err := cache.GetCompressed()
+	if err != nil {
+		t.Fatalf("second get compressed: %v", err)
+	}
+	if stale {
+		t.Fatal("overlay rebuild should not be stale")
+	}
+	if first == second {
+		t.Fatal("payload should change after setting overlays")
+	}
+	if got := cache.Status().OverlayCount; got != 1 {
+		t.Fatalf("overlay count = %d, want 1", got)
+	}
+}
+
+func TestTemplateCacheSetOverlaysRejectsInvalidPath(t *testing.T) {
+	root := t.TempDir()
+	cache := NewTemplateCache(root, false, 2*time.Second, &Logger{})
+
+	err := cache.SetOverlays([]TemplateOverlay{
+		{Type: "snippets", Path: "../escape.liquid", Content: "bad"},
+	})
+	if err == nil {
+		t.Fatal("expected invalid overlay path error")
+	}
+}
+
+func TestTemplateCacheOverlayVersionChangeKeepsCacheDirty(t *testing.T) {
+	cache := NewTemplateCache(t.TempDir(), false, 2*time.Second, &Logger{})
+	if err := cache.SetOverlays([]TemplateOverlay{
+		{Type: "snippets", Path: "bundle_app.liquid", Content: "first"},
+	}); err != nil {
+		t.Fatalf("set overlays: %v", err)
+	}
+	overlays, version := cache.overlaysSnapshot()
+
+	if err := cache.SetOverlays([]TemplateOverlay{
+		{Type: "snippets", Path: "bundle_app.liquid", Content: "second"},
+	}); err != nil {
+		t.Fatalf("replace overlays: %v", err)
+	}
+
+	compressed, fingerprint, err := buildCompressedTemplates(cache.root, overlays)
+	if err != nil {
+		t.Fatalf("build stale compressed templates: %v", err)
+	}
+	if cache.commitRebuild(version, compressed, fingerprint) {
+		t.Fatal("stale rebuild result should not be committed")
+	}
+	if !cache.Status().Dirty {
+		t.Fatal("cache should remain dirty after rejecting stale rebuild")
+	}
+}

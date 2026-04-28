@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"encoding/hex"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -102,6 +104,76 @@ dev:
 	}
 	if cfg.WatchScanInterval != 5*time.Second {
 		t.Fatalf("scan interval mismatch: %s", cfg.WatchScanInterval)
+	}
+}
+
+func TestServerResolveRuntimeConfigAddsDevProxyToken(t *testing.T) {
+	root := t.TempDir()
+	projectConfig := `dev:
+  server:
+    command: pnpm
+    args:
+      - vite
+`
+	if err := os.WriteFile(filepath.Join(root, "nimbu.yml"), []byte(projectConfig), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldWD) }()
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	cfg, _, err := (&ServerCmd{}).resolveRuntimeConfig()
+	if err != nil {
+		t.Fatalf("resolve runtime config: %v", err)
+	}
+	if cfg.DevToken == "" {
+		t.Fatal("expected dev proxy token")
+	}
+	decoded, err := hex.DecodeString(cfg.DevToken)
+	if err != nil {
+		t.Fatalf("dev token should be hex: %v", err)
+	}
+	if len(decoded) != 32 {
+		t.Fatalf("decoded dev token length = %d, want 32", len(decoded))
+	}
+}
+
+func TestBuildServerChildEnvAddsGeneratedProxyValues(t *testing.T) {
+	proxyURL, err := url.Parse("http://127.0.0.1:4568")
+	if err != nil {
+		t.Fatalf("parse proxy URL: %v", err)
+	}
+	runtimeCfg := serverRuntimeConfig{
+		ChildEnv: map[string]string{
+			"NIMBU_DEV_PROXY_TOKEN": "from-config",
+			"NIMBU_PROXY_URL":       "from-config",
+			"NIMBU_SITE":            "from-config-site",
+		},
+		DevToken: "generated-token",
+	}
+
+	env := buildServerChildEnv(runtimeCfg, proxyURL, "http://127.0.0.1:4568", "runtime-site")
+
+	if got := env["NIMBU_DEV_PROXY_TOKEN"]; got != "generated-token" {
+		t.Fatalf("NIMBU_DEV_PROXY_TOKEN = %q, want generated-token", got)
+	}
+	if got := env["NIMBU_PROXY_URL"]; got != "http://127.0.0.1:4568" {
+		t.Fatalf("NIMBU_PROXY_URL = %q", got)
+	}
+	if got := env["NIMBU_PROXY_HOST"]; got != "127.0.0.1" {
+		t.Fatalf("NIMBU_PROXY_HOST = %q", got)
+	}
+	if got := env["NIMBU_PROXY_PORT"]; got != "4568" {
+		t.Fatalf("NIMBU_PROXY_PORT = %q", got)
+	}
+	if got := env["NIMBU_SITE"]; got != "from-config-site" {
+		t.Fatalf("NIMBU_SITE = %q, want existing config site", got)
 	}
 }
 

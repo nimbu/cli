@@ -19,6 +19,7 @@ type CacheStatus struct {
 	Fingerprint         string `json:"fingerprint"`
 	LastBuildAt         string `json:"last_build_at,omitempty"`
 	LastError           string `json:"last_error,omitempty"`
+	OverlayCount        int    `json:"overlay_count"`
 	RebuildCount        uint64 `json:"rebuild_count"`
 	StaleServedCount    uint64 `json:"stale_served_count"`
 	WatchEnabled        bool   `json:"watch_enabled"`
@@ -46,8 +47,10 @@ type TemplateCache struct {
 	lastBuildAt time.Time
 	lastError   string
 	lastStale   bool
+	overlays    []TemplateOverlay
 
 	hits             atomic.Uint64
+	overlayVersion   uint64
 	rebuilds         atomic.Uint64
 	staleServed      atomic.Uint64
 	scanInvalidation atomic.Uint64
@@ -169,6 +172,7 @@ func (c *TemplateCache) Status() CacheStatus {
 		FallbackScanEnabled: c.maxScanEvery > 0,
 		Fingerprint:         c.fingerprint,
 		LastError:           c.lastError,
+		OverlayCount:        len(c.overlays),
 		RebuildCount:        c.rebuilds.Load(),
 		StaleServedCount:    c.staleServed.Load(),
 		WatchEnabled:        c.watchEnabled,
@@ -178,6 +182,28 @@ func (c *TemplateCache) Status() CacheStatus {
 		status.LastBuildAt = c.lastBuildAt.UTC().Format(time.RFC3339Nano)
 	}
 	return status
+}
+
+func (c *TemplateCache) SetOverlays(overlays []TemplateOverlay) error {
+	normalized, err := normalizedOverlays(overlays)
+	if err != nil {
+		return err
+	}
+
+	c.mu.Lock()
+	c.overlays = append([]TemplateOverlay{}, normalized...)
+	c.overlayVersion++
+	c.dirty = true
+	c.mu.Unlock()
+
+	c.logger.Debug("template overlays updated", map[string]any{"count": len(normalized)})
+	return nil
+}
+
+func (c *TemplateCache) overlaysSnapshot() ([]TemplateOverlay, uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]TemplateOverlay{}, c.overlays...), c.overlayVersion
 }
 
 func (c *TemplateCache) markDirty(reason string) {
@@ -192,26 +218,39 @@ func (c *TemplateCache) markDirty(reason string) {
 
 func (c *TemplateCache) rebuild() (string, bool, error) {
 	start := time.Now()
-	compressed, fingerprint, err := buildCompressedTemplates(c.root)
-	if err != nil {
-		return "", false, err
-	}
+	for {
+		overlays, version := c.overlaysSnapshot()
+		compressed, fingerprint, err := buildCompressedTemplates(c.root, overlays)
+		if err != nil {
+			return "", false, err
+		}
+		if !c.commitRebuild(version, compressed, fingerprint) {
+			continue
+		}
 
+		c.rebuilds.Add(1)
+		c.logger.Debug("template cache rebuilt", map[string]any{
+			"duration_ms": time.Since(start).Milliseconds(),
+			"fingerprint": fingerprint,
+		})
+
+		return compressed, false, nil
+	}
+}
+
+func (c *TemplateCache) commitRebuild(version uint64, compressed string, fingerprint string) bool {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	if version != c.overlayVersion {
+		c.dirty = true
+		return false
+	}
 	c.compressed = compressed
 	c.fingerprint = fingerprint
 	c.dirty = false
 	c.lastBuildAt = time.Now().UTC()
 	c.lastError = ""
-	c.mu.Unlock()
-
-	c.rebuilds.Add(1)
-	c.logger.Debug("template cache rebuilt", map[string]any{
-		"duration_ms": time.Since(start).Milliseconds(),
-		"fingerprint": fingerprint,
-	})
-
-	return compressed, false, nil
+	return true
 }
 
 func (c *TemplateCache) watchLoop() {
@@ -268,7 +307,8 @@ func (c *TemplateCache) scanLoop() {
 		case <-c.stopCh:
 			return
 		case <-ticker.C:
-			fingerprint, err := computeTemplateFingerprint(c.root)
+			overlays, _ := c.overlaysSnapshot()
+			fingerprint, err := computeTemplateFingerprint(c.root, overlays)
 			if err != nil {
 				c.logger.Warn("template fallback scan failed", map[string]any{"error": err.Error()})
 				continue

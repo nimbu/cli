@@ -1,12 +1,18 @@
 package devproxy
 
 import (
+	"context"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/nimbu/cli/internal/api"
 )
 
 func TestIsWebSocketUpgradeRequiresConnectionUpgrade(t *testing.T) {
@@ -75,6 +81,216 @@ func TestLoggingMiddlewarePrintsSingleSpacerBeforeFirstRequest(t *testing.T) {
 	}
 	if !strings.Contains(lines[2], "GET /second (200)") {
 		t.Fatalf("unexpected second request log: %q", lines[2])
+	}
+}
+
+func TestTemplateOverlayEndpointRequiresToken(t *testing.T) {
+	server := &Server{
+		cache:  NewTemplateCache(t.TempDir(), false, time.Second, &Logger{}),
+		config: Config{DevToken: "secret"},
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "http://example.com/__nimbu/dev/templates/overlays", strings.NewReader(`{"templates":[]}`))
+	rec := httptest.NewRecorder()
+
+	server.handleTemplateOverlays(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestTemplateOverlayEndpointRejectsWrongToken(t *testing.T) {
+	server := &Server{
+		cache:  NewTemplateCache(t.TempDir(), false, time.Second, &Logger{}),
+		config: Config{DevToken: "secret"},
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "http://example.com/__nimbu/dev/templates/overlays", strings.NewReader(`{"templates":[]}`))
+	req.Header.Set("X-Nimbu-Dev-Token", "wrong")
+	rec := httptest.NewRecorder()
+
+	server.handleTemplateOverlays(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestTemplateOverlayEndpointUpdatesCache(t *testing.T) {
+	cache := NewTemplateCache(t.TempDir(), false, time.Second, &Logger{})
+	server := &Server{
+		cache:  cache,
+		config: Config{DevToken: "secret"},
+	}
+
+	body := `{"templates":[{"type":"snippets","path":"bundle_app.liquid","content":"virtual bundle"}]}`
+	req := httptest.NewRequest(http.MethodPut, "http://example.com/__nimbu/dev/templates/overlays", strings.NewReader(body))
+	req.Header.Set("X-Nimbu-Dev-Token", "secret")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	server.handleTemplateOverlays(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := cache.Status().OverlayCount; got != 1 {
+		t.Fatalf("overlay count = %d, want 1", got)
+	}
+	if !strings.Contains(rec.Body.String(), `"count":1`) {
+		t.Fatalf("response should include count, got %s", rec.Body.String())
+	}
+}
+
+func TestTemplateOverlayEndpointDeleteClearsCache(t *testing.T) {
+	cache := NewTemplateCache(t.TempDir(), false, time.Second, &Logger{})
+	if err := cache.SetOverlays([]TemplateOverlay{
+		{Type: "snippets", Path: "bundle_app.liquid", Content: "virtual bundle"},
+	}); err != nil {
+		t.Fatalf("seed overlays: %v", err)
+	}
+	server := &Server{
+		cache:  cache,
+		config: Config{DevToken: "secret"},
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "http://example.com/__nimbu/dev/templates/overlays", nil)
+	req.Header.Set("X-Nimbu-Dev-Token", "secret")
+	rec := httptest.NewRecorder()
+
+	server.handleTemplateOverlays(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := cache.Status().OverlayCount; got != 0 {
+		t.Fatalf("overlay count = %d, want 0", got)
+	}
+}
+
+func TestTemplateOverlayEndpointRejectsInvalidOverlay(t *testing.T) {
+	cache := NewTemplateCache(t.TempDir(), false, time.Second, &Logger{})
+	server := &Server{
+		cache:  cache,
+		config: Config{DevToken: "secret"},
+	}
+
+	body := `{"templates":[{"type":"snippets","path":"../bundle_app.liquid","content":"bad"}]}`
+	req := httptest.NewRequest(http.MethodPut, "http://example.com/__nimbu/dev/templates/overlays", strings.NewReader(body))
+	req.Header.Set("X-Nimbu-Dev-Token", "secret")
+	rec := httptest.NewRecorder()
+
+	server.handleTemplateOverlays(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTemplateOverlayEndpointRejectsTrailingJSON(t *testing.T) {
+	cache := NewTemplateCache(t.TempDir(), false, time.Second, &Logger{})
+	server := &Server{
+		cache:  cache,
+		config: Config{DevToken: "secret"},
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "http://example.com/__nimbu/dev/templates/overlays", strings.NewReader(`{"templates":[]} {}`))
+	req.Header.Set("X-Nimbu-Dev-Token", "secret")
+	rec := httptest.NewRecorder()
+
+	server.handleTemplateOverlays(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTemplateOverlayEndpointRejectsUnsupportedMethods(t *testing.T) {
+	server := &Server{
+		cache:  NewTemplateCache(t.TempDir(), false, time.Second, &Logger{}),
+		config: Config{DevToken: "secret"},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "http://example.com/__nimbu/dev/templates/overlays", nil)
+	req.Header.Set("X-Nimbu-Dev-Token", "secret")
+	rec := httptest.NewRecorder()
+
+	server.handleTemplateOverlays(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+	if got := rec.Header().Get("Allow"); got != "PUT, DELETE" {
+		t.Fatalf("Allow = %q, want PUT, DELETE", got)
+	}
+}
+
+type captureSimulatorClient struct {
+	payload api.SimulatorPayload
+}
+
+func (c *captureSimulatorClient) SimulatorRender(_ context.Context, payload api.SimulatorPayload) (*api.SimulatorResponse, error) {
+	c.payload = payload
+	return &api.SimulatorResponse{
+		Body:     base64.StdEncoding.EncodeToString([]byte("<html></html>")),
+		Encoding: "base64",
+		Headers:  map[string]string{"Content-Type": "text/html; charset=utf-8"},
+		Status:   200,
+	}, nil
+}
+
+func TestCatchAllUsesRegisteredTemplateOverlay(t *testing.T) {
+	root := t.TempDir()
+	layoutsDir := filepath.Join(root, "layouts")
+	if err := os.MkdirAll(layoutsDir, 0o755); err != nil {
+		t.Fatalf("mkdir layouts: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(layoutsDir, "default.liquid"), []byte("layout"), 0o644); err != nil {
+		t.Fatalf("write layout: %v", err)
+	}
+
+	client := &captureSimulatorClient{}
+	server, err := New(Config{
+		DevToken:     "secret",
+		TemplateRoot: root,
+		Watch:        false,
+	}, client)
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	if err := server.Start(); err != nil {
+		t.Fatalf("start server: %v", err)
+	}
+	defer func() { _ = server.Stop(context.Background()) }()
+
+	overlayBody := `{"templates":[{"type":"snippets","path":"bundle_app.liquid","content":"virtual bundle"}]}`
+	req, err := http.NewRequest(http.MethodPut, server.URL()+"/__nimbu/dev/templates/overlays", strings.NewReader(overlayBody))
+	if err != nil {
+		t.Fatalf("new overlay request: %v", err)
+	}
+	req.Header.Set("X-Nimbu-Dev-Token", "secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("put overlay: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("overlay status = %d", resp.StatusCode)
+	}
+
+	resp, err = http.Get(server.URL() + "/")
+	if err != nil {
+		t.Fatalf("get page: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("page status = %d", resp.StatusCode)
+	}
+
+	templates := decodeCompressedTemplatesForTest(t, client.payload.Simulator.Code)
+	if got := templates["snippets"]["bundle_app.liquid"]; got != "virtual bundle" {
+		t.Fatalf("simulator payload overlay = %q", got)
 	}
 }
 

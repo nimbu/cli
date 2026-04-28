@@ -151,7 +151,7 @@ func compileThemeSelector(value string) (themeSelector, bool, error) {
 	if trimmed == "" {
 		return themeSelector{}, false, nil
 	}
-	if filepath.IsAbs(trimmed) {
+	if isAbsoluteThemePathInput(trimmed) {
 		return themeSelector{}, false, fmt.Errorf("theme selector must be project-relative: %s", value)
 	}
 	normalized := normalizePath(trimmed)
@@ -252,7 +252,7 @@ func normalizeOnlyPath(projectRoot, value string) (string, error) {
 	if trimmed == "" {
 		return "", nil
 	}
-	if filepath.IsAbs(trimmed) {
+	if isAbsoluteThemePathInput(trimmed) {
 		return "", fmt.Errorf("--only path must be project-relative: %s", value)
 	}
 	normalized := normalizePath(trimmed)
@@ -263,6 +263,17 @@ func normalizeOnlyPath(projectRoot, value string) (string, error) {
 		return "", fmt.Errorf("--only path must stay inside project root: %s", value)
 	}
 	return normalized, nil
+}
+
+func isAbsoluteThemePathInput(value string) bool {
+	slashed := strings.ReplaceAll(strings.TrimSpace(value), "\\", "/")
+	return filepath.IsAbs(value) ||
+		strings.HasPrefix(slashed, "/") ||
+		hasWindowsDrivePrefix(slashed)
+}
+
+func hasWindowsDrivePrefix(value string) bool {
+	return len(value) >= 2 && value[1] == ':'
 }
 
 func matchesResourceCategory(resource Resource, projectPath string, matchers map[string][]globMatcher, liquidOnly bool) bool {
