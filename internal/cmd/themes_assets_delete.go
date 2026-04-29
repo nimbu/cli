@@ -10,8 +10,8 @@ import (
 
 // ThemeAssetsDeleteCmd deletes an asset.
 type ThemeAssetsDeleteCmd struct {
-	Theme string `arg:"" help:"Theme ID"`
-	Path  string `arg:"" help:"Asset path"`
+	Theme string `required:"" help:"Theme ID"`
+	Path  string `required:"" help:"Asset path"`
 }
 
 // Run executes the delete command.

@@ -65,6 +65,28 @@ func GetChannelDetail(ctx context.Context, c *Client, slug string, opts ...Reque
 	return detail, nil
 }
 
+// GetChannelCustomizations fetches the custom field schema for one channel.
+func GetChannelCustomizations(ctx context.Context, c *Client, slug string, opts ...RequestOption) ([]CustomField, error) {
+	var fields []CustomField
+	if err := c.Get(ctx, "/channels/"+url.PathEscape(strings.TrimSpace(slug))+"/customizations", &fields, opts...); err != nil {
+		return nil, err
+	}
+	return fields, nil
+}
+
+// PatchChannelCustomizations applies channel custom field changes.
+func PatchChannelCustomizations(ctx context.Context, c *Client, slug string, fields any, replace bool, opts ...RequestOption) (ChannelDetail, error) {
+	if replace {
+		opts = append(opts, WithParam("replace", "1"))
+	}
+	var detail ChannelDetail
+	body := map[string]any{"customizations": fields}
+	if err := c.Patch(ctx, "/channels/"+url.PathEscape(strings.TrimSpace(slug)), body, &detail, opts...); err != nil {
+		return ChannelDetail{}, err
+	}
+	return detail, nil
+}
+
 // ListChannelDetails fetches all channels with their richer schema fields.
 func ListChannelDetails(ctx context.Context, c *Client, opts ...RequestOption) ([]ChannelDetail, error) {
 	return List[ChannelDetail](ctx, c, "/channels", opts...)

@@ -259,8 +259,8 @@ func planOperations(ctx context.Context, client *api.Client, cfg Config, opts Op
 	uploadMap := map[resourceKey]Resource{}
 	deleteMap := map[resourceKey]Resource{}
 
-	if hasExplicitSelectors(opts) && opts.Since != "" {
-		_, _ = fmt.Fprintf(os.Stderr, "warning: --since is ignored when explicit theme selectors are set\n")
+	if hasOnlySelectors(opts) && opts.Since != "" {
+		_, _ = fmt.Fprintf(os.Stderr, "warning: --since is ignored when --only theme selectors are set\n")
 	}
 
 	var remoteResources []Resource
@@ -277,7 +277,7 @@ func planOperations(ctx context.Context, client *api.Client, cfg Config, opts Op
 		}
 	}
 
-	if err := selection.validateExplicitSelectors(append(allLocal, remoteResources...)); err != nil {
+	if err := selection.validateOnlySelectors(append(allLocal, remoteResources...)); err != nil {
 		return nil, nil, err
 	}
 
@@ -365,11 +365,11 @@ func planOperations(ctx context.Context, client *api.Client, cfg Config, opts Op
 // scopeUsesAllFiles returns true when the option/filter combination means we
 // should iterate all local files instead of relying on git change detection.
 func scopeUsesAllFiles(opts Options, hasCategory bool) bool {
-	return opts.All || hasExplicitSelectors(opts) || (hasCategory && opts.Since == "")
+	return opts.All || hasOnlySelectors(opts) || (hasCategory && opts.Since == "")
 }
 
-func hasExplicitSelectors(opts Options) bool {
-	return len(opts.Only) > 0 || len(opts.Selectors) > 0
+func hasOnlySelectors(opts Options) bool {
+	return len(opts.Only) > 0
 }
 
 func mapByKey(resources []Resource) map[resourceKey]Resource {

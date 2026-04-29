@@ -12,7 +12,7 @@ import (
 // BlogPostsListCmd lists blog articles.
 type BlogPostsListCmd struct {
 	QueryFlags `embed:""`
-	Blog       string `arg:"" help:"Blog ID or handle"`
+	Blog       string `required:"" help:"Blog ID or handle"`
 	All        bool   `help:"Fetch all pages"`
 	Page       int    `help:"Page number" default:"1"`
 	PerPage    int    `help:"Items per page" default:"25"`

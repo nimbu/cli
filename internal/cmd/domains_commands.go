@@ -74,7 +74,7 @@ func (c *DomainsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 type DomainsGetCmd struct {
-	Domain string `arg:"" help:"Domain ID or hostname"`
+	Domain string `required:"" help:"Domain ID or hostname"`
 }
 
 func (c *DomainsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -106,7 +106,7 @@ func (c *DomainsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 type DomainsCreateCmd struct {
-	Domain      string   `arg:"" help:"Hostname"`
+	Domain      string   `required:"" help:"Hostname"`
 	File        string   `help:"Read domain JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. redirect_domain=www.example.com, default_locale=nl)"`
 }
@@ -155,7 +155,7 @@ func (c *DomainsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 type DomainsUpdateCmd struct {
-	Domain      string   `arg:"" help:"Domain ID or hostname"`
+	Domain      string   `required:"" help:"Domain ID or hostname"`
 	File        string   `help:"Read domain JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. redirect_domain=www.example.com, default_locale=nl)"`
 }
@@ -202,7 +202,7 @@ func (c *DomainsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 type DomainsDeleteCmd struct {
-	Domain string `arg:"" help:"Domain ID or hostname"`
+	Domain string `required:"" help:"Domain ID or hostname"`
 }
 
 func (c *DomainsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -242,7 +242,7 @@ func (c *DomainsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 type DomainsMakePrimaryCmd struct {
-	Domain string `arg:"" help:"Domain ID or hostname"`
+	Domain string `required:"" help:"Domain ID or hostname"`
 }
 
 func (c *DomainsMakePrimaryCmd) Run(ctx context.Context, flags *RootFlags) error {

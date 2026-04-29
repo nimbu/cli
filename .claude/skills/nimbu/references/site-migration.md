@@ -66,16 +66,16 @@ Each resource type has its own standalone copy command for targeted operations.
 |---------|-----------|-------------|
 | `channels copy` | site/channel or `--all` with site | `--all` copies all channels at once |
 | `channels entries copy` | site/channel | `--recursive`, `--only`, `--upsert`, `--query`, `--where`, `--per-page`, `--copy-customers`, `--allow-errors`, `--dry-run` |
-| `pages copy [fullpath]` | site | Positional arg: fullpath, `prefix*`, or `*` (default `*`) |
+| `pages copy` | site | `--only` fullpath, `prefix*`, or `*` (default `*`) |
 | `products copy` | site | `--allow-errors` |
 | `collections copy` | site | `--allow-errors` |
 | `customers copy` | site | `--query`, `--where`, `--per-page`, `--upsert` (default `email`), `--password-length` (default 12), `--allow-errors` |
 | `roles copy` | site | -- |
-| `menus copy [slug]` | site | Positional arg: slug or `*` (default `*`); prompts before overwrite unless `--force` |
-| `blogs copy [handle]` | site | Positional arg: handle or `*` (default `*`) |
-| `notifications copy [slug]` | site | Positional arg: slug or `*` (default `*`) |
+| `menus copy` | site | `--only` slug or `*` (default `*`); prompts before overwrite unless `--force` |
+| `blogs copy` | site | `--only` handle or `*` (default `*`) |
+| `notifications copy` | site | `--only` slug or `*` (default `*`) |
 | `redirects copy` | site | -- |
-| `translations copy [query]` | site | Positional arg: key, `prefix*`, or `*`; `--since` (RFC3339 or relative like `1d`); `--dry-run` |
+| `translations copy` | site | `--only` key, `prefix*`, or `*`; `--since` (RFC3339 or relative like `1d`); `--dry-run` |
 | `themes copy` | site[/theme] | `--liquid-only` copies only liquid resources |
 
 All per-resource commands also accept `--from-host` / `--to-host` for cross-API use.

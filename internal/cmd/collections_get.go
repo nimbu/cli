@@ -11,7 +11,7 @@ import (
 
 // CollectionsGetCmd gets a collection by ID or slug.
 type CollectionsGetCmd struct {
-	Collection string `arg:"" help:"Collection ID or slug"`
+	Collection string `required:"" help:"Collection ID or slug"`
 }
 
 // Run executes the get command.

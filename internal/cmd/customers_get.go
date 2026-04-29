@@ -11,7 +11,7 @@ import (
 
 // CustomersGetCmd gets a customer by ID or email.
 type CustomersGetCmd struct {
-	Customer string `arg:"" help:"Customer ID or email"`
+	Customer string `required:"" help:"Customer ID or email"`
 }
 
 // Run executes the get command.

@@ -18,13 +18,11 @@ type siteDetail struct {
 }
 
 // SitesGetCmd gets site details.
-type SitesGetCmd struct {
-	Site string `arg:"" optional:"" help:"Site ID or subdomain (defaults to current site)"`
-}
+type SitesGetCmd struct{}
 
 // Run executes the get command.
 func (c *SitesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
-	site, err := RequireSite(ctx, c.Site)
+	site, err := RequireSite(ctx, "")
 	if err != nil {
 		return err
 	}

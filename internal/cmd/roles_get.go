@@ -11,7 +11,7 @@ import (
 
 // RolesGetCmd gets a role by ID.
 type RolesGetCmd struct {
-	Role string `arg:"" help:"Role ID"`
+	Role string `required:"" help:"Role ID"`
 }
 
 // Run executes the get command.

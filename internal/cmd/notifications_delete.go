@@ -10,7 +10,7 @@ import (
 
 // NotificationsDeleteCmd deletes a notification.
 type NotificationsDeleteCmd struct {
-	Notification string `arg:"" help:"Notification slug or identifier"`
+	Notification string `required:"" help:"Notification slug or identifier"`
 }
 
 // Run executes the delete command.

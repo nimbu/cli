@@ -11,7 +11,7 @@ import (
 
 // NotificationsGetCmd gets a notification by slug.
 type NotificationsGetCmd struct {
-	Notification string `arg:"" help:"Notification slug or identifier"`
+	Notification string `required:"" help:"Notification slug or identifier"`
 }
 
 // Run executes the get command.

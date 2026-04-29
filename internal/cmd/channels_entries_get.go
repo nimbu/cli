@@ -13,8 +13,8 @@ import (
 // ChannelEntriesGetCmd gets an entry by ID or slug.
 type ChannelEntriesGetCmd struct {
 	QueryFlags `embed:""`
-	Channel    string `arg:"" help:"Channel ID or slug"`
-	Entry      string `arg:"" help:"Entry ID or slug"`
+	Channel    string `required:"" help:"Channel ID or slug"`
+	Entry      string `required:"" help:"Entry ID or slug"`
 }
 
 // Run executes the get command.

@@ -65,7 +65,7 @@ func TestExecuteSkipsUpdateNotifierForCompletion(t *testing.T) {
 	})
 	defer restore()
 
-	code, _, stderr := captureExecute(t, []string{"completion", "bash"})
+	code, _, stderr := captureExecute(t, []string{"completion", "--shell=bash"})
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d with stderr %q", code, stderr)
 	}
@@ -77,7 +77,7 @@ func TestExecuteSkipsUpdateNotifierForCompletionWithGlobalFlagPrefix(t *testing.
 	})
 	defer restore()
 
-	code, _, stderr := captureExecute(t, []string{"--color=never", "completion", "bash"})
+	code, _, stderr := captureExecute(t, []string{"--color=never", "completion", "--shell=bash"})
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d with stderr %q", code, stderr)
 	}

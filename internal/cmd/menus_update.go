@@ -11,7 +11,7 @@ import (
 
 // MenusUpdateCmd updates a menu.
 type MenusUpdateCmd struct {
-	Menu        string   `arg:"" help:"Menu slug or handle"`
+	Menu        string   `required:"" help:"Menu slug or handle"`
 	File        string   `help:"Read menu JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Main, handle=main)"`
 }

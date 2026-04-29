@@ -18,11 +18,19 @@ func TestAppsPushRejectsSyncWithSubset(t *testing.T) {
 	cmd := &AppsPushCmd{
 		App:   "storefront",
 		Sync:  true,
-		Files: []string{"code/main.js"},
+		Files: []string{"code/main.js,code/extra.js"},
 	}
 	err := cmd.Run(ctx, &RootFlags{Site: "demo"})
 	if err == nil {
 		t.Fatalf("expected sync/subset error, got %v", err)
+	}
+}
+
+func TestSplitRepeatedCSV(t *testing.T) {
+	got := splitRepeatedCSV([]string{"code/main.js, code/extra.js", "code/worker.js", " , "})
+	want := []string{"code/main.js", "code/extra.js", "code/worker.js"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("files = %#v, want %#v", got, want)
 	}
 }
 

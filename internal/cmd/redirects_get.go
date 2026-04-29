@@ -11,7 +11,7 @@ import (
 
 // RedirectsGetCmd gets a redirect by ID.
 type RedirectsGetCmd struct {
-	Redirect string `arg:"" help:"Redirect ID"`
+	Redirect string `required:"" help:"Redirect ID"`
 }
 
 // Run executes the get command.

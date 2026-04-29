@@ -10,7 +10,7 @@ import (
 
 // MenusDeleteCmd deletes a menu.
 type MenusDeleteCmd struct {
-	Menu string `arg:"" help:"Menu ID or handle"`
+	Menu string `required:"" help:"Menu ID or handle"`
 }
 
 // Run executes the delete command.

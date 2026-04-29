@@ -11,8 +11,8 @@ import (
 
 // ThemeLayoutsCreateCmd creates or updates a layout.
 type ThemeLayoutsCreateCmd struct {
-	Theme       string   `arg:"" help:"Theme ID"`
-	Name        string   `arg:"" help:"Layout name including extension"`
+	Theme       string   `required:"" help:"Theme ID"`
+	Name        string   `required:"" help:"Layout name including extension"`
 	File        string   `help:"Read layout code from file" short:"f"`
 	Code        string   `help:"Layout code (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. folder=default)"`

@@ -12,7 +12,7 @@ import (
 
 // UploadsCreateCmd uploads a file.
 type UploadsCreateCmd struct {
-	File        string   `arg:"" help:"Path to file to upload"`
+	Source      string   `required:"" help:"Path to file to upload" name:"source"`
 	Name        string   `help:"Override filename" short:"n"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=custom.jpg)"`
 }
@@ -63,11 +63,11 @@ func (c *UploadsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		filename = name
 	}
 	if filename == "" {
-		filename = filepath.Base(c.File)
+		filename = filepath.Base(c.Source)
 	}
 
 	task := output.ProgressFromContext(ctx).Transfer("upload "+filename, 0)
-	content, err := os.ReadFile(c.File)
+	content, err := os.ReadFile(c.Source)
 	if err != nil {
 		task.Fail(err)
 		return err

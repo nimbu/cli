@@ -10,7 +10,7 @@ import (
 
 // CompletionCmd generates shell completions.
 type CompletionCmd struct {
-	Shell string `arg:"" optional:"" help:"Shell to generate completions for (bash, zsh, fish)" default:"bash"`
+	Shell string `help:"Shell to generate completions for (bash, zsh, fish)" default:"bash"`
 }
 
 func (c *CompletionCmd) Run(ctx context.Context) error {
@@ -34,10 +34,32 @@ func (c *CompletionCmd) Run(ctx context.Context) error {
 func writeBashCompletion(_ *kong.Kong) error {
 	_, _ = fmt.Fprintln(os.Stdout, `# Bash completion for nimbu
 # Add this to your ~/.bashrc:
-#   eval "$(nimbu completion bash)"
+#   eval "$(nimbu completion --shell=bash)"
 
 _nimbu_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
+    local prev=""
+    if [[ ${COMP_CWORD} -gt 0 ]]; then
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+    fi
+    if [[ "${cur}" == --site=* || "${cur}" == --from=* || "${cur}" == --to=* || "${cur}" == --channel=* || "${cur}" == --theme=* || "${prev}" == "--site" || "${prev}" == "--from" || "${prev}" == "--to" || "${prev}" == "--channel" || "${prev}" == "--theme" ]]; then
+        local dynamic
+        dynamic="$(nimbu __complete --shell bash --current="${cur}" -- "${COMP_WORDS[@]:0:COMP_CWORD}" 2>/dev/null)"
+        if [[ -n "${dynamic}" ]]; then
+            if [[ "${cur}" == --*=* ]]; then
+                local flag_prefix="${cur%%=*}="
+                local value_prefix="${cur#*=}"
+                COMPREPLY=($(compgen -W "${dynamic}" -- "${value_prefix}"))
+                local i
+                for i in "${!COMPREPLY[@]}"; do
+                    COMPREPLY[$i]="${flag_prefix}${COMPREPLY[$i]}"
+                done
+            else
+                COMPREPLY=($(compgen -W "${dynamic}" -- "${cur}"))
+            fi
+            return
+        fi
+    fi
     local commands="auth sites channels pages menus products collections coupons orders customers mails accounts notifications roles redirects functions jobs apps themes uploads blogs webhooks translations server config api completion"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
@@ -105,7 +127,7 @@ _nimbu_completions() {
                 COMPREPLY=($(compgen -W "--cmd --arg --cwd --ready-url --ready-timeout --proxy-host --proxy-port --template-root --no-watch --watch-scan-interval --max-body-mb --quiet-requests --events-json --debug" -- "${cur}"))
                 ;;
             completion)
-                COMPREPLY=($(compgen -W "bash zsh fish" -- "${cur}"))
+                COMPREPLY=($(compgen -W "--shell" -- "${cur}"))
                 ;;
         esac
     elif [[ ${COMP_WORDS[1]} == "themes" ]]; then
@@ -132,7 +154,7 @@ _nimbu_completions() {
     elif [[ ${COMP_WORDS[1]} == "apps" ]]; then
         case "${COMP_WORDS[2]}" in
             push)
-                COMPREPLY=($(compgen -W "--app --sync" -- "${cur}"))
+                COMPREPLY=($(compgen -W "--app --only --sync" -- "${cur}"))
                 ;;
         esac
     elif [[ ${COMP_WORDS[1]} == "apps" && ${COMP_WORDS[2]} == "code" ]]; then
@@ -141,6 +163,8 @@ _nimbu_completions() {
         COMPREPLY=($(compgen -W "list get create update delete count" -- "${cur}"))
     elif [[ ${COMP_WORDS[1]} == "channels" && ${COMP_WORDS[2]} == "entries" ]]; then
         COMPREPLY=($(compgen -W "list get create update delete count copy" -- "${cur}"))
+    elif [[ ${COMP_WORDS[1]} == "channels" && ${COMP_WORDS[2]} == "fields" ]]; then
+        COMPREPLY=($(compgen -W "list add update delete apply replace diff" -- "${cur}"))
     elif [[ ${COMP_WORDS[1]} == "customers" && ${COMP_WORDS[2]} == "config" ]]; then
         COMPREPLY=($(compgen -W "copy diff" -- "${cur}"))
     elif [[ ${COMP_WORDS[1]} == "products" && ${COMP_WORDS[2]} == "config" ]]; then
@@ -158,7 +182,7 @@ func writeZshCompletion(_ *kong.Kong) error {
 
 # Zsh completion for nimbu
 # Add this to your ~/.zshrc:
-#   eval "$(nimbu completion zsh)"
+#   eval "$(nimbu completion --shell=zsh)"
 
 _nimbu() {
     local -a commands
@@ -191,6 +215,37 @@ _nimbu() {
         'api:Raw API access'
         'completion:Generate shell completions'
     )
+
+    _nimbu_dynamic_complete() {
+        local -a rows
+        rows=("${(@f)$(nimbu __complete --shell zsh --current="${words[CURRENT]}" -- "${words[@]:1:$((CURRENT-1))}" 2>/dev/null)}")
+        if (( ${#rows} == 0 )); then
+            return 1
+        fi
+        local -a values
+        local row value description
+        for row in "${rows[@]}"; do
+            value="${row%%$'\t'*}"
+            if [[ "${row}" == *$'\t'* ]]; then
+                description="${row#*$'\t'}"
+                values+=("${value}:${description}")
+            else
+                values+=("${value}")
+            fi
+        done
+        if [[ "${words[CURRENT]}" == --*=* ]]; then
+            local flag_prefix="${words[CURRENT]%%=*}="
+            local i
+            for i in {1..${#values}}; do
+                values[$i]="${flag_prefix}${values[$i]}"
+            done
+        fi
+        _describe -t nimbu-dynamic 'value' values
+    }
+
+    if [[ "${words[CURRENT]}" == --site=* || "${words[CURRENT]}" == --from=* || "${words[CURRENT]}" == --to=* || "${words[CURRENT]}" == --channel=* || "${words[CURRENT]}" == --theme=* || "${words[CURRENT-1]}" == "--site" || "${words[CURRENT-1]}" == "--from" || "${words[CURRENT-1]}" == "--to" || "${words[CURRENT-1]}" == "--channel" || "${words[CURRENT-1]}" == "--theme" ]]; then
+        _nimbu_dynamic_complete && return
+    fi
 
     if (( CURRENT == 2 )); then
         _describe -t commands 'command' commands
@@ -254,7 +309,7 @@ _nimbu() {
                 'copy:Copy channel configuration between sites'
                 'diff:Diff channel configuration between sites'
                 'entries:Manage channel entries'
-                'fields:List channel fields'
+                'fields:Manage channel fields'
             )
             _describe -t channels-commands 'channels command' channels_commands
             ;;
@@ -339,8 +394,8 @@ _nimbu() {
             ;;
         completion)
             local -a completion_commands
-            completion_commands=('bash' 'zsh' 'fish')
-            _describe -t shells 'shell' completion_commands
+            completion_commands=('--shell')
+            _describe -t shells 'shell option' completion_commands
             ;;
     esac
 }
@@ -353,7 +408,26 @@ compdef _nimbu nb`)
 func writeFishCompletion(_ *kong.Kong) error {
 	_, _ = fmt.Fprintln(os.Stdout, `# Fish completion for nimbu
 # Add this to your ~/.config/fish/config.fish:
-#   nimbu completion fish | source
+#   nimbu completion --shell=fish | source
+
+function __fish_nimbu_dynamic_complete
+    set -l current (commandline -ct)
+    set -l tokens (commandline -opc)
+    command nimbu __complete --shell fish --current="$current" -- $tokens 2>/dev/null
+end
+
+function __fish_nimbu_dynamic_flag
+    set -l current (commandline -ct)
+    set -l tokens (commandline -opc)
+    set -l previous ""
+    if test (count $tokens) -gt 0
+        set previous $tokens[-1]
+    end
+    string match -q -- "--site=*" "$current"; or string match -q -- "--from=*" "$current"; or string match -q -- "--to=*" "$current"; or string match -q -- "--channel=*" "$current"; or string match -q -- "--theme=*" "$current"; or test "$previous" = "--site"; or test "$previous" = "--from"; or test "$previous" = "--to"; or test "$previous" = "--channel"; or test "$previous" = "--theme"
+end
+
+complete -c nimbu -n "__fish_nimbu_dynamic_flag" -f -a "(__fish_nimbu_dynamic_complete)"
+complete -c nb -n "__fish_nimbu_dynamic_flag" -f -a "(__fish_nimbu_dynamic_complete)"
 
 # Main commands
 complete -c nimbu -n "__fish_use_subcommand" -a "auth" -d "Authentication and credentials"
@@ -398,6 +472,7 @@ complete -c nimbu -n "__fish_seen_subcommand_from themes" -a "list get pull diff
 complete -c nimbu -n "__fish_seen_subcommand_from sites" -a "list get current count settings copy" -d "Site commands"
 complete -c nimbu -n "__fish_seen_subcommand_from channels" -a "list get info copy diff fields entries" -d "Channel commands"
 complete -c nimbu -n "__fish_seen_subcommand_from channels entries" -a "list get create update delete count copy" -d "Channel entry commands"
+complete -c nimbu -n "__fish_seen_subcommand_from channels fields" -a "list add update delete apply replace diff" -d "Channel field commands"
 complete -c nimbu -n "__fish_seen_subcommand_from customers" -a "list get create update delete count copy fields config" -d "Customer commands"
 complete -c nimbu -n "__fish_seen_subcommand_from customers config" -a "copy diff" -d "Customer config commands"
 complete -c nimbu -n "__fish_seen_subcommand_from products" -a "list get create update delete count fields config" -d "Product commands"
@@ -428,7 +503,7 @@ complete -c nimbu -n "__fish_seen_subcommand_from config" -a "unset" -d "Unset a
 complete -c nimbu -n "__fish_seen_subcommand_from config" -a "path" -d "Print config file path"
 
 # Completion shells
-complete -c nimbu -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
+complete -c nimbu -n "__fish_seen_subcommand_from completion" -l shell -d "Shell to generate completions for"
 
 # Alias for nb
 complete -c nb -w nimbu`)

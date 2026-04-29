@@ -107,7 +107,6 @@ type Options struct {
 	Prune      bool
 	Since      string
 	Only       []string
-	Selectors  []string
 	LiquidOnly bool
 	CSSOnly    bool
 	JSOnly     bool

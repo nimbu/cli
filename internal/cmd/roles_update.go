@@ -11,7 +11,7 @@ import (
 
 // RolesUpdateCmd updates a role.
 type RolesUpdateCmd struct {
-	Role        string   `arg:"" help:"Role ID"`
+	Role        string   `required:"" help:"Role ID"`
 	File        string   `help:"Read role JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=VIP)"`
 }

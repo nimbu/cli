@@ -11,7 +11,7 @@ import (
 
 // WebhooksGetCmd gets webhook details.
 type WebhooksGetCmd struct {
-	ID string `arg:"" help:"Webhook ID"`
+	ID string `required:"" help:"Webhook ID"`
 }
 
 // Run executes the get command.

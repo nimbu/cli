@@ -11,7 +11,7 @@ import (
 
 // CouponsGetCmd gets a coupon by ID.
 type CouponsGetCmd struct {
-	Coupon string `arg:"" help:"Coupon ID"`
+	Coupon string `required:"" help:"Coupon ID"`
 }
 
 // Run executes the get command.

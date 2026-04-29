@@ -10,7 +10,7 @@ import (
 
 // CouponsDeleteCmd deletes a coupon.
 type CouponsDeleteCmd struct {
-	Coupon string `arg:"" help:"Coupon ID"`
+	Coupon string `required:"" help:"Coupon ID"`
 }
 
 // Run executes the delete command.

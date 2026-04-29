@@ -16,15 +16,15 @@ For different API hosts, add `--from-host` / `--to-host` (bare domain or full UR
 | Command | Syntax | Key flags | Notes |
 |---------|--------|-----------|-------|
 | `list` | `nimbu channels list` | `--all`, `--page`, `--per-page`, `--no-entry-count` | Entry counts fetched by default (6 parallel workers). Use `--no-entry-count` to skip. |
-| `get` | `nimbu channels get <slug>` | | Returns schema, customizations, ACL, dependency graph. |
-| `info` | `nimbu channels info <slug or site/channel>` | `--typescript` | Accepts cross-site ref. `--typescript` emits a TS interface. |
-| `fields` | `nimbu channels fields <slug>` | | Schema introspection — see detailed section below. |
+| `get` | `nimbu channels get --channel <slug>` | | Returns schema, customizations, ACL, dependency graph. |
+| `info` | `nimbu channels info --channel <slug or site/channel>` | `--typescript` | Accepts cross-site ref. `--typescript` emits a TS interface. |
+| `fields` | `nimbu channels fields list --channel <slug>` | | Schema introspection — see detailed section below. |
 | `diff` | `nimbu channels diff --from <ref> --to <ref>` | `--from-host`, `--to-host` | Compares channel attrs + field schema. Reports added/removed/updated. |
 | `copy` | `nimbu channels copy --from <ref> --to <ref>` | `--all`, `--from-host`, `--to-host` | Copies channel config (not entries). `--all` copies all channels from source site. Requires `--write` (not readonly). |
 
 ### Schema Discovery: `fields` vs `info` vs `get`
 
-**`channels fields <slug> --json`** is the primary tool for understanding channel data structure. Returns an array of custom field definitions with:
+**`channels fields list --channel <slug> --json`** is the primary tool for understanding channel data structure. Returns an array of custom field definitions with:
 
 | Property | Purpose |
 |----------|---------|
@@ -43,7 +43,7 @@ For different API hosts, add `--from-host` / `--to-host` (bare domain or full UR
 | `calculated_expression` | Auto-calculated field formula |
 | `geo_type` | For `geo` fields: geometry subtype |
 
-**Agent workflow**: Always run `nimbu channels fields <channel> --json` when working on themes or templates to know the exact field names, types, and relationships available in channel entries.
+**Agent workflow**: Always run `nimbu channels fields list --channel <channel> --json` when working on themes or templates to know the exact field names, types, and relationships available in channel entries.
 
 ### `channels get` vs `channels info`
 
@@ -54,16 +54,16 @@ Use `get --json` for full schema introspection. Use `info --typescript` for code
 
 ## Entry Commands
 
-All entry commands take `<channel>` as the first positional arg (slug or ID).
+All entry commands take the channel slug or ID via `--channel`.
 
 | Command | Syntax | Key flags | Notes |
 |---------|--------|-----------|-------|
-| `list` | `nimbu channels entries list <channel>` | `--all`, `--page`, `--per-page` | Displays title fallback: `title` field > `fields.title` > slug > ID. |
-| `get` | `nimbu channels entries get <channel> <entry>` | `--locale` (global) | Entry identified by ID or slug. |
-| `create` | `nimbu channels entries create <channel> [assignments...]` | `--file` | Inline or `--file` (mutually exclusive). Requires write mode. |
-| `update` | `nimbu channels entries update <channel> <entry> [assignments...]` | `--file` | Same input rules as create. Requires write mode. |
-| `delete` | `nimbu channels entries delete <channel> <entry>` | `--force` (required) | Requires both `--force` and write mode. |
-| `count` | `nimbu channels entries count <channel>` | `--locale` (global) | Returns integer count. |
+| `list` | `nimbu channels entries list --channel <channel>` | `--all`, `--page`, `--per-page` | Displays title fallback: `title` field > `fields.title` > slug > ID. |
+| `get` | `nimbu channels entries get --channel <channel> --entry <entry>` | `--locale` (global) | Entry identified by ID or slug. |
+| `create` | `nimbu channels entries create --channel <channel> [assignments...]` | `--file` | Inline or `--file` (mutually exclusive). Requires write mode. |
+| `update` | `nimbu channels entries update --channel <channel> --entry <entry> [assignments...]` | `--file` | Same input rules as create. Requires write mode. |
+| `delete` | `nimbu channels entries delete --channel <channel> --entry <entry>` | `--force` (required) | Requires both `--force` and write mode. |
+| `count` | `nimbu channels entries count --channel <channel>` | `--locale` (global) | Returns integer count. |
 | `copy` | `nimbu channels entries copy --from <ref> --to <ref>` | See table below | Most complex command. Requires write mode (unless `--dry-run`). |
 
 ### Entries Copy Flags
@@ -107,10 +107,10 @@ All entry commands take `<channel>` as the first positional arg (slug or ID).
 nimbu channels list --all --json
 
 # Inspect channel schema
-nimbu channels get blog --json
+nimbu channels get --channel blog --json
 
 # Generate TypeScript interface from a remote site
-nimbu channels info staging/blog --typescript
+nimbu channels info --channel staging/blog --typescript
 
 # Diff channel config between environments
 nimbu channels diff --from staging/blog --to production/blog --json
@@ -122,19 +122,19 @@ nimbu channels copy --from staging/blog --to production/blog
 nimbu channels copy --all --from staging --to production
 
 # List entries with pagination
-nimbu channels entries list blog --all --json
+nimbu channels entries list --channel blog --all --json
 
 # Create entry inline
-nimbu channels entries create blog title="Hello World" fields.teaser="First post"
+nimbu channels entries create --channel blog title="Hello World" fields.teaser="First post"
 
 # Create entry from file
-nimbu channels entries create blog --file entry.json
+nimbu channels entries create --channel blog --file entry.json
 
 # Update entry
-nimbu channels entries update blog hello-world title="Updated Title"
+nimbu channels entries update --channel blog --entry hello-world title="Updated Title"
 
 # Delete entry (requires --force)
-nimbu channels entries delete blog hello-world --force
+nimbu channels entries delete --channel blog --entry hello-world --force
 
 # Copy entries between sites with upsert on slug
 nimbu channels entries copy --from staging/blog --to production/blog --upsert slug --json

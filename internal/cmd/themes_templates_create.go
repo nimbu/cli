@@ -11,8 +11,8 @@ import (
 
 // ThemeTemplatesCreateCmd creates or updates a template.
 type ThemeTemplatesCreateCmd struct {
-	Theme       string   `arg:"" help:"Theme ID"`
-	Name        string   `arg:"" help:"Template name including extension"`
+	Theme       string   `required:"" help:"Theme ID"`
+	Name        string   `required:"" help:"Template name including extension"`
 	File        string   `help:"Read template code from file" short:"f"`
 	Code        string   `help:"Template code (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. folder=emails)"`

@@ -12,7 +12,7 @@ import (
 // AppsCodeListCmd lists app code files.
 type AppsCodeListCmd struct {
 	QueryFlags `embed:""`
-	App        string `arg:"" help:"Application ID"`
+	App        string `required:"" help:"Application ID"`
 }
 
 // Run executes the list command.

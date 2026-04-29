@@ -10,7 +10,7 @@ import (
 
 // PagesDeleteCmd deletes a page.
 type PagesDeleteCmd struct {
-	Page string `arg:"" help:"Page ID or slug"`
+	Page string `required:"" help:"Page ID or slug"`
 }
 
 // Run executes the delete command.

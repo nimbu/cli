@@ -11,7 +11,7 @@ import (
 
 // ChannelEntriesCreateCmd creates a channel entry.
 type ChannelEntriesCreateCmd struct {
-	Channel     string   `arg:"" help:"Channel ID or slug"`
+	Channel     string   `required:"" help:"Channel ID or slug"`
 	File        string   `help:"Read entry JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. title=Hello, fields.teaser=Text)"`
 }

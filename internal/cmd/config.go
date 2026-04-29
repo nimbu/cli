@@ -64,7 +64,7 @@ func (c *ConfigListCmd) Run(ctx context.Context) error {
 
 // ConfigGetCmd gets a config value.
 type ConfigGetCmd struct {
-	Key string `arg:"" help:"Config key to get"`
+	Key string `required:"" help:"Config key to get"`
 }
 
 func (c *ConfigGetCmd) Run(ctx context.Context) error {
@@ -91,8 +91,8 @@ func (c *ConfigGetCmd) Run(ctx context.Context) error {
 
 // ConfigSetCmd sets a config value.
 type ConfigSetCmd struct {
-	Key   string `arg:"" help:"Config key to set"`
-	Value string `arg:"" help:"Value to set"`
+	Key   string `required:"" help:"Config key to set"`
+	Value string `required:"" help:"Value to set"`
 }
 
 func (c *ConfigSetCmd) Run(ctx context.Context) error {
@@ -128,7 +128,7 @@ func (c *ConfigSetCmd) Run(ctx context.Context) error {
 
 // ConfigUnsetCmd unsets a config value.
 type ConfigUnsetCmd struct {
-	Key string `arg:"" help:"Config key to unset"`
+	Key string `required:"" help:"Config key to unset"`
 }
 
 func (c *ConfigUnsetCmd) Run(ctx context.Context) error {

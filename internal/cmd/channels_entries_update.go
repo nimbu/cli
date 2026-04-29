@@ -11,8 +11,8 @@ import (
 
 // ChannelEntriesUpdateCmd updates a channel entry.
 type ChannelEntriesUpdateCmd struct {
-	Channel     string   `arg:"" help:"Channel ID or slug"`
-	Entry       string   `arg:"" help:"Entry ID or slug"`
+	Channel     string   `required:"" help:"Channel ID or slug"`
+	Entry       string   `required:"" help:"Entry ID or slug"`
 	Locale      string   `help:"Content locale for localized channel fields"`
 	File        string   `help:"Read entry JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. title=Hello, fields.teaser=Text)"`

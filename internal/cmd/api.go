@@ -15,8 +15,8 @@ import (
 
 // APICmd provides raw API access.
 type APICmd struct {
-	Method string `arg:"" help:"HTTP method (GET, POST, PUT, PATCH, DELETE)"`
-	Path   string `arg:"" help:"API path (e.g., /channels)"`
+	Method string `required:"" help:"HTTP method (GET, POST, PUT, PATCH, DELETE)"`
+	Path   string `required:"" help:"API path (e.g., /channels)"`
 	Data   string `help:"Request body (JSON string)" short:"d"`
 	File   string `help:"Read request body from file" type:"existingfile"`
 }

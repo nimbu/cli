@@ -10,7 +10,7 @@ import (
 
 // MenusGetCmd gets menu details.
 type MenusGetCmd struct {
-	Menu string `arg:"" help:"Menu slug or handle"`
+	Menu string `required:"" help:"Menu slug or handle"`
 }
 
 // Run executes the get command.

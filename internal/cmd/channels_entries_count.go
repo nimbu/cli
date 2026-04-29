@@ -12,7 +12,7 @@ import (
 // ChannelEntriesCountCmd counts channel entries.
 type ChannelEntriesCountCmd struct {
 	QueryFlags `embed:""`
-	Channel    string `arg:"" help:"Channel ID or slug"`
+	Channel    string `required:"" help:"Channel ID or slug"`
 }
 
 // Run executes the count command.

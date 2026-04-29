@@ -9,13 +9,11 @@ import (
 )
 
 // SitesSettingsCmd fetches site settings.
-type SitesSettingsCmd struct {
-	Site string `arg:"" optional:"" help:"Site ID or subdomain (defaults to current site)"`
-}
+type SitesSettingsCmd struct{}
 
 // Run executes the settings command.
 func (c *SitesSettingsCmd) Run(ctx context.Context, flags *RootFlags) error {
-	site, err := RequireSite(ctx, c.Site)
+	site, err := RequireSite(ctx, "")
 	if err != nil {
 		return err
 	}

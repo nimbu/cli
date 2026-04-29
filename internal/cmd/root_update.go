@@ -38,7 +38,7 @@ func maybeNotifyUpdate(ctx context.Context, commandPath string, flags RootFlags,
 	if currentVersion == "" || currentVersion == "dev" {
 		return
 	}
-	if commandPath == "completion" || strings.HasPrefix(commandPath, "completion ") {
+	if commandPath == "completion" || strings.HasPrefix(commandPath, "completion ") || commandPath == "__complete" || strings.HasPrefix(commandPath, "__complete ") {
 		return
 	}
 

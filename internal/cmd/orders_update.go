@@ -12,7 +12,7 @@ import (
 
 // OrdersUpdateCmd updates an order.
 type OrdersUpdateCmd struct {
-	Order       string   `arg:"" help:"Order ID or number"`
+	Order       string   `required:"" help:"Order ID or number"`
 	Status      string   `help:"Set order status"`
 	File        string   `help:"Read order JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. status=paid, note=Done)"`

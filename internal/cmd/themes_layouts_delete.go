@@ -10,8 +10,8 @@ import (
 
 // ThemeLayoutsDeleteCmd deletes a layout.
 type ThemeLayoutsDeleteCmd struct {
-	Theme string `arg:"" help:"Theme ID"`
-	Name  string `arg:"" help:"Layout name including extension"`
+	Theme string `required:"" help:"Theme ID"`
+	Name  string `required:"" help:"Layout name including extension"`
 }
 
 // Run executes the delete command.

@@ -10,7 +10,7 @@ import (
 
 // UploadsDeleteCmd deletes an upload.
 type UploadsDeleteCmd struct {
-	ID string `arg:"" help:"Upload ID"`
+	ID string `required:"" help:"Upload ID"`
 }
 
 // Run executes the delete command.

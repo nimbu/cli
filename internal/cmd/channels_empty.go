@@ -11,7 +11,7 @@ import (
 )
 
 type ChannelsEmptyCmd struct {
-	Channel string `arg:"" help:"Channel ID or slug"`
+	Channel string `required:"" help:"Channel ID or slug"`
 	Confirm string `help:"Exact channel slug confirmation"`
 }
 

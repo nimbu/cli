@@ -10,7 +10,7 @@ import (
 
 // RolesDeleteCmd deletes a role.
 type RolesDeleteCmd struct {
-	Role string `arg:"" help:"Role ID"`
+	Role string `required:"" help:"Role ID"`
 }
 
 // Run executes the delete command.

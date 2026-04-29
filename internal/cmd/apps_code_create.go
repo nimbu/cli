@@ -11,7 +11,7 @@ import (
 
 // AppsCodeCreateCmd creates an app code file.
 type AppsCodeCreateCmd struct {
-	App         string   `arg:"" help:"Application ID"`
+	App         string   `required:"" help:"Application ID"`
 	File        string   `help:"Read code file JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=main.js, code=console.log(1))"`
 }

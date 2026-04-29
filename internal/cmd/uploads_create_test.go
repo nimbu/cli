@@ -55,7 +55,7 @@ func TestUploadsCreatePostsSourceAttachmentJSON(t *testing.T) {
 	ctx = output.WithWriter(ctx, &output.Writer{Out: &out, Err: &errOut, Mode: output.Mode{JSON: true}, NoTTY: true})
 	ctx = output.WithProgress(ctx, output.NewDisabledProgress())
 
-	cmd := &UploadsCreateCmd{File: path}
+	cmd := &UploadsCreateCmd{Source: path}
 	if err := cmd.Run(ctx, flags); err != nil {
 		t.Fatalf("run uploads create: %v", err)
 	}

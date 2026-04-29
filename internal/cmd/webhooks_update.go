@@ -11,7 +11,7 @@ import (
 
 // WebhooksUpdateCmd updates a webhook.
 type WebhooksUpdateCmd struct {
-	ID          string   `arg:"" help:"Webhook ID"`
+	ID          string   `required:"" help:"Webhook ID"`
 	File        string   `help:"Read webhook data from file (use - for stdin)" short:"f"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. url=https://example.com, active:=true)"`
 }

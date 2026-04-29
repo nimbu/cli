@@ -48,7 +48,7 @@ func (c *AuthKeyringShowCmd) Run(ctx context.Context) error {
 
 // AuthKeyringSetCmd sets the keyring backend.
 type AuthKeyringSetCmd struct {
-	Backend string `arg:"" help:"Backend to use: auto, keychain, file, secret-service, kwallet, wincred"`
+	Backend string `required:"" help:"Backend to use: auto, keychain, file, secret-service, kwallet, wincred"`
 }
 
 // Run sets the keyring backend.

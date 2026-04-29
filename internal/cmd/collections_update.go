@@ -11,7 +11,7 @@ import (
 
 // CollectionsUpdateCmd updates a collection.
 type CollectionsUpdateCmd struct {
-	Collection  string   `arg:"" help:"Collection ID or slug"`
+	Collection  string   `required:"" help:"Collection ID or slug"`
 	File        string   `help:"Read collection JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Summer, slug=summer)"`
 }

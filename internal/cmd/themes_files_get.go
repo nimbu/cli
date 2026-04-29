@@ -12,8 +12,8 @@ import (
 
 // ThemeFilesGetCmd gets/downloads a theme file.
 type ThemeFilesGetCmd struct {
-	Theme  string `arg:"" help:"Theme ID"`
-	Path   string `arg:"" help:"File path within theme"`
+	Theme  string `required:"" help:"Theme ID"`
+	Path   string `required:"" help:"File path within theme"`
 	Output string `help:"Write file to path instead of stdout" short:"o"`
 }
 

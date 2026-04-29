@@ -11,7 +11,7 @@ import (
 // PagesUpdateCmd updates a page.
 type PagesUpdateCmd struct {
 	QueryFlags  `embed:""`
-	Page        string   `arg:"" help:"Page fullpath"`
+	Page        string   `required:"" help:"Page fullpath"`
 	File        string   `help:"Read page JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. title=About, published:=true)"`
 }

@@ -10,7 +10,7 @@ import (
 
 // TranslationsDeleteCmd deletes a translation.
 type TranslationsDeleteCmd struct {
-	Key string `arg:"" help:"Translation key"`
+	Key string `required:"" help:"Translation key"`
 }
 
 // Run executes the delete command.

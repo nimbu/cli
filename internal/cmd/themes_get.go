@@ -15,7 +15,7 @@ type themeGetBundle struct {
 
 // ThemesGetCmd gets theme details.
 type ThemesGetCmd struct {
-	Theme string `arg:"" help:"Theme ID"`
+	Theme string `required:"" help:"Theme ID"`
 }
 
 // Run executes the get command.

@@ -11,8 +11,8 @@ import (
 
 // ThemeTemplatesGetCmd gets a template.
 type ThemeTemplatesGetCmd struct {
-	Theme string `arg:"" help:"Theme ID"`
-	Name  string `arg:"" help:"Template name including extension"`
+	Theme string `required:"" help:"Theme ID"`
+	Name  string `required:"" help:"Template name including extension"`
 }
 
 // Run executes the get command.

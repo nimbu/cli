@@ -11,7 +11,7 @@ import (
 
 // ProductsGetCmd gets a product by ID or slug.
 type ProductsGetCmd struct {
-	Product string `arg:"" help:"Product ID or slug"`
+	Product string `required:"" help:"Product ID or slug"`
 }
 
 // Run executes the get command.

@@ -65,14 +65,14 @@ func TestCompileSelectionFilterMatchesLiquidOnly(t *testing.T) {
 	}
 }
 
-func TestCompileSelectionFilterMatchesExplicitSelectors(t *testing.T) {
+func TestCompileSelectionFilterMatchesOnlySelectors(t *testing.T) {
 	cfg := Config{ProjectRoot: t.TempDir(), Roots: []RootSpec{
 		{Kind: KindLayout, LocalPath: "layouts"},
 		{Kind: KindSnippet, LocalPath: "snippets"},
 		{Kind: KindAsset, LocalPath: "stylesheets", RemoteBase: "stylesheets"},
 	}}
 
-	filter, err := compileSelectionFilter(cfg, Options{Selectors: []string{
+	filter, err := compileSelectionFilter(cfg, Options{Only: []string{
 		"stylesheets/*.css",
 		"snippets/",
 		"layouts/default.liquid",
@@ -101,7 +101,7 @@ func TestCompileSelectionFilterMatchesDirectorySelectorWithoutSlash(t *testing.T
 		{Kind: KindAsset, LocalPath: "stylesheets", RemoteBase: "stylesheets"},
 	}}
 
-	filter, err := compileSelectionFilter(cfg, Options{Selectors: []string{"snippets"}})
+	filter, err := compileSelectionFilter(cfg, Options{Only: []string{"snippets"}})
 	if err != nil {
 		t.Fatalf("compile filter: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestCompileSelectionFilterMatchesDirectorySelectorWithoutSlash(t *testing.T
 	}
 }
 
-func TestCompileSelectionFilterCombinesCategoriesAndSelectorsAsUnion(t *testing.T) {
+func TestCompileSelectionFilterCombinesCategoriesAndOnlySelectorsAsUnion(t *testing.T) {
 	cfg := Config{ProjectRoot: t.TempDir(), Roots: []RootSpec{
 		{Kind: KindLayout, LocalPath: "layouts"},
 		{Kind: KindAsset, LocalPath: "stylesheets", RemoteBase: "stylesheets"},
@@ -122,9 +122,9 @@ func TestCompileSelectionFilterCombinesCategoriesAndSelectorsAsUnion(t *testing.
 	}}
 
 	filter, err := compileSelectionFilter(cfg, Options{
-		CSSOnly:   true,
-		JSOnly:    true,
-		Selectors: []string{"layouts/default.liquid"},
+		CSSOnly: true,
+		JSOnly:  true,
+		Only:    []string{"layouts/default.liquid"},
 	})
 	if err != nil {
 		t.Fatalf("compile filter: %v", err)
@@ -137,11 +137,11 @@ func TestCompileSelectionFilterCombinesCategoriesAndSelectorsAsUnion(t *testing.
 		t.Fatal("expected js category to match")
 	}
 	if !filter.Match(Resource{Kind: KindLayout, LocalPath: "layouts/default.liquid", DisplayPath: "layouts/default.liquid"}) {
-		t.Fatal("expected explicit layout selector to match with category flags")
+		t.Fatal("expected only layout selector to match with category flags")
 	}
 }
 
-func TestFilterResourcesRejectsUnmatchedExplicitSelector(t *testing.T) {
+func TestFilterResourcesRejectsUnmatchedOnlySelector(t *testing.T) {
 	cfg := Config{ProjectRoot: t.TempDir(), Roots: []RootSpec{
 		{Kind: KindAsset, LocalPath: "javascripts", RemoteBase: "javascripts"},
 	}}
@@ -149,9 +149,9 @@ func TestFilterResourcesRejectsUnmatchedExplicitSelector(t *testing.T) {
 		{Kind: KindAsset, LocalPath: "javascripts/app.js", DisplayPath: "javascripts/app.js"},
 	}
 
-	_, err := FilterResources(cfg, resources, Options{Selectors: []string{"javascript/*.js"}})
+	_, err := FilterResources(cfg, resources, Options{Only: []string{"javascript/*.js"}})
 	if err == nil {
-		t.Fatal("expected unmatched selector error")
+		t.Fatal("expected unmatched only selector error")
 	}
 }
 
@@ -177,13 +177,13 @@ func TestOnlyFlagAcceptsGlobSelector(t *testing.T) {
 func TestCompileSelectionFilterRejectsInvalidSelector(t *testing.T) {
 	cfg := Config{ProjectRoot: t.TempDir()}
 
-	if _, err := compileSelectionFilter(cfg, Options{Selectors: []string{"../theme.css"}}); err == nil {
-		t.Fatal("expected selector escape error")
+	if _, err := compileSelectionFilter(cfg, Options{Only: []string{"../theme.css"}}); err == nil {
+		t.Fatal("expected only selector escape error")
 	}
-	if _, err := compileSelectionFilter(cfg, Options{Selectors: []string{"/tmp/theme.css"}}); err == nil {
-		t.Fatal("expected absolute selector error")
+	if _, err := compileSelectionFilter(cfg, Options{Only: []string{"/tmp/theme.css"}}); err == nil {
+		t.Fatal("expected absolute only selector error")
 	}
-	if _, err := compileSelectionFilter(cfg, Options{Selectors: []string{`C:\tmp\theme.css`}}); err == nil {
-		t.Fatal("expected Windows drive selector error")
+	if _, err := compileSelectionFilter(cfg, Options{Only: []string{`C:\tmp\theme.css`}}); err == nil {
+		t.Fatal("expected Windows drive only selector error")
 	}
 }
