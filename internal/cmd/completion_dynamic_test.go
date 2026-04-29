@@ -497,6 +497,8 @@ func TestCompleteDynamicCommandPrintsCandidatesOnly(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
 	withFakeAuthStore(t, &fakeAuthStore{
 		credential: auth.Credential{Token: "test-token", Email: "me@example.com"},
 	})
@@ -544,6 +546,8 @@ func completionTestContext(t *testing.T) context.Context {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
 	withFakeAuthStore(t, &fakeAuthStore{
 		credential: auth.Credential{Token: "test-token", Email: "me@example.com"},
 	})
