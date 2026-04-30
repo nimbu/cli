@@ -10,7 +10,7 @@ import (
 
 // WebhooksDeleteCmd deletes a webhook.
 type WebhooksDeleteCmd struct {
-	ID string `arg:"" help:"Webhook ID"`
+	ID string `required:"" help:"Webhook ID"`
 }
 
 // Run executes the delete command.

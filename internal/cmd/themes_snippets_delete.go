@@ -10,8 +10,8 @@ import (
 
 // ThemeSnippetsDeleteCmd deletes a snippet.
 type ThemeSnippetsDeleteCmd struct {
-	Theme string `arg:"" help:"Theme ID"`
-	Name  string `arg:"" help:"Snippet name including extension"`
+	Theme string `required:"" help:"Theme ID"`
+	Name  string `required:"" help:"Snippet name including extension"`
 }
 
 // Run executes the delete command.

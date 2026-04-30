@@ -12,7 +12,7 @@ import (
 
 // TranslationsGetCmd gets a translation.
 type TranslationsGetCmd struct {
-	Key string `arg:"" help:"Translation key"`
+	Key string `required:"" help:"Translation key"`
 }
 
 // Run executes the get command.

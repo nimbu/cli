@@ -12,7 +12,7 @@ import (
 
 // ChannelsGetCmd gets channel details.
 type ChannelsGetCmd struct {
-	Channel string `arg:"" help:"Channel slug"`
+	Channel string `required:"" help:"Channel slug"`
 }
 
 // Run executes the get command.

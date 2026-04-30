@@ -11,7 +11,7 @@ import (
 
 // BlogPostsCountCmd gets count of articles for a blog.
 type BlogPostsCountCmd struct {
-	Blog string `arg:"" help:"Blog ID or handle"`
+	Blog string `required:"" help:"Blog ID or handle"`
 }
 
 // Run executes the count command.

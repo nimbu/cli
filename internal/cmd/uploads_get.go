@@ -11,7 +11,7 @@ import (
 
 // UploadsGetCmd gets upload details.
 type UploadsGetCmd struct {
-	ID string `arg:"" help:"Upload ID"`
+	ID string `required:"" help:"Upload ID"`
 }
 
 // Run executes the get command.

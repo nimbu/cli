@@ -11,8 +11,8 @@ import (
 
 // ThemeSnippetsCreateCmd creates or updates a snippet.
 type ThemeSnippetsCreateCmd struct {
-	Theme       string   `arg:"" help:"Theme ID"`
-	Name        string   `arg:"" help:"Snippet name including extension"`
+	Theme       string   `required:"" help:"Theme ID"`
+	Name        string   `required:"" help:"Snippet name including extension"`
 	File        string   `help:"Read snippet code from file" short:"f"`
 	Code        string   `help:"Snippet code (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. folder=shared)"`

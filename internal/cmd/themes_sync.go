@@ -27,8 +27,7 @@ type ThemePushCmd struct {
 	DryRun     bool     `help:"Print planned uploads without changing remote state" name:"dry-run"`
 	Since      string   `help:"Compare against this git ref instead of HEAD (e.g. origin/main)"`
 	Theme      string   `help:"Override theme from nimbu.yml"`
-	Only       []string `help:"Only upload these file, directory, or glob selectors" name:"only"`
-	Selectors  []string `arg:"" optional:"" help:"File, directory, or glob selectors to upload"`
+	Only       []string `help:"Only upload these file, directory, or glob selectors; commas split multiple selectors" name:"only"`
 	LiquidOnly bool     `help:"Only upload liquid resources" name:"liquid-only"`
 	CSSOnly    bool     `help:"Only upload stylesheet assets" name:"css-only"`
 	JSOnly     bool     `help:"Only upload JavaScript assets" name:"js-only"`
@@ -38,20 +37,7 @@ type ThemePushCmd struct {
 
 // Run executes the push command.
 func (c *ThemePushCmd) Run(ctx context.Context, flags *RootFlags) error {
-	return runThemeTransfer(ctx, flags, c.Theme, themes.Options{
-		All:        c.All,
-		Build:      c.Build,
-		DryRun:     c.DryRun,
-		Force:      flags != nil && flags.Force,
-		Since:      c.Since,
-		Only:       c.Only,
-		Selectors:  c.Selectors,
-		LiquidOnly: c.LiquidOnly,
-		CSSOnly:    c.CSSOnly,
-		JSOnly:     c.JSOnly,
-		ImagesOnly: c.ImagesOnly,
-		FontsOnly:  c.FontsOnly,
-	}, "push")
+	return runThemeTransfer(ctx, flags, c.Theme, themePushOptions(c, flags), "push")
 }
 
 // ThemeSyncCmd uploads managed local theme files and optionally deletes remote files.
@@ -62,8 +48,7 @@ type ThemeSyncCmd struct {
 	Prune      bool     `help:"Delete managed remote theme files missing locally"`
 	Since      string   `help:"Compare against this git ref instead of HEAD (e.g. origin/main)"`
 	Theme      string   `help:"Override theme from nimbu.yml"`
-	Only       []string `help:"Only sync these file, directory, or glob selectors" name:"only"`
-	Selectors  []string `arg:"" optional:"" help:"File, directory, or glob selectors to sync"`
+	Only       []string `help:"Only sync these file, directory, or glob selectors; commas split multiple selectors" name:"only"`
 	LiquidOnly bool     `help:"Only sync liquid resources" name:"liquid-only"`
 	CSSOnly    bool     `help:"Only sync stylesheet assets" name:"css-only"`
 	JSOnly     bool     `help:"Only sync JavaScript assets" name:"js-only"`
@@ -73,21 +58,40 @@ type ThemeSyncCmd struct {
 
 // Run executes the sync command.
 func (c *ThemeSyncCmd) Run(ctx context.Context, flags *RootFlags) error {
-	return runThemeTransfer(ctx, flags, c.Theme, themes.Options{
+	return runThemeTransfer(ctx, flags, c.Theme, themeSyncOptions(c, flags), "sync")
+}
+
+func themePushOptions(c *ThemePushCmd, flags *RootFlags) themes.Options {
+	return themes.Options{
+		All:        c.All,
+		Build:      c.Build,
+		DryRun:     c.DryRun,
+		Force:      flags != nil && flags.Force,
+		Since:      c.Since,
+		Only:       splitRepeatedCSV(c.Only),
+		LiquidOnly: c.LiquidOnly,
+		CSSOnly:    c.CSSOnly,
+		JSOnly:     c.JSOnly,
+		ImagesOnly: c.ImagesOnly,
+		FontsOnly:  c.FontsOnly,
+	}
+}
+
+func themeSyncOptions(c *ThemeSyncCmd, flags *RootFlags) themes.Options {
+	return themes.Options{
 		All:        c.All,
 		Build:      c.Build,
 		DryRun:     c.DryRun,
 		Force:      flags != nil && flags.Force,
 		Prune:      c.Prune,
 		Since:      c.Since,
-		Only:       c.Only,
-		Selectors:  c.Selectors,
+		Only:       splitRepeatedCSV(c.Only),
 		LiquidOnly: c.LiquidOnly,
 		CSSOnly:    c.CSSOnly,
 		JSOnly:     c.JSOnly,
 		ImagesOnly: c.ImagesOnly,
 		FontsOnly:  c.FontsOnly,
-	}, "sync")
+	}
 }
 
 func runThemeTransfer(ctx context.Context, flags *RootFlags, themeOverride string, opts themes.Options, mode string) error {

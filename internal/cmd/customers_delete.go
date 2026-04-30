@@ -10,7 +10,7 @@ import (
 
 // CustomersDeleteCmd deletes a customer.
 type CustomersDeleteCmd struct {
-	Customer string `arg:"" help:"Customer ID or email"`
+	Customer string `required:"" help:"Customer ID or email"`
 }
 
 // Run executes the delete command.

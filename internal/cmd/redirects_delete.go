@@ -10,7 +10,7 @@ import (
 
 // RedirectsDeleteCmd deletes a redirect.
 type RedirectsDeleteCmd struct {
-	Redirect string `arg:"" help:"Redirect ID"`
+	Redirect string `required:"" help:"Redirect ID"`
 }
 
 // Run executes the delete command.

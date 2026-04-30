@@ -345,8 +345,8 @@ func TestChannelsGetUsesProjectApproachesCassette(t *testing.T) {
 func TestChannelsFieldsUsesProjectApproachesCassette(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/channels/project_approaches":
-			writeFixtureResponse(t, w, "../testdata/nimbu_api/localized_project_approaches/channels.json", firstFixtureArrayItem)
+		case "/channels/project_approaches/customizations":
+			writeFixtureResponse(t, w, "../testdata/nimbu_api/localized_project_approaches/channels.json", firstFixtureCustomizations)
 		default:
 			http.NotFound(w, r)
 		}
@@ -354,7 +354,7 @@ func TestChannelsFieldsUsesProjectApproachesCassette(t *testing.T) {
 	defer srv.Close()
 
 	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
-	cmd := &ChannelsFieldsCmd{Channel: "project_approaches"}
+	cmd := &ChannelsFieldsListCmd{Channel: "project_approaches"}
 	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
 		t.Fatalf("run channels fields: %v", err)
 	}
@@ -566,14 +566,8 @@ func TestChannelEntriesUpdateFallsBackToSlugLookupWithContentLocale(t *testing.T
 func TestChannelsFieldsHumanOutputShowsReadableSchemaDetails(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/channels/articles":
-			_, _ = w.Write([]byte(`{
-				"id":"c1",
-				"slug":"articles",
-				"name":"Articles",
-				"label_field":"title",
-				"title_field":"title",
-				"customizations":[
+		case "/channels/articles/customizations":
+			_, _ = w.Write([]byte(`[
 					{"name":"title","label":"Title","type":"string","required":true,"unique":true},
 					{"name":"country","label":"Country","type":"select","localized":true,"select_options":[
 						{"id":"opt_be","name":"Belgium","slug":"belgium","position":1},
@@ -581,8 +575,7 @@ func TestChannelsFieldsHumanOutputShowsReadableSchemaDetails(t *testing.T) {
 					]},
 					{"name":"author","label":"Author","type":"belongs_to","reference":"authors"},
 					{"name":"location","label":"Location","type":"geo","geo_type":"point","hint":"Shown on map"}
-				]
-			}`))
+				]`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -590,15 +583,15 @@ func TestChannelsFieldsHumanOutputShowsReadableSchemaDetails(t *testing.T) {
 	defer srv.Close()
 
 	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{})
-	cmd := &ChannelsFieldsCmd{Channel: "articles"}
+	cmd := &ChannelsFieldsListCmd{Channel: "articles"}
 	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
 		t.Fatalf("run channels fields: %v", err)
 	}
 
 	got := out.String()
 	for _, needle := range []string{
-		"articles  Articles",
-		"title: title   label: title   fields: 4",
+		"articles",
+		"fields: 4",
 		"Core",
 		"Choices",
 		"Relations",
@@ -629,15 +622,10 @@ func TestChannelsFieldsHumanOutputShowsReadableSchemaDetails(t *testing.T) {
 func TestChannelsFieldsHumanOutputUsesColorOnlyWhenEnabled(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/channels/articles":
-			_, _ = w.Write([]byte(`{
-				"id":"c1",
-				"slug":"articles",
-				"name":"Articles",
-				"customizations":[
+		case "/channels/articles/customizations":
+			_, _ = w.Write([]byte(`[
 					{"name":"title","label":"Title","type":"string","required":true}
-				]
-			}`))
+				]`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -651,7 +639,7 @@ func TestChannelsFieldsHumanOutputUsesColorOnlyWhenEnabled(t *testing.T) {
 		Color: "always",
 		NoTTY: true,
 	})
-	colorCmd := &ChannelsFieldsCmd{Channel: "articles"}
+	colorCmd := &ChannelsFieldsListCmd{Channel: "articles"}
 	if err := colorCmd.Run(colorCtx, &RootFlags{Site: "demo"}); err != nil {
 		t.Fatalf("run channels fields with color: %v", err)
 	}
@@ -660,7 +648,7 @@ func TestChannelsFieldsHumanOutputUsesColorOnlyWhenEnabled(t *testing.T) {
 	}
 
 	plainCtx, plainOut, _ := newContractTestContext(t, srv.URL, output.Mode{})
-	plainCmd := &ChannelsFieldsCmd{Channel: "articles"}
+	plainCmd := &ChannelsFieldsListCmd{Channel: "articles"}
 	if err := plainCmd.Run(plainCtx, &RootFlags{Site: "demo"}); err != nil {
 		t.Fatalf("run channels fields without color: %v", err)
 	}
@@ -672,18 +660,13 @@ func TestChannelsFieldsHumanOutputUsesColorOnlyWhenEnabled(t *testing.T) {
 func TestChannelsFieldsPlainOutputUsesTSVRowsWithOptionsJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/channels/articles":
-			_, _ = w.Write([]byte(`{
-				"id":"c1",
-				"slug":"articles",
-				"name":"Articles",
-				"customizations":[
+		case "/channels/articles/customizations":
+			_, _ = w.Write([]byte(`[
 					{"name":"country","label":"Country","type":"select","localized":true,"select_options":[
 						{"id":"opt_be","name":"Belgium","slug":"belgium","position":1}
 					]},
 					{"name":"author","label":"Author","type":"belongs_to","required":true,"reference":"authors"}
-				]
-			}`))
+				]`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -691,7 +674,7 @@ func TestChannelsFieldsPlainOutputUsesTSVRowsWithOptionsJSON(t *testing.T) {
 	defer srv.Close()
 
 	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{Plain: true})
-	cmd := &ChannelsFieldsCmd{Channel: "articles"}
+	cmd := &ChannelsFieldsListCmd{Channel: "articles"}
 	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
 		t.Fatalf("run channels fields plain: %v", err)
 	}
@@ -846,6 +829,22 @@ func firstFixtureArrayItem(t *testing.T, data []byte) []byte {
 	out, err := json.Marshal(items[0])
 	if err != nil {
 		t.Fatalf("encode fixture item: %v", err)
+	}
+	return out
+}
+
+func firstFixtureCustomizations(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var items []map[string]any
+	if err := json.Unmarshal(data, &items); err != nil {
+		t.Fatalf("decode fixture array: %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatal("fixture array is empty")
+	}
+	out, err := json.Marshal(items[0]["customizations"])
+	if err != nil {
+		t.Fatalf("encode fixture customizations: %v", err)
 	}
 	return out
 }

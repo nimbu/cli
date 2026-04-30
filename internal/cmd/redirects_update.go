@@ -11,7 +11,7 @@ import (
 
 // RedirectsUpdateCmd updates a redirect.
 type RedirectsUpdateCmd struct {
-	Redirect    string   `arg:"" help:"Redirect ID"`
+	Redirect    string   `required:"" help:"Redirect ID"`
 	File        string   `help:"Read redirect JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. source=/old, target=/new)"`
 }

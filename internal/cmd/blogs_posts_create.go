@@ -10,7 +10,7 @@ import (
 
 // BlogPostsCreateCmd creates a blog article.
 type BlogPostsCreateCmd struct {
-	Blog        string   `arg:"" help:"Blog ID or handle"`
+	Blog        string   `required:"" help:"Blog ID or handle"`
 	File        string   `help:"Read post JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. title=Hello, status=published)"`
 }

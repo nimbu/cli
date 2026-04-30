@@ -10,7 +10,7 @@ import (
 
 // TranslationsCopyCmd copies translations between sites.
 type TranslationsCopyCmd struct {
-	Query    string `arg:"" optional:"" help:"Translation key, prefix*, or *" default:"*"`
+	Query    string `help:"Translation key, prefix*, or *" default:"*" name:"only"`
 	From     string `help:"Source site" required:"" name:"from"`
 	To       string `help:"Target site" required:"" name:"to"`
 	FromHost string `help:"Source API base URL or host" name:"from-host"`

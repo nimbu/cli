@@ -10,8 +10,8 @@ import (
 
 // ThemeTemplatesDeleteCmd deletes a template.
 type ThemeTemplatesDeleteCmd struct {
-	Theme string `arg:"" help:"Theme ID"`
-	Name  string `arg:"" help:"Template name including extension"`
+	Theme string `required:"" help:"Theme ID"`
+	Name  string `required:"" help:"Template name including extension"`
 }
 
 // Run executes the delete command.

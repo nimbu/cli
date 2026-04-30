@@ -94,7 +94,7 @@ func TestThemeTransferTimelineLabelFallsBackWhenThemeInfoUnavailable(t *testing.
 	}
 }
 
-func TestThemePushAcceptsPositionalSelectors(t *testing.T) {
+func TestThemePushAcceptsOnlySelectors(t *testing.T) {
 	parser, cli, err := newParser()
 	if err != nil {
 		t.Fatalf("new parser: %v", err)
@@ -103,10 +103,10 @@ func TestThemePushAcceptsPositionalSelectors(t *testing.T) {
 	if _, err := parser.Parse([]string{
 		"themes",
 		"push",
-		"javascript/*.js",
-		"stylesheets/*.css",
-		"layouts/default.liquid",
-		"snippets/bundle_app.liquid",
+		"--only=javascript/*.js",
+		"--only=stylesheets/*.css",
+		"--only=layouts/default.liquid",
+		"--only=snippets/bundle_app.liquid",
 	}); err != nil {
 		t.Fatalf("parse themes push selectors: %v", err)
 	}
@@ -117,12 +117,17 @@ func TestThemePushAcceptsPositionalSelectors(t *testing.T) {
 		"layouts/default.liquid",
 		"snippets/bundle_app.liquid",
 	}
-	if got := cli.Themes.Push.Selectors; !reflect.DeepEqual(got, want) {
+	if got := cli.Themes.Push.Only; !reflect.DeepEqual(got, want) {
 		t.Fatalf("selectors = %#v, want %#v", got, want)
+	}
+
+	opts := themePushOptions(&cli.Themes.Push, nil)
+	if got := opts.Only; !reflect.DeepEqual(got, want) {
+		t.Fatalf("expanded selectors = %#v, want %#v", got, want)
 	}
 }
 
-func TestThemeSyncAcceptsPositionalSelectors(t *testing.T) {
+func TestThemeSyncAcceptsOnlySelectors(t *testing.T) {
 	parser, cli, err := newParser()
 	if err != nil {
 		t.Fatalf("new parser: %v", err)
@@ -131,14 +136,37 @@ func TestThemeSyncAcceptsPositionalSelectors(t *testing.T) {
 	if _, err := parser.Parse([]string{
 		"themes",
 		"sync",
-		"stylesheets/*.css",
-		"snippets/bundle_app.liquid",
+		"--only=stylesheets/*.css",
+		"--only=snippets/bundle_app.liquid",
 	}); err != nil {
 		t.Fatalf("parse themes sync selectors: %v", err)
 	}
 
 	want := []string{"stylesheets/*.css", "snippets/bundle_app.liquid"}
-	if got := cli.Themes.Sync.Selectors; !reflect.DeepEqual(got, want) {
+	if got := cli.Themes.Sync.Only; !reflect.DeepEqual(got, want) {
 		t.Fatalf("selectors = %#v, want %#v", got, want)
+	}
+
+	opts := themeSyncOptions(&cli.Themes.Sync, nil)
+	if got := opts.Only; !reflect.DeepEqual(got, want) {
+		t.Fatalf("expanded selectors = %#v, want %#v", got, want)
+	}
+}
+
+func TestThemePushAndSyncExpandCommaSeparatedOnlySelectors(t *testing.T) {
+	push := themePushOptions(&ThemePushCmd{
+		Only: []string{"javascript/*.js, stylesheets/*.css", "layouts/default.liquid"},
+	}, nil)
+	wantPush := []string{"javascript/*.js", "stylesheets/*.css", "layouts/default.liquid"}
+	if !reflect.DeepEqual(push.Only, wantPush) {
+		t.Fatalf("push selectors = %#v, want %#v", push.Only, wantPush)
+	}
+
+	sync := themeSyncOptions(&ThemeSyncCmd{
+		Only: []string{"stylesheets/*.css,snippets/bundle_app.liquid"},
+	}, nil)
+	wantSync := []string{"stylesheets/*.css", "snippets/bundle_app.liquid"}
+	if !reflect.DeepEqual(sync.Only, wantSync) {
+		t.Fatalf("sync selectors = %#v, want %#v", sync.Only, wantSync)
 	}
 }

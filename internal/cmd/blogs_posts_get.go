@@ -11,8 +11,8 @@ import (
 
 // BlogPostsGetCmd gets a blog article.
 type BlogPostsGetCmd struct {
-	Blog string `arg:"" help:"Blog ID or handle"`
-	Post string `arg:"" help:"Post ID or slug"`
+	Blog string `required:"" help:"Blog ID or handle"`
+	Post string `required:"" help:"Post ID or slug"`
 }
 
 // Run executes the get command.

@@ -77,13 +77,41 @@ nimbu channels list --site my-site
 nimbu domains list --site my-site
 
 # Verify a sender domain
-nimbu senders verify-ownership mail.example.com --site my-site
+nimbu senders verify-ownership --sender mail.example.com --site my-site
 
 # JSON output for scripting
-nimbu channels entries list blog --site my-site --json | jq '.[]'
+nimbu channels entries list --channel blog --site my-site --json | jq '.[]'
 
 # Start local simulator proxy + project dev server
 nimbu server
+```
+
+## CLI Grammar
+
+This v0.x line intentionally makes a clean grammar cut: resource identity moved
+from positional IDs to explicit flags. Existing scripts using positional
+identity must be migrated before upgrading to this grammar.
+
+Commands are flag-first for resource identity. Put identifiers in flags such as
+`--site`, `--channel`, `--entry`, `--page`, `--menu`, `--field`, `--product`,
+`--key`, `--domain`, `--sender`, `--from`, and `--to`.
+
+Payload stays last. Inline assignments trail identity flags and command options:
+
+```bash
+nimbu channels entries update --channel blog --entry welcome title="Welcome" published:=true
+nimbu pages update --page about --file payload.json
+nimbu sites settings --site staging --json
+```
+
+Migration examples:
+
+```bash
+# Old: nimbu channels get blog
+nimbu channels get --channel blog
+
+# Old: nimbu channels entries update blog welcome title=Welcome
+nimbu channels entries update --channel blog --entry welcome title=Welcome
 ```
 
 ## Inline Payload Syntax
@@ -100,17 +128,17 @@ Operators:
 Use dot paths for nesting:
 
 ```bash
-nimbu products update product-123 name="Wine Box" price:=29.9 seo.title="Gift box"
+nimbu products update --product product-123 name="Wine Box" price:=29.9 seo.title="Gift box"
 ```
 
 `--file` and inline assignments are mutually exclusive.
 
 ```bash
 # File payload
-nimbu pages update about --file payload.json
+nimbu pages update --page about --file payload.json
 
 # Inline payload
-nimbu pages update about title="About us" published:=true
+nimbu pages update --page about title="About us" published:=true
 ```
 
 For richer document resources, inline updates stay intentionally shallow:
@@ -124,30 +152,56 @@ For richer document resources, inline updates stay intentionally shallow:
 `pages`, `menus`, and `channels` have resource-specific contracts rather than generic CRUD payloads.
 
 - `pages get` and `pages update` use page `fullpath` as the canonical identifier
-- `pages get --json` returns the full page document, including nested `items`
-- `pages get --download-assets DIR --json` downloads file editables and rewrites them to `attachment_path`
-- `pages update` uses replace-safe patch semantics and supports `attachment_path` file refs in JSON
-- `menus get --json` returns the full nested menu tree
+- `pages get --page <fullpath> --json` returns the full page document, including nested `items`
+- `pages get --page <fullpath> --download-assets DIR --json` downloads file editables and rewrites them to `attachment_path`
+- `pages update --page <fullpath>` uses replace-safe patch semantics and supports `attachment_path` file refs in JSON
+- `menus get --menu <slug> --json` returns the full nested menu tree
 - `menus update` uses replace-safe patch semantics for nested menu updates
-- `channels get --json` returns the richer channel contract, including schema/customizations and ACL-oriented fields
+- `channels get --channel <slug> --json` returns the richer channel contract, including schema/customizations and ACL-oriented fields
 
 Examples:
 
 ```bash
 # Fetch a page by fullpath
-nimbu pages get about/team --json
+nimbu pages get --page about/team --json
 
 # Download page file editables and rewrite JSON to local file refs
-nimbu pages get about/team --download-assets tmp/page-assets --json
+nimbu pages get --page about/team --download-assets tmp/page-assets --json
 
 # Replace-safe page update using a full document payload
-nimbu pages update about/team --file page.json
+nimbu pages update --page about/team --file page.json
 
 # Nested menu fetch
-nimbu menus get main --json
+nimbu menus get --menu main --json
 
 # Rich channel contract with schema and ACL data
-nimbu channels get articles --json
+nimbu channels get --channel articles --json
+```
+
+### Channel field workflows
+
+`channels fields` manages a channel schema with the same grammar: identity in
+flags, payload as trailing assignments or `--file`.
+
+```bash
+# Inspect fields
+nimbu channels fields list --channel blog --json
+
+# Add or update one field
+nimbu channels fields add --channel blog --name summary type=string label="Summary"
+nimbu channels fields update --channel blog --field summary label="Teaser" required:=true
+
+# Delete one field
+nimbu channels fields delete --channel blog --field summary --force
+
+# Apply a partial schema patch from JSON
+nimbu channels fields apply --channel blog --file fields.patch.json
+
+# Replace the full field set from JSON
+nimbu channels fields replace --channel blog --file fields.json --force
+
+# Compare the current schema with a local JSON array
+nimbu channels fields diff --channel blog --file fields.json --json
 ```
 
 ### Translations shorthand
@@ -155,8 +209,8 @@ nimbu channels get articles --json
 `translations create` and `translations update` support locale shorthand: top-level locale keys are mapped to `values.<locale>`.
 
 ```bash
-nimbu translations update activate.label.lastname nl=Achternaam
-nimbu translations update activate.label.lastname values.fr=Nom
+nimbu translations update --key activate.label.lastname nl=Achternaam
+nimbu translations update --key activate.label.lastname values.fr=Nom
 ```
 
 Locales are validated with a strict-lite BCP47 pattern (`nl`, `fr`, `nl-BE`, `zh-Hant`, ...).
@@ -195,23 +249,27 @@ nimbu api        Raw API access
 nimbu completion Generate shell completions
 ```
 
+Completion debug output is normally hidden by shell wrappers. Set
+`NIMBU_COMPLETION_DEBUG=1` and inspect the `completion-debug.log` file in the
+Nimbu data directory when debugging dynamic completions.
+
 ## Admin Workflow Commands
 
 ```bash
 # Make a domain primary
-nimbu domains make-primary shop.example.com --site my-site --force
+nimbu domains make-primary --domain shop.example.com --site my-site --force
 
 # Trigger sender verification
-nimbu senders verify mail.example.com --site my-site
+nimbu senders verify --sender mail.example.com --site my-site
 
 # Record manual payment for an order
-nimbu orders pay 100012 --site my-site
+nimbu orders pay --order 100012 --site my-site
 
 # Resend customer confirmation
-nimbu customers resend-confirmation alice@example.com --site my-site
+nimbu customers resend-confirmation --customer alice@example.com --site my-site
 
 # Empty a channel with strict confirmation
-nimbu channels empty news --site my-site --confirm news --force
+nimbu channels empty --channel news --site my-site --confirm news --force
 ```
 
 ## Advanced Admin Endpoints
@@ -219,18 +277,18 @@ nimbu channels empty news --site my-site --confirm news --force
 Some newer admin endpoints are intentionally left on the raw API surface until they justify dedicated CLI UX.
 
 ```bash
-# Settings groups
-nimbu api GET /settings/checkout --site my-site
-nimbu api PATCH /settings/shipping --site my-site -d '{"bpost_label_qty":2}'
+# Settings
+nimbu sites settings --site my-site --json
+nimbu api --method PATCH --path /settings/shipping --site my-site -d '{"bpost_label_qty":2}'
 
 # Shipping rates
-nimbu api GET /shipping_rates --site my-site
+nimbu api --method GET --path /shipping_rates --site my-site
 
 # Tax schemes
-nimbu api GET /tax_schemes --site my-site
+nimbu api --method GET --path /tax_schemes --site my-site
 
 # Subscriptions
-nimbu api GET /subscriptions --site my-site
+nimbu api --method GET --path /subscriptions --site my-site
 ```
 
 ## Configuration
@@ -402,9 +460,8 @@ Notes:
 - `code/**` and `content/**` are intentionally excluded from builtin theme sync.
 - `--build` runs `sync.build` from `nimbu.yml` before collecting files.
 - `--all` uploads the full managed file set.
-- Positional selectors narrow uploads to specific managed files, directories, or
-  globs.
-- `--only` is the flag form of the same selector behavior and can be repeated.
+- `--only` narrows uploads to specific managed files, directories, or globs and
+  can be repeated; commas split multiple selectors.
 - `--liquid-only`, `--css-only`, `--js-only`, `--images-only`, and `--fonts-only`
   select managed resource categories before upload/sync.
 - Explicit selectors and category flags are additive.
@@ -415,9 +472,10 @@ Examples:
 ```bash
 nimbu themes push --build
 nimbu themes push --liquid-only
-nimbu themes push javascript/*.js stylesheets/*.css layouts/default.liquid snippets/bundle_app.liquid
+nimbu themes push --only javascript/*.js --only stylesheets/*.css --only layouts/default.liquid --only snippets/bundle_app.liquid
+nimbu themes sync --only javascript/*.js,stylesheets/*.css
 nimbu themes push --only snippets/header.liquid --only stylesheets/theme.css
-nimbu themes push --js-only --css-only layouts/default.liquid snippets/bundle_app.liquid
+nimbu themes push --js-only --css-only --only layouts/default.liquid --only snippets/bundle_app.liquid
 nimbu themes push --all --theme storefront
 nimbu themes pull --theme storefront
 nimbu themes diff --theme storefront
@@ -466,13 +524,15 @@ nimbu mails pull --only welcome
 
 `nimbu apps push` pushes local cloud code files for the selected configured app,
 preserving dependency order for `require()` and static ESM imports. `--sync` also
-deletes remote files that no longer exist locally.
+deletes remote files that no longer exist locally. `--only` can be repeated and
+each value may be comma-separated.
 
 Examples:
 
 ```bash
 nimbu apps config
 nimbu apps push --app storefront
+nimbu apps push --app storefront --only code/main.js,code/hooks.js --only code/jobs/*.js
 nimbu apps push --app storefront --sync --force
 ```
 

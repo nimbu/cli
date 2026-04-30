@@ -10,7 +10,7 @@ import (
 
 // PagesCopyCmd copies pages between sites.
 type PagesCopyCmd struct {
-	Fullpath string `arg:"" optional:"" help:"Page fullpath or prefix* to copy" default:"*"`
+	Fullpath string `help:"Page fullpath or prefix* to copy" default:"*" name:"only"`
 	From     string `help:"Source site" required:"" name:"from"`
 	To       string `help:"Target site" required:"" name:"to"`
 	FromHost string `help:"Source API base URL or host" name:"from-host"`

@@ -10,7 +10,7 @@ import (
 )
 
 type OrdersPayCmd struct {
-	Order string `arg:"" help:"Order ID or number"`
+	Order string `required:"" help:"Order ID or number"`
 }
 
 func (c *OrdersPayCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -18,7 +18,7 @@ func (c *OrdersPayCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 type OrdersFinishCmd struct {
-	Order  string `arg:"" help:"Order ID or number"`
+	Order  string `required:"" help:"Order ID or number"`
 	Notify bool   `help:"Send notification" default:"true"`
 }
 
@@ -27,7 +27,7 @@ func (c *OrdersFinishCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 type OrdersCancelCmd struct {
-	Order        string `arg:"" help:"Order ID or number"`
+	Order        string `required:"" help:"Order ID or number"`
 	Notify       bool   `help:"Send notification" default:"true"`
 	CancelReason string `name:"reason" help:"Cancel reason"`
 }
@@ -41,7 +41,7 @@ func (c *OrdersCancelCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 type OrdersReopenCmd struct {
-	Order string `arg:"" help:"Order ID or number"`
+	Order string `required:"" help:"Order ID or number"`
 }
 
 func (c *OrdersReopenCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -49,7 +49,7 @@ func (c *OrdersReopenCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 type OrdersArchiveCmd struct {
-	Order string `arg:"" help:"Order ID or number"`
+	Order string `required:"" help:"Order ID or number"`
 }
 
 func (c *OrdersArchiveCmd) Run(ctx context.Context, flags *RootFlags) error {

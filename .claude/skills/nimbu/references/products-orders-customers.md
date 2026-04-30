@@ -10,10 +10,10 @@ Identifier: product ID or slug.
 
 ```bash
 nimbu products list --all --json
-nimbu products get sku-123 --json
-nimbu products create name="Wine Box" price:=29.9 status=active --json
-nimbu products update sku-123 price:=34.5 seo.title="Gift box" --json
-nimbu products delete sku-123 --force
+nimbu products get --product sku-123 --json
+nimbu products create --json name="Wine Box" price:=29.9 status=active
+nimbu products update --product sku-123 --json price:=34.5 seo.title="Gift box"
+nimbu products delete --product sku-123 --force
 nimbu products count --json
 ```
 
@@ -61,8 +61,8 @@ Identifier: order ID or order number.
 
 ```bash
 nimbu orders list --status paid --all --json
-nimbu orders get ORD-12345 --json
-nimbu orders update ORD-12345 --status shipped --json
+nimbu orders get --order ORD-12345 --json
+nimbu orders update --order ORD-12345 --status shipped --json
 nimbu orders count --status pending --json
 ```
 
@@ -90,10 +90,10 @@ Identifier: customer ID or email.
 
 ```bash
 nimbu customers list --all --json
-nimbu customers get user@example.com --json
-nimbu customers create email=user@example.com first_name=Ana --json
-nimbu customers update user@example.com phone="+32123456" --json
-nimbu customers delete user@example.com --force
+nimbu customers get --customer user@example.com --json
+nimbu customers create --json email=user@example.com first_name=Ana
+nimbu customers update --customer user@example.com --json phone="+32123456"
+nimbu customers delete --customer user@example.com --force
 nimbu customers count --json
 ```
 
@@ -170,5 +170,5 @@ List columns: `id`, `code`, `name`, `state`, `coupon_type`, `coupon_percentage`,
 
 ```bash
 nimbu coupons list --all --json
-nimbu coupons create code=SUMMER25 name="Summer Sale" coupon_type=percentage coupon_percentage:=25 --json
+nimbu coupons create --json code=SUMMER25 name="Summer Sale" coupon_type=percentage coupon_percentage:=25
 ```

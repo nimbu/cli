@@ -22,7 +22,7 @@ Downloads file editables into DIR and rewrites the JSON output to `attachment_pa
 
 ### update inline limits
 
-Inline assignments (`nimbu pages update <fullpath> key=value`) only accept these shallow keys:
+Inline assignments (`nimbu pages update --page <fullpath> key=value`) only accept these shallow keys:
 - `title`, `template`, `published`, `locale`
 
 Any deeper field (editables, nested content) requires `--file` or stdin. The CLI fetches the current document, merges inline assignments on top, and PATCHes. This is a read-modify-write cycle, not a blind overwrite.
@@ -37,7 +37,7 @@ Accepts `--file` or inline assignments. No inline key restrictions -- the body i
 
 ### copy
 
-`nimbu pages copy [fullpath|prefix*] --from <site> --to <site>`
+`nimbu pages copy --only <fullpath|prefix*> --from <site> --to <site>`
 
 Copies pages between sites. Supports glob prefix (`archive/*`). Default is `*` (all pages). Requires `--write`. Cross-host copy supported via `--from-host` / `--to-host`.
 
@@ -51,7 +51,7 @@ Subcommands: `list`, `get`, `create`, `update`, `delete`, `count`, `copy`.
 
 ### get returns nested tree
 
-`nimbu menus get <slug>` returns the full menu document including nested `items` tree with depth stats.
+`nimbu menus get --menu <slug>` returns the full menu document including nested `items` tree with depth stats.
 
 ### update inline limits
 
@@ -62,7 +62,7 @@ Editing menu items requires `--file` or stdin with the full document. The body i
 
 ### copy
 
-`nimbu menus copy [slug] --from <site> --to <site>`
+`nimbu menus copy --only <slug> --from <site> --to <site>`
 
 Default slug is `*` (all). For a single menu, prompts for overwrite confirmation unless `--force` is set.
 
@@ -133,13 +133,13 @@ Hello {{ user.name }}, ...
 
 ### pull
 
-`nimbu notifications pull [--only slug1,slug2]`
+`nimbu notifications pull [--only slug1 --only slug2]`
 
 Downloads all notifications into `content/notifications/`. Locale directories are created only when a translation differs from the base. Requires `--write`.
 
 ### push
 
-`nimbu notifications push [--only slug1,slug2]`
+`nimbu notifications push [--only slug1 --only slug2]`
 
 Reads local templates, validates locale directories against the site's configured locales (falls back to a built-in allowlist of 38 ISO codes), and upserts via the API. Each template is checked for existence first -- existing ones are updated, missing ones are created.
 

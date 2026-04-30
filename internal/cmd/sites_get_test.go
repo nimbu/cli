@@ -48,9 +48,9 @@ func TestSitesGetRunJSONIncludesComputedURLs(t *testing.T) {
 	defer server.Close()
 
 	ctx, stdout, _ := newSitesGetTestContext(t, server.URL, output.Mode{JSON: true})
-	cmd := SitesGetCmd{Site: "demo"}
+	cmd := SitesGetCmd{}
 
-	if err := cmd.Run(ctx, &RootFlags{APIURL: server.URL}); err != nil {
+	if err := cmd.Run(ctx, &RootFlags{APIURL: server.URL, Site: "demo"}); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 
@@ -89,9 +89,9 @@ func TestSitesGetRunJSONCustomDomain(t *testing.T) {
 	defer server.Close()
 
 	ctx, stdout, _ := newSitesGetTestContext(t, server.URL, output.Mode{JSON: true})
-	cmd := SitesGetCmd{Site: "acme"}
+	cmd := SitesGetCmd{}
 
-	if err := cmd.Run(ctx, &RootFlags{APIURL: server.URL}); err != nil {
+	if err := cmd.Run(ctx, &RootFlags{APIURL: server.URL, Site: "acme"}); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 
@@ -124,9 +124,9 @@ func TestSitesGetRunHumanShowsURLs(t *testing.T) {
 	defer server.Close()
 
 	ctx, stdout, _ := newSitesGetTestContext(t, server.URL, output.Mode{})
-	cmd := SitesGetCmd{Site: "demo"}
+	cmd := SitesGetCmd{}
 
-	if err := cmd.Run(ctx, &RootFlags{APIURL: server.URL}); err != nil {
+	if err := cmd.Run(ctx, &RootFlags{APIURL: server.URL, Site: "demo"}); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 

@@ -10,8 +10,8 @@ import (
 
 // ThemeFilesDeleteCmd deletes a theme file.
 type ThemeFilesDeleteCmd struct {
-	Theme string `arg:"" help:"Theme ID"`
-	Path  string `arg:"" help:"File path within theme"`
+	Theme string `required:"" help:"Theme ID"`
+	Path  string `required:"" help:"File path within theme"`
 }
 
 // Run executes the delete command.

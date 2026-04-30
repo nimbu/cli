@@ -11,7 +11,7 @@ import (
 
 // CouponsUpdateCmd updates a coupon.
 type CouponsUpdateCmd struct {
-	Coupon      string   `arg:"" help:"Coupon ID"`
+	Coupon      string   `required:"" help:"Coupon ID"`
 	File        string   `help:"Read coupon JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Promo, code=SPRING)"`
 }

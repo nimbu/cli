@@ -11,7 +11,7 @@ import (
 
 // AppsGetCmd gets an app by ID.
 type AppsGetCmd struct {
-	App string `arg:"" help:"Application ID"`
+	App string `required:"" help:"Application ID"`
 }
 
 // Run executes the get command.

@@ -11,7 +11,7 @@ import (
 
 // OrdersGetCmd gets an order by ID or number.
 type OrdersGetCmd struct {
-	Order string `arg:"" help:"Order ID or number"`
+	Order string `required:"" help:"Order ID or number"`
 }
 
 // Run executes the get command.

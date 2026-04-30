@@ -48,7 +48,7 @@ The `--since` flag changes the git comparison ref. When combined with a category
 | *(none)* | git diff HEAD | Push uncommitted changes |
 | `--since <ref>` | git diff REF | Push changes since ref (e.g. committed but not pushed) |
 | `--all` | all files | Push everything |
-| `--only <path>` | all files | Push specific files (bypasses git) |
+| `--only <path>[,<path>...]` | all files | Push specific files (bypasses git) |
 | `--css-only` | all files | Push all CSS files (bypasses git) |
 | `--css-only --since <ref>` | git diff REF | Push CSS files changed since ref |
 
@@ -58,7 +58,7 @@ The `--since` flag changes the git comparison ref. When combined with a category
 - `--build` -- run `sync.build.command` before collecting files
 - `--dry-run` -- print planned operations without executing
 - `--since <ref>` -- compare against this git ref instead of HEAD (e.g. `origin/main`); useful for pushing committed-but-not-pushed changes
-- `--only <path>` -- push specific project-relative files (repeatable); bypasses git change detection; path must be inside a managed root. Note: `--since` is ignored when `--only` is set
+- `--only <path>[,<path>...]` -- push specific project-relative files; commas split multiple selectors and the flag is repeatable; bypasses git change detection; path must be inside a managed root. Note: `--since` is ignored when `--only` is set
 - `--theme <id>` -- override theme from `nimbu.yml`
 - `--force` -- skip confirmation prompts (from global `--force`)
 
@@ -181,12 +181,14 @@ Apps are filtered by active host and site -- only matching entries are visible.
 
 ### Push
 
-`nimbu apps push [--app <name>] [files...]` -- uploads cloud code files.
+`nimbu apps push [--app <name>] [--only <file>[,<file>...]]...` -- uploads cloud code files.
 
 - Without `--app`, works if exactly one app is configured for the active host/site
 - Files are topologically sorted by `require()`/`import`/`export` dependencies before upload (dependencies first)
 - `--sync` deletes remote files missing locally (cannot combine with explicit file list)
-- Explicit file arguments are project-relative paths that restrict the upload set
+- `--only` project-relative paths restrict the upload set; values can be comma-separated and the flag can be repeated
+
+Example: `nimbu apps push --app storefront --only code/main.js,code/hooks.js --only code/jobs/*.js`
 
 ### Dependency ordering
 

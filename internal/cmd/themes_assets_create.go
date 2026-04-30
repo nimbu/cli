@@ -14,8 +14,8 @@ import (
 
 // ThemeAssetsCreateCmd creates or updates an asset.
 type ThemeAssetsCreateCmd struct {
-	Theme       string   `arg:"" help:"Theme ID"`
-	Name        string   `arg:"" help:"Asset name or path"`
+	Theme       string   `required:"" help:"Theme ID"`
+	Name        string   `required:"" help:"Asset name or path"`
 	File        string   `help:"Read asset content from file" short:"f"`
 	ContentType string   `help:"Asset content type"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. source.content_type=text/css)"`

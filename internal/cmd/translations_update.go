@@ -10,7 +10,7 @@ import (
 
 // TranslationsUpdateCmd updates a translation.
 type TranslationsUpdateCmd struct {
-	Key         string   `arg:"" help:"Translation key"`
+	Key         string   `required:"" help:"Translation key"`
 	File        string   `help:"Read translation JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. nl=Achternaam, values.fr=Nom)"`
 }

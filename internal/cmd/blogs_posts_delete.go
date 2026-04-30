@@ -10,8 +10,8 @@ import (
 
 // BlogPostsDeleteCmd deletes a blog article.
 type BlogPostsDeleteCmd struct {
-	Blog string `arg:"" help:"Blog ID or handle"`
-	Post string `arg:"" help:"Post ID or slug"`
+	Blog string `required:"" help:"Blog ID or handle"`
+	Post string `required:"" help:"Post ID or slug"`
 }
 
 // Run executes the delete command.

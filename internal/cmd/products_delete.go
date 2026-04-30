@@ -10,7 +10,7 @@ import (
 
 // ProductsDeleteCmd deletes a product.
 type ProductsDeleteCmd struct {
-	Product string `arg:"" help:"Product ID or slug"`
+	Product string `required:"" help:"Product ID or slug"`
 }
 
 // Run executes the delete command.

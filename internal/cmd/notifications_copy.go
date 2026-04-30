@@ -10,7 +10,7 @@ import (
 
 // NotificationsCopyCmd copies notifications between sites.
 type NotificationsCopyCmd struct {
-	Slug     string `arg:"" optional:"" help:"Notification slug to copy" default:"*"`
+	Slug     string `help:"Notification slug to copy" default:"*" name:"only"`
 	From     string `help:"Source site" required:"" name:"from"`
 	To       string `help:"Target site" required:"" name:"to"`
 	FromHost string `help:"Source API base URL or host" name:"from-host"`

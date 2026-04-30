@@ -11,7 +11,7 @@ import (
 
 // CustomersUpdateCmd updates a customer.
 type CustomersUpdateCmd struct {
-	Customer    string   `arg:"" help:"Customer ID or email"`
+	Customer    string   `required:"" help:"Customer ID or email"`
 	File        string   `help:"Read customer JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. first_name=Ana, phone=+32...)"`
 }

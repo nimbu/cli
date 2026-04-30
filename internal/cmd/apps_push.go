@@ -18,7 +18,7 @@ type appsPushResult struct {
 type AppsPushCmd struct {
 	App   string   `help:"Configured local app name"`
 	Sync  bool     `help:"Delete remote files missing locally"`
-	Files []string `arg:"" optional:"" help:"Project-relative file subset"`
+	Files []string `help:"Project-relative file subset; commas split multiple files" name:"only"`
 }
 
 // Run executes the push command.
@@ -26,7 +26,8 @@ func (c *AppsPushCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err := requireWrite(flags, "push app code"); err != nil {
 		return err
 	}
-	if c.Sync && len(c.Files) > 0 {
+	files := splitRepeatedCSV(c.Files)
+	if c.Sync && len(files) > 0 {
 		return fmt.Errorf("--sync cannot be combined with an explicit file subset")
 	}
 
@@ -54,7 +55,7 @@ func (c *AppsPushCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return fmt.Errorf("collect files: %w", err)
 	}
-	selected, err := apps.ExplicitFiles(discovered, c.Files)
+	selected, err := apps.ExplicitFiles(discovered, files)
 	if err != nil {
 		return err
 	}

@@ -10,7 +10,7 @@ import (
 
 // CollectionsDeleteCmd deletes a collection.
 type CollectionsDeleteCmd struct {
-	Collection string `arg:"" help:"Collection ID or slug"`
+	Collection string `required:"" help:"Collection ID or slug"`
 }
 
 // Run executes the delete command.

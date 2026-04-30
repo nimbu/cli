@@ -10,8 +10,8 @@ import (
 
 // ChannelEntriesDeleteCmd deletes a channel entry.
 type ChannelEntriesDeleteCmd struct {
-	Channel string `arg:"" help:"Channel ID or slug"`
-	Entry   string `arg:"" help:"Entry ID or slug"`
+	Channel string `required:"" help:"Channel ID or slug"`
+	Entry   string `required:"" help:"Entry ID or slug"`
 }
 
 // Run executes the delete command.

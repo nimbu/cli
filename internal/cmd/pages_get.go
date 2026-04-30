@@ -12,7 +12,7 @@ import (
 type PagesGetCmd struct {
 	QueryFlags     `embed:""`
 	DownloadAssets string `help:"Download page file editables into DIR and rewrite JSON to attachment_path refs"`
-	Page           string `arg:"" help:"Page fullpath"`
+	Page           string `required:"" help:"Page fullpath"`
 }
 
 // Run executes the get command.

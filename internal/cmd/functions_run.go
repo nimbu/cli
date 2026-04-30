@@ -12,7 +12,7 @@ import (
 
 // FunctionsRunCmd executes a cloud function.
 type FunctionsRunCmd struct {
-	Function    string   `arg:"" help:"Function identifier"`
+	Function    string   `required:"" help:"Function identifier"`
 	File        string   `help:"Read function params JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. foo=bar, amount:=2)"`
 }

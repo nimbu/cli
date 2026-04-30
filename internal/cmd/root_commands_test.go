@@ -100,7 +100,7 @@ func TestReadmeDocumentsInlinePayloadSyntax(t *testing.T) {
 		"key:=json",
 		"key=@file.txt",
 		"key:=@file.json",
-		"translations update activate.label.lastname nl=Achternaam",
+		"translations update --key activate.label.lastname nl=Achternaam",
 	}
 
 	for _, needle := range required {

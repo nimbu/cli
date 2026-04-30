@@ -10,7 +10,7 @@ import (
 )
 
 type CustomersResetPasswordCmd struct {
-	Customer string `arg:"" help:"Customer ID or email"`
+	Customer string `required:"" help:"Customer ID or email"`
 }
 
 func (c *CustomersResetPasswordCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -18,7 +18,7 @@ func (c *CustomersResetPasswordCmd) Run(ctx context.Context, flags *RootFlags) e
 }
 
 type CustomersResendConfirmationCmd struct {
-	Customer string `arg:"" help:"Customer ID or email"`
+	Customer string `required:"" help:"Customer ID or email"`
 }
 
 func (c *CustomersResendConfirmationCmd) Run(ctx context.Context, flags *RootFlags) error {

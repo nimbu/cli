@@ -10,8 +10,8 @@ import (
 
 // ThemeFilesPutCmd uploads/updates a theme file.
 type ThemeFilesPutCmd struct {
-	Theme   string `arg:"" help:"Theme ID"`
-	Path    string `arg:"" help:"File path within theme"`
+	Theme   string `required:"" help:"Theme ID"`
+	Path    string `required:"" help:"File path within theme"`
 	File    string `help:"Read content from file path" short:"f"`
 	Content string `help:"File content (base64 for binary)" short:"c"`
 }

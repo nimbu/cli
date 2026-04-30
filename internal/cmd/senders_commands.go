@@ -64,7 +64,7 @@ func (c *SendersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 type SendersGetCmd struct {
-	Sender string `arg:"" help:"Sender ID or domain"`
+	Sender string `required:"" help:"Sender ID or domain"`
 }
 
 func (c *SendersGetCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -99,7 +99,7 @@ func (c *SendersGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 type SendersCreateCmd struct {
-	Domain string `arg:"" help:"Sender domain"`
+	Domain string `required:"" help:"Sender domain"`
 }
 
 func (c *SendersCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -132,7 +132,7 @@ func (c *SendersCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 type SendersVerifyOwnershipCmd struct {
-	Sender string `arg:"" help:"Sender ID or domain"`
+	Sender string `required:"" help:"Sender ID or domain"`
 }
 
 func (c *SendersVerifyOwnershipCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -170,7 +170,7 @@ func (c *SendersVerifyOwnershipCmd) Run(ctx context.Context, flags *RootFlags) e
 }
 
 type SendersVerifyCmd struct {
-	Sender string `arg:"" help:"Sender ID or domain"`
+	Sender string `required:"" help:"Sender ID or domain"`
 }
 
 func (c *SendersVerifyCmd) Run(ctx context.Context, flags *RootFlags) error {

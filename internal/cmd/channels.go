@@ -9,5 +9,5 @@ type ChannelsCmd struct {
 	Diff    ChannelsDiffCmd   `cmd:"" help:"Diff channel configuration between sites"`
 	Empty   ChannelsEmptyCmd  `cmd:"" help:"Empty a channel after strict confirmation"`
 	Entries ChannelEntriesCmd `cmd:"" help:"Manage channel entries"`
-	Fields  ChannelsFieldsCmd `cmd:"" help:"List channel fields"`
+	Fields  ChannelsFieldsCmd `cmd:"" help:"Manage channel fields"`
 }

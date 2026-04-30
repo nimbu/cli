@@ -11,7 +11,7 @@ import (
 
 // NotificationsUpdateCmd updates a notification.
 type NotificationsUpdateCmd struct {
-	Notification string   `arg:"" help:"Notification slug or identifier"`
+	Notification string   `required:"" help:"Notification slug or identifier"`
 	File         string   `help:"Read notification JSON from file (use - for stdin)"`
 	Assignments  []string `arg:"" optional:"" help:"Inline assignments (e.g. subject=Hello, html_enabled:=true)"`
 }

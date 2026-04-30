@@ -11,7 +11,7 @@ import (
 
 // ProductsUpdateCmd updates a product.
 type ProductsUpdateCmd struct {
-	Product     string   `arg:"" help:"Product ID or slug"`
+	Product     string   `required:"" help:"Product ID or slug"`
 	File        string   `help:"Read product JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Wine, price:=19.9)"`
 }

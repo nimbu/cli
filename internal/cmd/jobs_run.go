@@ -12,7 +12,7 @@ import (
 
 // JobsRunCmd schedules a cloud job.
 type JobsRunCmd struct {
-	Job         string   `arg:"" help:"Job identifier"`
+	Job         string   `required:"" help:"Job identifier"`
 	File        string   `help:"Read job params JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. foo=bar, retry:=true)"`
 }

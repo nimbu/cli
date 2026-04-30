@@ -37,7 +37,7 @@ type themeSelector struct {
 }
 
 func compileSelectionFilter(cfg Config, opts Options) (*selectionFilter, error) {
-	selectors, err := explicitSelectors(opts)
+	selectors, err := onlySelectors(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -88,16 +88,16 @@ func (f *selectionFilter) Match(resource Resource) bool {
 		return true
 	}
 	projectPath, ok := projectPathForResource(f.cfg, resource)
-	explicitMatch := ok && f.matchesExplicit(projectPath)
+	onlyMatch := ok && f.matchesOnly(projectPath)
 	if len(f.selectors) > 0 && !f.hasCategory {
-		return explicitMatch
+		return onlyMatch
 	}
 	if !f.hasCategory {
 		return true
 	}
 	categoryMatch := matchesResourceCategory(resource, projectPath, f.categoryMatchers, f.liquidOnly)
 	if len(f.selectors) > 0 {
-		return explicitMatch || categoryMatch
+		return onlyMatch || categoryMatch
 	}
 	return categoryMatch
 }
@@ -108,7 +108,7 @@ func FilterResources(cfg Config, resources []Resource, opts Options) ([]Resource
 	if err != nil {
 		return nil, err
 	}
-	if err := filter.validateExplicitSelectors(resources); err != nil {
+	if err := filter.validateOnlySelectors(resources); err != nil {
 		return nil, err
 	}
 
@@ -122,15 +122,12 @@ func FilterResources(cfg Config, resources []Resource, opts Options) ([]Resource
 	return filtered, nil
 }
 
-func explicitSelectors(opts Options) ([]themeSelector, error) {
-	values := make([]string, 0, len(opts.Only)+len(opts.Selectors))
-	values = append(values, opts.Only...)
-	values = append(values, opts.Selectors...)
-	if len(values) == 0 {
+func onlySelectors(opts Options) ([]themeSelector, error) {
+	if len(opts.Only) == 0 {
 		return nil, nil
 	}
-	selectors := make([]themeSelector, 0, len(values))
-	for _, value := range values {
+	selectors := make([]themeSelector, 0, len(opts.Only))
+	for _, value := range opts.Only {
 		selector, ok, err := compileThemeSelector(value)
 		if err != nil {
 			return nil, err
@@ -182,7 +179,7 @@ func compileMatcher(pattern string) (globMatcher, error) {
 	return globMatcher{pattern: pattern, re: re}, nil
 }
 
-func (f *selectionFilter) matchesExplicit(projectPath string) bool {
+func (f *selectionFilter) matchesOnly(projectPath string) bool {
 	for _, selector := range f.selectors {
 		if selector.Match(projectPath) {
 			return true
@@ -191,7 +188,7 @@ func (f *selectionFilter) matchesExplicit(projectPath string) bool {
 	return false
 }
 
-func (f *selectionFilter) validateExplicitSelectors(resources []Resource) error {
+func (f *selectionFilter) validateOnlySelectors(resources []Resource) error {
 	for _, selector := range f.selectors {
 		matched := false
 		for _, resource := range resources {
