@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alecthomas/kong"
+
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/config"
 )
@@ -32,9 +34,10 @@ const (
 )
 
 type InternalCompleteCmd struct {
-	Shell   string   `help:"Shell requesting completions" default:"bash"`
-	Current string   `help:"Current token being completed"`
-	Words   []string `arg:"" optional:"" passthrough:""`
+	Shell     string   `help:"Shell requesting completions" default:"bash"`
+	Current   string   `help:"Current token being completed"`
+	FlagNames bool     `help:"Complete flag names" hidden:""`
+	Words     []string `arg:"" optional:"" passthrough:""`
 }
 
 type completionRequest struct {
@@ -53,6 +56,27 @@ type completionItem struct {
 }
 
 func (c *InternalCompleteCmd) Run(ctx context.Context) error {
+	if c.FlagNames {
+		parser, _, err := newParser()
+		if err != nil {
+			completionDebugf("create parser for flag completion: %v", err)
+			return nil
+		}
+		prefix := c.Current
+		if prefix == "" {
+			prefix = "--"
+		}
+		items := completeFlagNames(parser, completionRequest{
+			Shell:       c.Shell,
+			Current:     c.Current,
+			Words:       c.Words,
+			CommandPath: completionCommandPath(c.Words),
+			Prefix:      prefix,
+		})
+		printCompletionItems(c.Shell, items)
+		return nil
+	}
+
 	req, ok := resolveCompletionRequest(c.Words, c.Current)
 	if !ok {
 		return nil
@@ -66,8 +90,13 @@ func (c *InternalCompleteCmd) Run(ctx context.Context) error {
 		completionDebugf("dynamic completion failed: %v", err)
 		return nil
 	}
+	printCompletionItems(c.Shell, items)
+	return nil
+}
+
+func printCompletionItems(shell string, items []completionItem) {
 	for _, item := range items {
-		switch c.Shell {
+		switch shell {
 		case "zsh", "fish":
 			if item.Description != "" {
 				fmt.Printf("%s\t%s\n", item.Value, item.Description)
@@ -76,7 +105,6 @@ func (c *InternalCompleteCmd) Run(ctx context.Context) error {
 		}
 		fmt.Println(item.Value)
 	}
-	return nil
 }
 
 func resolveCompletionRequest(words []string, current string) (completionRequest, bool) {
@@ -158,6 +186,76 @@ func completionCommandPath(words []string) []string {
 func completionFlagConsumesValue(word string) bool {
 	flag := strings.TrimLeft(word, "-")
 	return completionValueFlags[flag]
+}
+
+func completeFlagNames(parser *kong.Kong, req completionRequest) []completionItem {
+	if parser == nil || parser.Model == nil || parser.Model.Node == nil {
+		return nil
+	}
+
+	prefix := req.Prefix
+	if prefix == "" {
+		prefix = "--"
+	}
+	node := completionNodeForPath(parser.Model.Node, req.CommandPath)
+	if node == nil {
+		return nil
+	}
+
+	seen := map[string]struct{}{}
+	var items []completionItem
+	for _, group := range node.AllFlags(true) {
+		for _, flag := range group {
+			if flag == nil || flag.Hidden || flag.Name == "" {
+				continue
+			}
+			value := "--" + flag.Name
+			if _, ok := seen[value]; ok {
+				continue
+			}
+			seen[value] = struct{}{}
+			items = append(items, completionItem{
+				Value:       value,
+				Description: strings.TrimSpace(flag.Help),
+			})
+		}
+	}
+
+	sortCompletionItems(items)
+	return filterCompletionItems(items, prefix)
+}
+
+func completionNodeForPath(root *kong.Node, path []string) *kong.Node {
+	node := root
+	for _, part := range path {
+		if part == "" {
+			continue
+		}
+		var next *kong.Node
+		for _, child := range node.Children {
+			if child.Hidden {
+				continue
+			}
+			if child.Name == part || completionStringInSlice(child.Aliases, part) {
+				next = child
+				break
+			}
+		}
+		if next == nil {
+			return node
+		}
+		node = next
+	}
+	return node
+}
+
+func completionStringInSlice(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 var completionValueFlags = map[string]bool{

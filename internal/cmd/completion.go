@@ -46,6 +46,7 @@ _nimbu_completions() {
         local dynamic
         dynamic="$(nimbu __complete --shell bash --current="${cur}" -- "${COMP_WORDS[@]:0:COMP_CWORD}" 2>/dev/null)"
         if [[ -n "${dynamic}" ]]; then
+            local no_space=0
             if [[ "${cur}" == --*=* ]]; then
                 local flag_prefix="${cur%%=*}="
                 local value_prefix="${cur#*=}"
@@ -53,10 +54,30 @@ _nimbu_completions() {
                 local i
                 for i in "${!COMPREPLY[@]}"; do
                     COMPREPLY[$i]="${flag_prefix}${COMPREPLY[$i]}"
+                    if [[ "${COMPREPLY[$i]}" == */ ]]; then
+                        no_space=1
+                    fi
                 done
             else
                 COMPREPLY=($(compgen -W "${dynamic}" -- "${cur}"))
+                local i
+                for i in "${!COMPREPLY[@]}"; do
+                    if [[ "${COMPREPLY[$i]}" == */ ]]; then
+                        no_space=1
+                    fi
+                done
             fi
+            if [[ ${no_space} -eq 1 ]]; then
+                compopt -o nospace 2>/dev/null
+            fi
+            return
+        fi
+    fi
+    if [[ "${cur}" == --* && "${cur}" != --*=* ]]; then
+        local flags
+        flags="$(nimbu __complete --shell bash --flag-names --current="${cur}" -- "${COMP_WORDS[@]:0:COMP_CWORD}" 2>/dev/null)"
+        if [[ -n "${flags}" ]]; then
+            COMPREPLY=($(compgen -W "${flags}" -- "${cur}"))
             return
         fi
     fi
@@ -151,14 +172,15 @@ _nimbu_completions() {
                 COMPREPLY=($(compgen -W "list get put delete" -- "${cur}"))
                 ;;
         esac
-    elif [[ ${COMP_WORDS[1]} == "apps" ]]; then
+    elif [[ ${COMP_CWORD} -eq 3 && ${COMP_WORDS[1]} == "apps" ]]; then
         case "${COMP_WORDS[2]}" in
             push)
                 COMPREPLY=($(compgen -W "--app --only --sync" -- "${cur}"))
                 ;;
+            code)
+                COMPREPLY=($(compgen -W "list create" -- "${cur}"))
+                ;;
         esac
-    elif [[ ${COMP_WORDS[1]} == "apps" && ${COMP_WORDS[2]} == "code" ]]; then
-        COMPREPLY=($(compgen -W "list create" -- "${cur}"))
     elif [[ ${COMP_WORDS[1]} == "blogs" && (${COMP_WORDS[2]} == "posts" || ${COMP_WORDS[2]} == "articles") ]]; then
         COMPREPLY=($(compgen -W "list get create update delete count" -- "${cur}"))
     elif [[ ${COMP_WORDS[1]} == "channels" && ${COMP_WORDS[2]} == "entries" ]]; then
@@ -223,6 +245,47 @@ _nimbu() {
             return 1
         fi
         local -a values
+        local -a matches
+        local -a descriptions
+        local row value description
+        local no_space=0
+        for row in "${rows[@]}"; do
+            value="${row%%$'\t'*}"
+            if [[ "${value}" == */ ]]; then
+                no_space=1
+            fi
+            if [[ "${row}" == *$'\t'* ]]; then
+                description="${row#*$'\t'}"
+                values+=("${value}:${description}")
+                descriptions+=("${description}")
+            else
+                values+=("${value}")
+                descriptions+=("")
+            fi
+            matches+=("${value}")
+        done
+        if [[ "${words[CURRENT]}" == --*=* ]]; then
+            local flag_prefix="${words[CURRENT]%%=*}="
+            local i
+            for i in {1..${#values}}; do
+                values[$i]="${flag_prefix}${values[$i]}"
+                matches[$i]="${flag_prefix}${matches[$i]}"
+            done
+        fi
+        if (( no_space )); then
+            compadd -S '' -d descriptions -a matches
+            return
+        fi
+        _describe -t nimbu-dynamic 'value' values
+    }
+
+    _nimbu_flag_complete() {
+        local -a rows
+        rows=("${(@f)$(nimbu __complete --shell zsh --flag-names --current="${words[CURRENT]}" -- "${words[@]:1:$((CURRENT-1))}" 2>/dev/null)}")
+        if (( ${#rows} == 0 )); then
+            return 1
+        fi
+        local -a values
         local row value description
         for row in "${rows[@]}"; do
             value="${row%%$'\t'*}"
@@ -233,22 +296,36 @@ _nimbu() {
                 values+=("${value}")
             fi
         done
-        if [[ "${words[CURRENT]}" == --*=* ]]; then
-            local flag_prefix="${words[CURRENT]%%=*}="
-            local i
-            for i in {1..${#values}}; do
-                values[$i]="${flag_prefix}${values[$i]}"
-            done
-        fi
-        _describe -t nimbu-dynamic 'value' values
+        _describe -t nimbu-flags 'flag' values
     }
 
     if [[ "${words[CURRENT]}" == --site=* || "${words[CURRENT]}" == --from=* || "${words[CURRENT]}" == --to=* || "${words[CURRENT]}" == --channel=* || "${words[CURRENT]}" == --theme=* || "${words[CURRENT-1]}" == "--site" || "${words[CURRENT-1]}" == "--from" || "${words[CURRENT-1]}" == "--to" || "${words[CURRENT-1]}" == "--channel" || "${words[CURRENT-1]}" == "--theme" ]]; then
         _nimbu_dynamic_complete && return
     fi
+    if [[ "${words[CURRENT]}" == --* && "${words[CURRENT]}" != --*=* ]]; then
+        _nimbu_flag_complete && return
+    fi
 
     if (( CURRENT == 2 )); then
         _describe -t commands 'command' commands
+        return
+    fi
+
+    if (( CURRENT == 4 )); then
+        case "${words[2]} ${words[3]}" in
+            "apps code")
+                local -a app_code_commands
+                app_code_commands=(
+                    'list:List app code files'
+                    'create:Create or update an app code file'
+                )
+                _describe -t app-code-commands 'app code command' app_code_commands
+                ;;
+        esac
+        return
+    fi
+
+    if (( CURRENT != 3 )); then
         return
     fi
 
@@ -416,6 +493,12 @@ function __fish_nimbu_dynamic_complete
     command nimbu __complete --shell fish --current="$current" -- $tokens 2>/dev/null
 end
 
+function __fish_nimbu_complete_flags
+    set -l current (commandline -ct)
+    set -l tokens (commandline -opc)
+    command nimbu __complete --shell fish --flag-names --current="$current" -- $tokens 2>/dev/null
+end
+
 function __fish_nimbu_dynamic_flag
     set -l current (commandline -ct)
     set -l tokens (commandline -opc)
@@ -426,8 +509,15 @@ function __fish_nimbu_dynamic_flag
     string match -q -- "--site=*" "$current"; or string match -q -- "--from=*" "$current"; or string match -q -- "--to=*" "$current"; or string match -q -- "--channel=*" "$current"; or string match -q -- "--theme=*" "$current"; or test "$previous" = "--site"; or test "$previous" = "--from"; or test "$previous" = "--to"; or test "$previous" = "--channel"; or test "$previous" = "--theme"
 end
 
+function __fish_nimbu_flag_name
+    set -l current (commandline -ct)
+    string match -q -- "--*" "$current"; and not string match -q -- "--*=*" "$current"
+end
+
 complete -c nimbu -n "__fish_nimbu_dynamic_flag" -f -a "(__fish_nimbu_dynamic_complete)"
 complete -c nb -n "__fish_nimbu_dynamic_flag" -f -a "(__fish_nimbu_dynamic_complete)"
+complete -c nimbu -n "__fish_nimbu_flag_name" -f -a "(__fish_nimbu_complete_flags)"
+complete -c nb -n "__fish_nimbu_flag_name" -f -a "(__fish_nimbu_complete_flags)"
 
 # Main commands
 complete -c nimbu -n "__fish_use_subcommand" -a "auth" -d "Authentication and credentials"
@@ -480,7 +570,7 @@ complete -c nimbu -n "__fish_seen_subcommand_from products config" -a "copy diff
 complete -c nimbu -n "__fish_seen_subcommand_from pages" -a "list get create update delete count copy" -d "Page commands"
 complete -c nimbu -n "__fish_seen_subcommand_from menus" -a "list get create update delete count copy" -d "Menu commands"
 complete -c nimbu -n "__fish_seen_subcommand_from blogs" -a "list get create update delete count posts articles" -d "Blog commands"
-complete -c nimbu -n "__fish_seen_subcommand_from apps" -a "list get config push code" -d "App commands"
+complete -c nimbu -n "__fish_seen_subcommand_from apps; and not __fish_seen_subcommand_from list get config push code" -a "list get config push code" -d "App commands"
 complete -c nimbu -n "__fish_seen_subcommand_from mails" -a "pull push" -d "Mail commands"
 complete -c nimbu -n "__fish_seen_subcommand_from notifications" -a "list get create update delete count pull push" -d "Notification commands"
 complete -c nimbu -n "__fish_seen_subcommand_from translations" -a "list get create update delete count copy" -d "Translation commands"
@@ -493,7 +583,7 @@ complete -c nimbu -n "__fish_seen_subcommand_from templates" -a "list get create
 complete -c nimbu -n "__fish_seen_subcommand_from snippets" -a "list get create delete" -d "Manage snippets"
 complete -c nimbu -n "__fish_seen_subcommand_from assets" -a "list get create delete" -d "Manage assets"
 complete -c nimbu -n "__fish_seen_subcommand_from files" -a "list get put delete" -d "Manage theme files"
-complete -c nimbu -n "__fish_seen_subcommand_from code" -a "list create" -d "Manage app code files"
+complete -c nimbu -n "__fish_seen_subcommand_from apps; and __fish_seen_subcommand_from code; and not __fish_seen_subcommand_from list create" -a "list create" -d "Manage app code files"
 
 # Config subcommands
 complete -c nimbu -n "__fish_seen_subcommand_from config" -a "list" -d "List all config values"

@@ -540,6 +540,116 @@ func TestGeneratedCompletionsContainDynamicHooks(t *testing.T) {
 	}
 }
 
+func TestGeneratedCompletionsContainFlagNameHooks(t *testing.T) {
+	bash := captureStdout(t, func() error { return writeBashCompletion(nil) })
+	zsh := captureStdout(t, func() error { return writeZshCompletion(nil) })
+	fish := captureStdout(t, func() error { return writeFishCompletion(nil) })
+
+	for name, out := range map[string]string{"bash": bash, "zsh": zsh, "fish": fish} {
+		if !strings.Contains(out, "--flag-names") {
+			t.Fatalf("%s completion missing flag-name hook", name)
+		}
+	}
+}
+
+func TestGeneratedCompletionsAvoidSpacesAfterDynamicPrefixes(t *testing.T) {
+	bash := captureStdout(t, func() error { return writeBashCompletion(nil) })
+	zsh := captureStdout(t, func() error { return writeZshCompletion(nil) })
+
+	if !strings.Contains(bash, "compopt -o nospace") {
+		t.Fatal("bash completion should suppress spaces after dynamic prefixes")
+	}
+	if !strings.Contains(zsh, "compadd -S ''") {
+		t.Fatal("zsh completion should suppress spaces after dynamic prefixes")
+	}
+}
+
+func TestGeneratedCompletionsDoNotRepeatAppsCodeCommand(t *testing.T) {
+	bash := captureStdout(t, func() error { return writeBashCompletion(nil) })
+	zsh := captureStdout(t, func() error { return writeZshCompletion(nil) })
+	fish := captureStdout(t, func() error { return writeFishCompletion(nil) })
+
+	if !strings.Contains(bash, `[[ ${COMP_CWORD} -eq 3 && ${COMP_WORDS[1]} == "apps" ]]`) {
+		t.Fatal("bash apps completions should only run at the apps command depth")
+	}
+	if !strings.Contains(zsh, `if (( CURRENT != 3 )); then`) || !strings.Contains(zsh, `"apps code"`) {
+		t.Fatal("zsh apps code completions should be depth-gated")
+	}
+	if !strings.Contains(fish, "not __fish_seen_subcommand_from list get config push code") {
+		t.Fatal("fish apps completions should stop after an app subcommand is selected")
+	}
+}
+
+func TestCompleteFlagNamesForCommand(t *testing.T) {
+	parser, _, err := newParser()
+	if err != nil {
+		t.Fatalf("newParser: %v", err)
+	}
+
+	items := completeFlagNames(parser, completionRequest{
+		Current:     "--",
+		Words:       []string{"nimbu", "channels", "copy"},
+		CommandPath: []string{"channels", "copy"},
+		Prefix:      "--",
+	})
+	values := completionValues(items)
+
+	for _, want := range []string{"--from", "--to", "--site"} {
+		if !containsString(values, want) {
+			t.Fatalf("flag values missing %s: %#v", want, values)
+		}
+	}
+}
+
+func TestCompleteFlagNamesFiltersPrefix(t *testing.T) {
+	parser, _, err := newParser()
+	if err != nil {
+		t.Fatalf("newParser: %v", err)
+	}
+
+	items := completeFlagNames(parser, completionRequest{
+		Current:     "--fr",
+		Words:       []string{"nimbu", "channels", "copy"},
+		CommandPath: []string{"channels", "copy"},
+		Prefix:      "--fr",
+	})
+	values := completionValues(items)
+
+	if !containsString(values, "--from") {
+		t.Fatalf("flag values missing --from: %#v", values)
+	}
+	if containsString(values, "--to") {
+		t.Fatalf("flag values should be filtered by prefix: %#v", values)
+	}
+}
+
+func TestInternalCompleteCommandPrintsFlagNames(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+
+	code, stdout, stderr := captureExecute(t, []string{
+		"__complete",
+		"--shell", "bash",
+		"--flag-names",
+		"--current=--fr",
+		"--",
+		"nimbu", "channels", "copy",
+	})
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q", stderr)
+	}
+	values := strings.Fields(stdout)
+	if !containsString(values, "--from") || containsString(values, "--to") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+}
+
 func completionTestContext(t *testing.T) context.Context {
 	t.Helper()
 
@@ -557,6 +667,15 @@ func completionTestContext(t *testing.T) context.Context {
 	ctx = context.WithValue(ctx, rootFlagsKey{}, flags)
 	ctx = context.WithValue(ctx, authResolverKey{}, newAuthCredentialResolver("api.nimbu.io"))
 	return ctx
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func writeTestCompletionCache(t *testing.T, cache completionCache) {
