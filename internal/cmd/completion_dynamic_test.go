@@ -552,6 +552,18 @@ func TestGeneratedCompletionsContainFlagNameHooks(t *testing.T) {
 	}
 }
 
+func TestGeneratedCompletionsContainCommandNameHooks(t *testing.T) {
+	bash := captureStdout(t, func() error { return writeBashCompletion(nil) })
+	zsh := captureStdout(t, func() error { return writeZshCompletion(nil) })
+	fish := captureStdout(t, func() error { return writeFishCompletion(nil) })
+
+	for name, out := range map[string]string{"bash": bash, "zsh": zsh, "fish": fish} {
+		if !strings.Contains(out, "--command-names") {
+			t.Fatalf("%s completion missing command-name hook", name)
+		}
+	}
+}
+
 func TestGeneratedCompletionsAvoidSpacesAfterDynamicPrefixes(t *testing.T) {
 	bash := captureStdout(t, func() error { return writeBashCompletion(nil) })
 	zsh := captureStdout(t, func() error { return writeZshCompletion(nil) })
@@ -577,6 +589,22 @@ func TestGeneratedCompletionsDoNotRepeatAppsCodeCommand(t *testing.T) {
 	}
 	if !strings.Contains(fish, "not __fish_seen_subcommand_from list get config push code") {
 		t.Fatal("fish apps completions should stop after an app subcommand is selected")
+	}
+}
+
+func TestGeneratedZshCompletionIncludesNestedCommands(t *testing.T) {
+	zsh := captureStdout(t, func() error { return writeZshCompletion(nil) })
+
+	for _, want := range []string{
+		`"channels entries")`,
+		`'list:List channel entries'`,
+		`"channels fields")`,
+		`"themes files")`,
+		`"blogs posts"|"blogs articles")`,
+	} {
+		if !strings.Contains(zsh, want) {
+			t.Fatalf("zsh completion missing nested command case %q", want)
+		}
 	}
 }
 
@@ -623,6 +651,32 @@ func TestCompleteFlagNamesFiltersPrefix(t *testing.T) {
 	}
 }
 
+func TestCompleteCommandNamesCoversCommandTree(t *testing.T) {
+	parser, _, err := newParser()
+	if err != nil {
+		t.Fatalf("newParser: %v", err)
+	}
+
+	assertCommandChildrenComplete(t, parser, parser.Model.Node, nil)
+}
+
+func TestCompleteCommandNamesDoesNotRepeatLeafCommands(t *testing.T) {
+	parser, _, err := newParser()
+	if err != nil {
+		t.Fatalf("newParser: %v", err)
+	}
+
+	items := completeCommandNames(parser, completionRequest{
+		Current:     "",
+		Words:       []string{"nimbu", "apps", "code", "list"},
+		CommandPath: []string{"apps", "code", "list"},
+		Prefix:      "",
+	})
+	if len(items) != 0 {
+		t.Fatalf("leaf command should not have command completions: %#v", completionValues(items))
+	}
+}
+
 func TestInternalCompleteCommandPrintsFlagNames(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
@@ -647,6 +701,35 @@ func TestInternalCompleteCommandPrintsFlagNames(t *testing.T) {
 	values := strings.Fields(stdout)
 	if !containsString(values, "--from") || containsString(values, "--to") {
 		t.Fatalf("stdout = %q", stdout)
+	}
+}
+
+func TestInternalCompleteCommandPrintsCommandNames(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+
+	code, stdout, stderr := captureExecute(t, []string{
+		"__complete",
+		"--shell", "bash",
+		"--command-names",
+		"--current=",
+		"--",
+		"nimbu", "channels", "entries",
+	})
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q", stderr)
+	}
+	values := strings.Fields(stdout)
+	for _, want := range []string{"list", "get", "create", "update", "delete", "count", "copy"} {
+		if !containsString(values, want) {
+			t.Fatalf("stdout missing %q: %q", want, stdout)
+		}
 	}
 }
 
@@ -676,6 +759,36 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func assertCommandChildrenComplete(t *testing.T, parser *kong.Kong, node *kong.Node, path []string) {
+	t.Helper()
+
+	var want []string
+	for _, child := range node.Children {
+		if !child.Hidden {
+			want = append(want, child.Name)
+		}
+	}
+	if len(want) > 0 {
+		items := completeCommandNames(parser, completionRequest{
+			Words:       append([]string{"nimbu"}, path...),
+			CommandPath: path,
+		})
+		got := completionValues(items)
+		for _, value := range want {
+			if !containsString(got, value) {
+				t.Fatalf("%q completions missing %q: got %#v", strings.Join(path, " "), value, got)
+			}
+		}
+	}
+
+	for _, child := range node.Children {
+		if child.Hidden {
+			continue
+		}
+		assertCommandChildrenComplete(t, parser, child, append(append([]string{}, path...), child.Name))
+	}
 }
 
 func writeTestCompletionCache(t *testing.T, cache completionCache) {

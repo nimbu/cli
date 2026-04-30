@@ -34,10 +34,11 @@ const (
 )
 
 type InternalCompleteCmd struct {
-	Shell     string   `help:"Shell requesting completions" default:"bash"`
-	Current   string   `help:"Current token being completed"`
-	FlagNames bool     `help:"Complete flag names" hidden:""`
-	Words     []string `arg:"" optional:"" passthrough:""`
+	Shell        string   `help:"Shell requesting completions" default:"bash"`
+	Current      string   `help:"Current token being completed"`
+	FlagNames    bool     `help:"Complete flag names" hidden:""`
+	CommandNames bool     `help:"Complete command names" hidden:""`
+	Words        []string `arg:"" optional:"" passthrough:""`
 }
 
 type completionRequest struct {
@@ -56,23 +57,29 @@ type completionItem struct {
 }
 
 func (c *InternalCompleteCmd) Run(ctx context.Context) error {
-	if c.FlagNames {
+	if c.FlagNames || c.CommandNames {
 		parser, _, err := newParser()
 		if err != nil {
-			completionDebugf("create parser for flag completion: %v", err)
+			completionDebugf("create parser for completion: %v", err)
 			return nil
 		}
 		prefix := c.Current
-		if prefix == "" {
+		if c.FlagNames && prefix == "" {
 			prefix = "--"
 		}
-		items := completeFlagNames(parser, completionRequest{
+		req := completionRequest{
 			Shell:       c.Shell,
 			Current:     c.Current,
 			Words:       c.Words,
 			CommandPath: completionCommandPath(c.Words),
 			Prefix:      prefix,
-		})
+		}
+		var items []completionItem
+		if c.CommandNames {
+			items = completeCommandNames(parser, req)
+		} else {
+			items = completeFlagNames(parser, req)
+		}
 		printCompletionItems(c.Shell, items)
 		return nil
 	}
@@ -225,6 +232,44 @@ func completeFlagNames(parser *kong.Kong, req completionRequest) []completionIte
 	return filterCompletionItems(items, prefix)
 }
 
+func completeCommandNames(parser *kong.Kong, req completionRequest) []completionItem {
+	if parser == nil || parser.Model == nil || parser.Model.Node == nil {
+		return nil
+	}
+	if strings.HasPrefix(req.Current, "-") {
+		return nil
+	}
+	if len(req.Words) > 0 && strings.HasPrefix(req.Words[len(req.Words)-1], "-") && completionFlagConsumesValue(req.Words[len(req.Words)-1]) {
+		return nil
+	}
+	node := completionNodeForPathExact(parser.Model.Node, req.CommandPath)
+	if node == nil || len(node.Children) == 0 {
+		return nil
+	}
+
+	var items []completionItem
+	for _, child := range node.Children {
+		if child.Hidden || child.Name == "" {
+			continue
+		}
+		items = append(items, completionItem{
+			Value:       child.Name,
+			Description: strings.TrimSpace(child.Help),
+		})
+		for _, alias := range child.Aliases {
+			if alias == "" {
+				continue
+			}
+			items = append(items, completionItem{
+				Value:       alias,
+				Description: strings.TrimSpace(child.Help),
+			})
+		}
+	}
+	sortCompletionItems(items)
+	return filterCompletionItems(items, req.Prefix)
+}
+
 func completionNodeForPath(root *kong.Node, path []string) *kong.Node {
 	node := root
 	for _, part := range path {
@@ -243,6 +288,30 @@ func completionNodeForPath(root *kong.Node, path []string) *kong.Node {
 		}
 		if next == nil {
 			return node
+		}
+		node = next
+	}
+	return node
+}
+
+func completionNodeForPathExact(root *kong.Node, path []string) *kong.Node {
+	node := root
+	for _, part := range path {
+		if part == "" {
+			continue
+		}
+		var next *kong.Node
+		for _, child := range node.Children {
+			if child.Hidden {
+				continue
+			}
+			if child.Name == part || completionStringInSlice(child.Aliases, part) {
+				next = child
+				break
+			}
+		}
+		if next == nil {
+			return nil
 		}
 		node = next
 	}

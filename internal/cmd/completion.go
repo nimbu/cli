@@ -81,7 +81,15 @@ _nimbu_completions() {
             return
         fi
     fi
-    local commands="auth sites channels pages menus products collections coupons orders customers mails accounts notifications roles redirects functions jobs apps themes uploads blogs webhooks translations server config api completion"
+    if [[ "${cur}" != -* ]]; then
+        local command_names
+        command_names="$(nimbu __complete --shell bash --command-names --current="${cur}" -- "${COMP_WORDS[@]:0:COMP_CWORD}" 2>/dev/null)"
+        if [[ -n "${command_names}" ]]; then
+            COMPREPLY=($(compgen -W "${command_names}" -- "${cur}"))
+            return
+        fi
+    fi
+    local commands="auth init sites channels pages menus products collections coupons domains orders customers mails accounts notifications roles redirects functions jobs apps senders themes uploads blogs webhooks translations server config api completion"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=($(compgen -W "${commands}" -- "${cur}"))
@@ -97,31 +105,37 @@ _nimbu_completions() {
                 COMPREPLY=($(compgen -W "list get current count settings copy" -- "${cur}"))
                 ;;
             channels)
-                COMPREPLY=($(compgen -W "list get info copy diff entries fields" -- "${cur}"))
+                COMPREPLY=($(compgen -W "list get info copy diff empty entries fields" -- "${cur}"))
                 ;;
-            pages|menus|collections|coupons|translations)
+            pages|menus|collections|translations)
+                COMPREPLY=($(compgen -W "list get create update delete count copy" -- "${cur}"))
+                ;;
+            coupons)
                 COMPREPLY=($(compgen -W "list get create update delete count" -- "${cur}"))
                 ;;
             customers)
-                COMPREPLY=($(compgen -W "list get create update delete count copy fields config" -- "${cur}"))
+                COMPREPLY=($(compgen -W "list get create update delete count copy fields config reset-password resend-confirmation" -- "${cur}"))
                 ;;
             products)
-                COMPREPLY=($(compgen -W "list get create update delete count fields config" -- "${cur}"))
+                COMPREPLY=($(compgen -W "list get create update delete count fields config copy" -- "${cur}"))
                 ;;
             mails)
                 COMPREPLY=($(compgen -W "pull push" -- "${cur}"))
                 ;;
             notifications)
-                COMPREPLY=($(compgen -W "list get create update delete count pull push" -- "${cur}"))
+                COMPREPLY=($(compgen -W "list get pull push create update delete count copy" -- "${cur}"))
                 ;;
             orders)
-                COMPREPLY=($(compgen -W "list get update count" -- "${cur}"))
+                COMPREPLY=($(compgen -W "list get update count pay finish cancel reopen archive" -- "${cur}"))
                 ;;
             accounts)
                 COMPREPLY=($(compgen -W "list count" -- "${cur}"))
                 ;;
             roles|redirects)
-                COMPREPLY=($(compgen -W "list get create update delete" -- "${cur}"))
+                COMPREPLY=($(compgen -W "list get create update delete copy" -- "${cur}"))
+                ;;
+            domains)
+                COMPREPLY=($(compgen -W "list get create update delete make-primary" -- "${cur}"))
                 ;;
             functions|jobs)
                 COMPREPLY=($(compgen -W "run" -- "${cur}"))
@@ -129,8 +143,11 @@ _nimbu_completions() {
             apps)
                 COMPREPLY=($(compgen -W "list get config push code" -- "${cur}"))
                 ;;
+            senders)
+                COMPREPLY=($(compgen -W "list get create verify-ownership verify" -- "${cur}"))
+                ;;
             themes)
-                COMPREPLY=($(compgen -W "list get pull diff copy push sync layouts templates snippets assets files" -- "${cur}"))
+                COMPREPLY=($(compgen -W "list get cdn-root pull diff copy push sync layouts templates snippets assets files" -- "${cur}"))
                 ;;
             uploads)
                 COMPREPLY=($(compgen -W "list get create delete count" -- "${cur}"))
@@ -139,10 +156,10 @@ _nimbu_completions() {
                 COMPREPLY=($(compgen -W "list get create update delete count posts articles" -- "${cur}"))
                 ;;
             webhooks)
-                COMPREPLY=($(compgen -W "list get create update delete count" -- "${cur}"))
+                COMPREPLY=($(compgen -W "list get delete" -- "${cur}"))
                 ;;
             config)
-                COMPREPLY=($(compgen -W "list get set unset path" -- "${cur}"))
+                COMPREPLY=($(compgen -W "list get set unset path banner" -- "${cur}"))
                 ;;
             server)
                 COMPREPLY=($(compgen -W "--cmd --arg --cwd --ready-url --ready-timeout --proxy-host --proxy-port --template-root --no-watch --watch-scan-interval --max-body-mb --quiet-requests --events-json --debug" -- "${cur}"))
@@ -210,6 +227,7 @@ _nimbu() {
     local -a commands
     commands=(
         'auth:Authentication and credentials'
+        'init:Bootstrap a local theme project'
         'sites:Manage sites'
         'channels:Manage channels and entries'
         'pages:Manage pages'
@@ -217,6 +235,7 @@ _nimbu() {
         'products:Manage products'
         'collections:Manage collections'
         'coupons:Manage coupons'
+        'domains:Manage custom domains'
         'orders:Manage orders'
         'customers:Manage customers'
         'mails:Sync notification templates to local files'
@@ -227,6 +246,7 @@ _nimbu() {
         'functions:Execute cloud functions'
         'jobs:Execute cloud jobs'
         'apps:Manage OAuth apps'
+        'senders:Manage email sender domains'
         'themes:Manage themes'
         'uploads:Manage uploads'
         'blogs:Manage blogs'
@@ -299,11 +319,34 @@ _nimbu() {
         _describe -t nimbu-flags 'flag' values
     }
 
+    _nimbu_command_complete() {
+        local -a rows
+        rows=("${(@f)$(nimbu __complete --shell zsh --command-names --current="${words[CURRENT]}" -- "${words[@]:1:$((CURRENT-1))}" 2>/dev/null)}")
+        if (( ${#rows} == 0 )); then
+            return 1
+        fi
+        local -a values
+        local row value description
+        for row in "${rows[@]}"; do
+            value="${row%%$'\t'*}"
+            if [[ "${row}" == *$'\t'* ]]; then
+                description="${row#*$'\t'}"
+                values+=("${value}:${description}")
+            else
+                values+=("${value}")
+            fi
+        done
+        _describe -t nimbu-commands 'command' values
+    }
+
     if [[ "${words[CURRENT]}" == --site=* || "${words[CURRENT]}" == --from=* || "${words[CURRENT]}" == --to=* || "${words[CURRENT]}" == --channel=* || "${words[CURRENT]}" == --theme=* || "${words[CURRENT-1]}" == "--site" || "${words[CURRENT-1]}" == "--from" || "${words[CURRENT-1]}" == "--to" || "${words[CURRENT-1]}" == "--channel" || "${words[CURRENT-1]}" == "--theme" ]]; then
         _nimbu_dynamic_complete && return
     fi
     if [[ "${words[CURRENT]}" == --* && "${words[CURRENT]}" != --*=* ]]; then
         _nimbu_flag_complete && return
+    fi
+    if [[ "${words[CURRENT]}" != -* ]]; then
+        _nimbu_command_complete && return
     fi
 
     if (( CURRENT == 2 )); then
@@ -313,6 +356,72 @@ _nimbu() {
 
     if (( CURRENT == 4 )); then
         case "${words[2]} ${words[3]}" in
+            "channels entries")
+                local -a channel_entry_commands
+                channel_entry_commands=(
+                    'list:List channel entries'
+                    'get:Get channel entry'
+                    'create:Create channel entry from JSON'
+                    'update:Update channel entry'
+                    'delete:Delete channel entry'
+                    'count:Count channel entries'
+                    'copy:Copy channel entries between sites'
+                )
+                _describe -t channel-entry-commands 'channel entry command' channel_entry_commands
+                ;;
+            "channels fields")
+                local -a channel_field_commands
+                channel_field_commands=(
+                    'list:List channel fields'
+                    'add:Add a channel field'
+                    'update:Update a channel field'
+                    'delete:Delete a channel field'
+                    'apply:Apply channel fields from JSON'
+                    'replace:Replace channel fields from JSON'
+                    'diff:Diff channel fields between sites'
+                )
+                _describe -t channel-field-commands 'channel field command' channel_field_commands
+                ;;
+            "customers config"|"products config")
+                local -a config_copy_commands
+                config_copy_commands=(
+                    'copy:Copy customizations between sites'
+                    'diff:Diff customizations between sites'
+                )
+                _describe -t config-copy-commands 'config command' config_copy_commands
+                ;;
+            "themes layouts"|"themes templates"|"themes snippets"|"themes assets")
+                local -a theme_section_commands
+                theme_section_commands=(
+                    'list:List section items'
+                    'get:Get section item'
+                    'create:Create or update section item'
+                    'delete:Delete section item'
+                )
+                _describe -t theme-section-commands 'theme section command' theme_section_commands
+                ;;
+            "themes files")
+                local -a theme_file_commands
+                theme_file_commands=(
+                    'list:List theme files'
+                    'get:Get theme file'
+                    'put:Create or update theme file'
+                    'delete:Delete theme file'
+                )
+                _describe -t theme-file-commands 'theme file command' theme_file_commands
+                ;;
+            "blogs posts"|"blogs articles")
+                local -a blog_post_commands
+                blog_post_commands=(
+                    'list:List blog posts'
+                    'get:Get blog post'
+                    'create:Create blog post from JSON'
+                    'update:Update blog post'
+                    'delete:Delete blog post'
+                    'count:Count blog posts'
+                )
+                _describe -t blog-post-commands 'blog post command' blog_post_commands
+                ;;
             "apps code")
                 local -a app_code_commands
                 app_code_commands=(
@@ -385,6 +494,7 @@ _nimbu() {
                 'info:Show rich channel info'
                 'copy:Copy channel configuration between sites'
                 'diff:Diff channel configuration between sites'
+                'empty:Empty a channel'
                 'entries:Manage channel entries'
                 'fields:Manage channel fields'
             )
@@ -402,6 +512,8 @@ _nimbu() {
                 'copy:Copy customers between sites'
                 'fields:Show customer field schema'
                 'config:Copy or diff customer customizations'
+                'reset-password:Reset a customer password'
+                'resend-confirmation:Resend customer confirmation'
             )
             _describe -t customers-commands 'customers command' customers_commands
             ;;
@@ -416,6 +528,7 @@ _nimbu() {
                 'count:Count products'
                 'fields:Show product field schema'
                 'config:Copy or diff product customizations'
+                'copy:Copy products between sites'
             )
             _describe -t products-commands 'products command' products_commands
             ;;
@@ -424,6 +537,7 @@ _nimbu() {
             themes_commands=(
                 'list:List themes'
                 'get:Get theme details'
+                'cdn-root:Print the resolved theme CDN root'
                 'pull:Download managed remote theme files'
                 'diff:Show local vs remote liquid differences'
                 'copy:Copy a theme between sites'
@@ -455,6 +569,7 @@ _nimbu() {
                 'set:Set a config value'
                 'unset:Unset a config value'
                 'path:Print config file path'
+                'banner:Pick a banner theme interactively'
             )
             _describe -t config-commands 'config command' config_commands
             ;;
@@ -468,6 +583,29 @@ _nimbu() {
                 'code:Manage app code files'
             )
             _describe -t apps-commands 'apps command' apps_commands
+            ;;
+        domains)
+            local -a domains_commands
+            domains_commands=(
+                'list:List domains'
+                'get:Get domain details'
+                'create:Create a domain'
+                'update:Update a domain'
+                'delete:Delete a domain'
+                'make-primary:Make a domain primary'
+            )
+            _describe -t domains-commands 'domains command' domains_commands
+            ;;
+        senders)
+            local -a senders_commands
+            senders_commands=(
+                'list:List sender domains'
+                'get:Get sender domain details'
+                'create:Create a sender domain'
+                'verify-ownership:Verify sender domain ownership'
+                'verify:Verify sender domain DNS'
+            )
+            _describe -t senders-commands 'senders command' senders_commands
             ;;
         completion)
             local -a completion_commands
@@ -499,6 +637,12 @@ function __fish_nimbu_complete_flags
     command nimbu __complete --shell fish --flag-names --current="$current" -- $tokens 2>/dev/null
 end
 
+function __fish_nimbu_complete_commands
+    set -l current (commandline -ct)
+    set -l tokens (commandline -opc)
+    command nimbu __complete --shell fish --command-names --current="$current" -- $tokens 2>/dev/null
+end
+
 function __fish_nimbu_dynamic_flag
     set -l current (commandline -ct)
     set -l tokens (commandline -opc)
@@ -518,9 +662,12 @@ complete -c nimbu -n "__fish_nimbu_dynamic_flag" -f -a "(__fish_nimbu_dynamic_co
 complete -c nb -n "__fish_nimbu_dynamic_flag" -f -a "(__fish_nimbu_dynamic_complete)"
 complete -c nimbu -n "__fish_nimbu_flag_name" -f -a "(__fish_nimbu_complete_flags)"
 complete -c nb -n "__fish_nimbu_flag_name" -f -a "(__fish_nimbu_complete_flags)"
+complete -c nimbu -f -a "(__fish_nimbu_complete_commands)"
+complete -c nb -f -a "(__fish_nimbu_complete_commands)"
 
 # Main commands
 complete -c nimbu -n "__fish_use_subcommand" -a "auth" -d "Authentication and credentials"
+complete -c nimbu -n "__fish_use_subcommand" -a "init" -d "Bootstrap a local theme project"
 complete -c nimbu -n "__fish_use_subcommand" -a "sites" -d "Manage sites"
 complete -c nimbu -n "__fish_use_subcommand" -a "channels" -d "Manage channels and entries"
 complete -c nimbu -n "__fish_use_subcommand" -a "pages" -d "Manage pages"
@@ -528,6 +675,7 @@ complete -c nimbu -n "__fish_use_subcommand" -a "menus" -d "Manage navigation me
 complete -c nimbu -n "__fish_use_subcommand" -a "products" -d "Manage products"
 complete -c nimbu -n "__fish_use_subcommand" -a "collections" -d "Manage collections"
 complete -c nimbu -n "__fish_use_subcommand" -a "coupons" -d "Manage coupons"
+complete -c nimbu -n "__fish_use_subcommand" -a "domains" -d "Manage custom domains"
 complete -c nimbu -n "__fish_use_subcommand" -a "orders" -d "Manage orders"
 complete -c nimbu -n "__fish_use_subcommand" -a "customers" -d "Manage customers"
 complete -c nimbu -n "__fish_use_subcommand" -a "mails" -d "Sync notification templates to local files"
@@ -538,6 +686,7 @@ complete -c nimbu -n "__fish_use_subcommand" -a "redirects" -d "Manage redirects
 complete -c nimbu -n "__fish_use_subcommand" -a "functions" -d "Execute cloud functions"
 complete -c nimbu -n "__fish_use_subcommand" -a "jobs" -d "Execute cloud jobs"
 complete -c nimbu -n "__fish_use_subcommand" -a "apps" -d "Manage OAuth apps"
+complete -c nimbu -n "__fish_use_subcommand" -a "senders" -d "Manage email sender domains"
 complete -c nimbu -n "__fish_use_subcommand" -a "themes" -d "Manage themes"
 complete -c nimbu -n "__fish_use_subcommand" -a "uploads" -d "Manage uploads"
 complete -c nimbu -n "__fish_use_subcommand" -a "blogs" -d "Manage blogs"
@@ -556,26 +705,36 @@ complete -c nimbu -n "__fish_seen_subcommand_from auth" -a "whoami" -d "Show cur
 complete -c nimbu -n "__fish_seen_subcommand_from auth" -a "scopes" -d "Show active token scopes"
 complete -c nimbu -n "__fish_seen_subcommand_from auth" -a "token" -d "Print access token"
 complete -c nimbu -n "__fish_seen_subcommand_from auth" -a "keyring" -d "Manage keyring"
+complete -c nimbu -n "__fish_seen_subcommand_from auth; and __fish_seen_subcommand_from keyring; and not __fish_seen_subcommand_from show set" -a "show set" -d "Keyring commands"
 
 # Themes subcommands
-complete -c nimbu -n "__fish_seen_subcommand_from themes" -a "list get pull diff copy push sync layouts templates snippets assets files" -d "Theme commands"
+complete -c nimbu -n "__fish_seen_subcommand_from themes" -a "list get cdn-root pull diff copy push sync layouts templates snippets assets files" -d "Theme commands"
 complete -c nimbu -n "__fish_seen_subcommand_from sites" -a "list get current count settings copy" -d "Site commands"
-complete -c nimbu -n "__fish_seen_subcommand_from channels" -a "list get info copy diff fields entries" -d "Channel commands"
+complete -c nimbu -n "__fish_seen_subcommand_from channels" -a "list get info copy diff empty fields entries" -d "Channel commands"
 complete -c nimbu -n "__fish_seen_subcommand_from channels entries" -a "list get create update delete count copy" -d "Channel entry commands"
 complete -c nimbu -n "__fish_seen_subcommand_from channels fields" -a "list add update delete apply replace diff" -d "Channel field commands"
-complete -c nimbu -n "__fish_seen_subcommand_from customers" -a "list get create update delete count copy fields config" -d "Customer commands"
+complete -c nimbu -n "__fish_seen_subcommand_from customers" -a "list get create update delete count copy fields config reset-password resend-confirmation" -d "Customer commands"
 complete -c nimbu -n "__fish_seen_subcommand_from customers config" -a "copy diff" -d "Customer config commands"
-complete -c nimbu -n "__fish_seen_subcommand_from products" -a "list get create update delete count fields config" -d "Product commands"
+complete -c nimbu -n "__fish_seen_subcommand_from products" -a "list get create update delete count fields config copy" -d "Product commands"
 complete -c nimbu -n "__fish_seen_subcommand_from products config" -a "copy diff" -d "Product config commands"
 complete -c nimbu -n "__fish_seen_subcommand_from pages" -a "list get create update delete count copy" -d "Page commands"
 complete -c nimbu -n "__fish_seen_subcommand_from menus" -a "list get create update delete count copy" -d "Menu commands"
-complete -c nimbu -n "__fish_seen_subcommand_from blogs" -a "list get create update delete count posts articles" -d "Blog commands"
+complete -c nimbu -n "__fish_seen_subcommand_from blogs" -a "list get create update delete count posts articles copy" -d "Blog commands"
 complete -c nimbu -n "__fish_seen_subcommand_from apps; and not __fish_seen_subcommand_from list get config push code" -a "list get config push code" -d "App commands"
 complete -c nimbu -n "__fish_seen_subcommand_from mails" -a "pull push" -d "Mail commands"
-complete -c nimbu -n "__fish_seen_subcommand_from notifications" -a "list get create update delete count pull push" -d "Notification commands"
+complete -c nimbu -n "__fish_seen_subcommand_from notifications" -a "list get pull push create update delete count copy" -d "Notification commands"
 complete -c nimbu -n "__fish_seen_subcommand_from translations" -a "list get create update delete count copy" -d "Translation commands"
+complete -c nimbu -n "__fish_seen_subcommand_from collections" -a "list get create update delete count copy" -d "Collection commands"
+complete -c nimbu -n "__fish_seen_subcommand_from coupons" -a "list get create update delete count" -d "Coupon commands"
+complete -c nimbu -n "__fish_seen_subcommand_from domains" -a "list get create update delete make-primary" -d "Domain commands"
+complete -c nimbu -n "__fish_seen_subcommand_from orders" -a "list get update count pay finish cancel reopen archive" -d "Order commands"
+complete -c nimbu -n "__fish_seen_subcommand_from accounts" -a "list count" -d "Account commands"
+complete -c nimbu -n "__fish_seen_subcommand_from roles" -a "list get create update delete copy" -d "Role commands"
+complete -c nimbu -n "__fish_seen_subcommand_from redirects" -a "list get create update delete copy" -d "Redirect commands"
 complete -c nimbu -n "__fish_seen_subcommand_from functions" -a "run" -d "Run function"
 complete -c nimbu -n "__fish_seen_subcommand_from jobs" -a "run" -d "Run job"
+complete -c nimbu -n "__fish_seen_subcommand_from senders" -a "list get create verify-ownership verify" -d "Sender commands"
+complete -c nimbu -n "__fish_seen_subcommand_from webhooks" -a "list get delete" -d "Webhook commands"
 
 # Theme section subcommands
 complete -c nimbu -n "__fish_seen_subcommand_from layouts" -a "list get create delete" -d "Manage layouts"
@@ -591,6 +750,7 @@ complete -c nimbu -n "__fish_seen_subcommand_from config" -a "get" -d "Get a con
 complete -c nimbu -n "__fish_seen_subcommand_from config" -a "set" -d "Set a config value"
 complete -c nimbu -n "__fish_seen_subcommand_from config" -a "unset" -d "Unset a config value"
 complete -c nimbu -n "__fish_seen_subcommand_from config" -a "path" -d "Print config file path"
+complete -c nimbu -n "__fish_seen_subcommand_from config" -a "banner" -d "Pick a banner theme interactively"
 
 # Completion shells
 complete -c nimbu -n "__fish_seen_subcommand_from completion" -l shell -d "Shell to generate completions for"
