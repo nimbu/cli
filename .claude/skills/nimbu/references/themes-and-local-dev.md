@@ -163,6 +163,8 @@ CLI flags (`--cmd`, `--proxy-port`, `--no-watch`, etc.) override nimbu.yml value
 
 ## Cloud code (apps)
 
+For authoring or debugging the cloud-code source itself (SDK usage, function/job/callback shapes, the `Nimbu` global, testing with `@nimbu/testing`), use the companion `nimbu-cloud-code` skill. This section covers only the CLI side: configuring `nimbu.yml` apps and pushing files.
+
 ### Configuration
 
 `nimbu apps config` -- interactive wizard that adds an app entry to `nimbu.yml`:
