@@ -1,7 +1,9 @@
 # Themes and Local Development
 
-For Liquid template syntax and theme concepts, see https://docs.nimbu.io/themes/introduction/overview.html.
-For cloud code APIs and patterns, see https://docs.nimbu.io/cloud-code/overview.html.
+For Liquid template syntax and theme concepts, see https://docs.nimbu.io/themes/introduction/overview.md (use `.md` URLs for cheaper agent fetches).
+For cloud code APIs and patterns, see https://docs.nimbu.io/cloud-code/overview.md.
+
+For authoring `.liquid` files (drops, Nimbu-specific tags and filters, forms, editables, i18n), use the companion `nimbu-themes` skill. This section covers only the CLI side — `themes push/sync/diff/serve` and the `sync.roots` mapping in `nimbu.yml`.
 
 ## Managed resource kinds
 

@@ -250,4 +250,5 @@ Verify the exact `@nimbu/testing` API against the package's README for the proje
 - **[references/project-layout.md](references/project-layout.md)** — file layout, build pipeline, eslint globals, env-detection patterns.
 - **[references/testing.md](references/testing.md)** — `@nimbu/testing` + Jest setup and patterns.
 - **Companion `nimbu` skill** — CLI for channels, schemas, deploys, env config, theme sync.
+- **Companion `nimbu-themes` skill** — Liquid templates, drops, tags, filters, forms, editables, i18n in `layouts/`/`templates/`/`snippets/`.
 - **Live docs (use `.md` variant)** — [Cloud Code overview](https://docs.nimbu.io/cloud-code/overview.md) and [SDK overview](https://docs.nimbu.io/sdk/overview.md).
