@@ -374,6 +374,7 @@ func GetAPIClient(ctx context.Context) (*api.Client, error) {
 	client = client.WithVersion(version)
 	client = client.WithTimeout(flags.Timeout)
 	client = client.WithDebug(flags.Debug)
+	client = client.WithReadonly(flags.Readonly)
 
 	// Get resolved site
 	if site, ok := ctx.Value(string("")).(string); ok && site != "" {
@@ -416,6 +417,7 @@ func GetAPIClientWithBaseURL(ctx context.Context, baseURL, site string) (*api.Cl
 	client = client.WithVersion(version)
 	client = client.WithTimeout(flags.Timeout)
 	client = client.WithDebug(flags.Debug)
+	client = client.WithReadonly(flags.Readonly)
 	if site != "" {
 		client = client.WithSite(site)
 	}

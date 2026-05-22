@@ -21,6 +21,7 @@ type Client struct {
 	Version    string
 	HTTPClient *http.Client
 	Debug      bool
+	Readonly   bool
 }
 
 // New creates a new API client.
@@ -66,6 +67,13 @@ func (c *Client) WithDebug(debug bool) *Client {
 	return &clone
 }
 
+// WithReadonly returns a copy of the client that blocks mutating requests.
+func (c *Client) WithReadonly(readonly bool) *Client {
+	clone := *c
+	clone.Readonly = readonly
+	return &clone
+}
+
 // Request performs an HTTP request and decodes the JSON response.
 func (c *Client) Request(ctx context.Context, method, path string, body any, result any, opts ...RequestOption) error {
 	req, err := c.buildRequest(ctx, method, path, body, opts...)
@@ -102,6 +110,10 @@ func (c *Client) Delete(ctx context.Context, path string, result any, opts ...Re
 }
 
 func (c *Client) buildRequest(ctx context.Context, method, path string, body any, opts ...RequestOption) (*http.Request, error) {
+	if c.Readonly && !methodAllowedInReadonly(method) {
+		return nil, &ReadonlyError{Method: method, Path: path}
+	}
+
 	// Build URL
 	u, err := url.Parse(c.BaseURL + path)
 	if err != nil {
@@ -199,6 +211,15 @@ func (c *Client) buildRequest(ctx context.Context, method, path string, body any
 	}
 
 	return req, nil
+}
+
+func methodAllowedInReadonly(method string) bool {
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case http.MethodGet, http.MethodHead:
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *Client) do(req *http.Request, result any) error {

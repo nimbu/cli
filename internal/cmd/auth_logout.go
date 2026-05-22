@@ -2,8 +2,11 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/auth"
 	"github.com/nimbu/cli/internal/output"
 )
 
@@ -12,7 +15,7 @@ type AuthLogoutCmd struct{}
 
 // Run executes the logout command.
 func (c *AuthLogoutCmd) Run(ctx context.Context) error {
-	client, err := GetAPIClient(ctx)
+	client, err := newAuthSessionAPIClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -34,4 +37,22 @@ func (c *AuthLogoutCmd) Run(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func newAuthSessionAPIClient(ctx context.Context) (*api.Client, error) {
+	flags := ctx.Value(rootFlagsKey{}).(*RootFlags)
+
+	token, err := ResolveAuthToken(ctx)
+	if err != nil {
+		if errors.Is(err, auth.ErrNoToken) {
+			return nil, fmt.Errorf("%w: run 'nimbu auth login' first", auth.ErrNoToken)
+		}
+		return nil, err
+	}
+
+	client := api.New(flags.APIURL, token)
+	client = client.WithVersion(version)
+	client = client.WithTimeout(flags.Timeout)
+	client = client.WithDebug(flags.Debug)
+	return client, nil
 }

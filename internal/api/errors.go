@@ -25,6 +25,24 @@ type ValidationError struct {
 	Code    string `json:"code,omitempty"`
 }
 
+// ReadonlyError is returned before a mutating request is sent by a readonly client.
+type ReadonlyError struct {
+	Method string
+	Path   string
+}
+
+func (e *ReadonlyError) Error() string {
+	method := strings.ToUpper(strings.TrimSpace(e.Method))
+	if method == "" {
+		method = "request"
+	}
+	path := strings.TrimSpace(e.Path)
+	if path == "" {
+		return fmt.Sprintf("cannot %s in readonly mode", method)
+	}
+	return fmt.Sprintf("cannot %s %s in readonly mode", method, path)
+}
+
 func (e *Error) Error() string {
 	if len(e.Errors) > 0 {
 		msgs := make([]string, len(e.Errors))

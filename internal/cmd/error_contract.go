@@ -27,6 +27,7 @@ const (
 	errorConflict          canonicalErrorCode = "resource.conflict"
 	errorRequestInvalid    canonicalErrorCode = "request.invalid"
 	errorRequestValidation canonicalErrorCode = "request.validation"
+	errorReadonly          canonicalErrorCode = "cli.readonly"
 	errorRateLimited       canonicalErrorCode = "rate_limit.exceeded"
 	errorNetworkTimeout    canonicalErrorCode = "network.timeout"
 	errorNetworkFailure    canonicalErrorCode = "network.failure"
@@ -150,6 +151,15 @@ func classifyError(err error) errorDescriptor {
 		if desc.Message == "" {
 			desc.Message = apiErr.Error()
 		}
+		return desc
+	}
+
+	var readonlyErr *api.ReadonlyError
+	if errors.As(err, &readonlyErr) {
+		desc.Code = errorReadonly
+		desc.ExitCode = ExitUsage
+		desc.Message = readonlyErr.Error()
+		desc.Hint = "unset NIMBU_READONLY or remove --readonly to allow write operations"
 		return desc
 	}
 

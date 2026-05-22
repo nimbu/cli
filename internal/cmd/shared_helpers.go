@@ -42,6 +42,7 @@ func newAPIClientForBase(ctx context.Context, baseURL string, site string) (*api
 	client = client.WithVersion(version)
 	client = client.WithTimeout(flags.Timeout)
 	client = client.WithDebug(flags.Debug)
+	client = client.WithReadonly(flags.Readonly)
 	if site != "" {
 		client = client.WithSite(site)
 	}

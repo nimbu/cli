@@ -1,11 +1,16 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/auth"
 	"github.com/nimbu/cli/internal/config"
+	"github.com/nimbu/cli/internal/output"
 )
 
 func TestApplyRootConfigDefaultsUsesConfigWhenNoOverrides(t *testing.T) {
@@ -80,5 +85,64 @@ func TestApplyRootConfigDefaultsWithoutEnvUsesConfig(t *testing.T) {
 	got := applyRootConfigDefaults(flags, cfg, nil)
 	if got.APIURL != "https://api.config.test" {
 		t.Fatalf("expected config api_url, got %q", got.APIURL)
+	}
+}
+
+func TestAPIClientFactoriesPropagateReadonly(t *testing.T) {
+	store := &fakeAuthStore{credential: auth.Credential{Token: "test-token"}}
+	withFakeAuthStore(t, store)
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, rootFlagsKey{}, &RootFlags{
+		APIURL:   "https://api.example.test",
+		Timeout:  30 * time.Second,
+		Readonly: true,
+	})
+	ctx = context.WithValue(ctx, configKey{}, &config.Config{})
+	ctx = context.WithValue(ctx, authResolverKey{}, newAuthCredentialResolver("api.example.test"))
+	ctx = output.WithMode(ctx, output.Mode{})
+
+	clients := map[string]func() error{
+		"default": func() error {
+			client, err := GetAPIClient(ctx)
+			if err != nil {
+				return err
+			}
+			return client.Post(ctx, "/channels", nil, nil)
+		},
+		"site": func() error {
+			client, err := GetAPIClientWithSite(ctx, "site-1")
+			if err != nil {
+				return err
+			}
+			return client.Post(ctx, "/channels", nil, nil)
+		},
+		"base_url": func() error {
+			client, err := GetAPIClientWithBaseURL(ctx, "https://api.other.test", "site-1")
+			if err != nil {
+				return err
+			}
+			return client.Post(ctx, "/channels", nil, nil)
+		},
+		"theme_copy_helper": func() error {
+			client, err := newAPIClientForBase(ctx, "https://api.other.test", "site-1")
+			if err != nil {
+				return err
+			}
+			return client.Post(ctx, "/channels", nil, nil)
+		},
+	}
+
+	for name, run := range clients {
+		t.Run(name, func(t *testing.T) {
+			err := run()
+			if err == nil {
+				t.Fatal("expected readonly error")
+			}
+			var readonlyErr *api.ReadonlyError
+			if !errors.As(err, &readonlyErr) {
+				t.Fatalf("error = %T %v, want *api.ReadonlyError", err, err)
+			}
+		})
 	}
 }

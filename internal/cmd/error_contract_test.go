@@ -29,6 +29,19 @@ func TestClassifyErrorNotLoggedIn(t *testing.T) {
 	}
 }
 
+func TestClassifyErrorReadonly(t *testing.T) {
+	desc := classifyError(&api.ReadonlyError{Method: "POST", Path: "/channels"})
+	if desc.Code != errorReadonly {
+		t.Fatalf("unexpected code: %s", desc.Code)
+	}
+	if desc.ExitCode != ExitUsage {
+		t.Fatalf("unexpected exit code: %d", desc.ExitCode)
+	}
+	if desc.Hint == "" {
+		t.Fatal("expected readonly hint")
+	}
+}
+
 func TestClassifyErrorRateLimit(t *testing.T) {
 	err := &api.Error{StatusCode: 429, Message: "rate limit exceeded"}
 	desc := classifyError(err)
