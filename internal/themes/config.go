@@ -16,6 +16,18 @@ var defaultGeneratedPatterns = []string{
 	"snippets/webpack_*.liquid",
 }
 
+var defaultIgnorePatterns = []string{
+	"**/*.map",
+	"**/Thumbs.db",
+	"**/ehthumbs.db",
+	"**/Desktop.ini",
+	"**/*~",
+	"**/*.swp",
+	"**/*.swo",
+	"**/*.tmp",
+	"**/*.temp",
+}
+
 var defaultRootPaths = map[Kind][]string{
 	KindLayout:   {"layouts"},
 	KindTemplate: {"templates"},
@@ -37,6 +49,7 @@ func ResolveConfig(projectRoot string, project projectconfig.ProjectConfig, expl
 		ProjectRoot: projectRoot,
 		Theme:       theme,
 		Generated:   append([]string{}, defaultGeneratedPatterns...),
+		Ignore:      append([]string{}, defaultIgnorePatterns...),
 	}
 
 	roots := projectconfig.SyncRootsConfig{}
@@ -44,7 +57,7 @@ func ResolveConfig(projectRoot string, project projectconfig.ProjectConfig, expl
 		if len(project.Sync.Generated) > 0 {
 			cfg.Generated = append([]string{}, project.Sync.Generated...)
 		}
-		cfg.Ignore = append([]string{}, project.Sync.Ignore...)
+		cfg.Ignore = append(cfg.Ignore, project.Sync.Ignore...)
 		roots = project.Sync.Roots
 		if build := resolveBuildConfig(projectRoot, project.Sync.Build); build != nil {
 			cfg.Build = build
