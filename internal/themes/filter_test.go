@@ -1,6 +1,9 @@
 package themes
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNormalizeOnlyPathRejectsEscapes(t *testing.T) {
 	root := t.TempDir()
@@ -47,6 +50,85 @@ func TestCompileSelectionFilterMatchesCategories(t *testing.T) {
 	}
 	if filter.Match(Resource{Kind: KindSnippet, LocalPath: "snippets/header.liquid", DisplayPath: "snippets/header.liquid"}) {
 		t.Fatal("did not expect liquid file selected by css filter")
+	}
+}
+
+func TestFilterResourcesNoImagesExcludesImageRoot(t *testing.T) {
+	cfg := Config{ProjectRoot: t.TempDir(), Roots: []RootSpec{
+		{Kind: KindLayout, LocalPath: "layouts"},
+		{Kind: KindSnippet, LocalPath: "snippets"},
+		{Kind: KindAsset, LocalPath: "stylesheets", RemoteBase: "stylesheets"},
+		{Kind: KindAsset, LocalPath: "javascripts", RemoteBase: "javascripts"},
+		{Kind: KindAsset, LocalPath: "fonts", RemoteBase: "fonts"},
+		{Kind: KindAsset, LocalPath: "images", RemoteBase: "images"},
+	}}
+	resources := []Resource{
+		{Kind: KindLayout, LocalPath: "layouts/default.liquid", DisplayPath: "layouts/default.liquid"},
+		{Kind: KindSnippet, LocalPath: "snippets/header.liquid", DisplayPath: "snippets/header.liquid"},
+		{Kind: KindAsset, LocalPath: "stylesheets/theme.css", DisplayPath: "stylesheets/theme.css"},
+		{Kind: KindAsset, LocalPath: "stylesheets/background.png", DisplayPath: "stylesheets/background.png"},
+		{Kind: KindAsset, LocalPath: "javascripts/app.js", DisplayPath: "javascripts/app.js"},
+		{Kind: KindAsset, LocalPath: "fonts/app.woff2", DisplayPath: "fonts/app.woff2"},
+		{Kind: KindAsset, LocalPath: "images/logo.svg", DisplayPath: "images/logo.svg"},
+	}
+
+	filtered, err := FilterResources(cfg, resources, Options{NoImages: true})
+	if err != nil {
+		t.Fatalf("filter resources: %v", err)
+	}
+
+	got := make([]string, len(filtered))
+	for i, resource := range filtered {
+		got[i] = resource.DisplayPath
+	}
+	want := []string{
+		"layouts/default.liquid",
+		"snippets/header.liquid",
+		"stylesheets/theme.css",
+		"stylesheets/background.png",
+		"javascripts/app.js",
+		"fonts/app.woff2",
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("filtered = %#v, want %#v", got, want)
+	}
+}
+
+func TestFilterResourcesNoImagesExcludesRemoteImageResources(t *testing.T) {
+	cfg := Config{ProjectRoot: t.TempDir(), Roots: []RootSpec{
+		{Kind: KindAsset, LocalPath: "images", RemoteBase: "images"},
+		{Kind: KindAsset, LocalPath: "fonts", RemoteBase: "fonts"},
+	}}
+	resources := []Resource{
+		{Kind: KindAsset, RemoteName: "images/logo.svg", DisplayPath: "images/logo.svg"},
+		{Kind: KindAsset, RemoteName: "fonts/app.woff2", DisplayPath: "fonts/app.woff2"},
+	}
+
+	filtered, err := FilterResources(cfg, resources, Options{NoImages: true})
+	if err != nil {
+		t.Fatalf("filter resources: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].DisplayPath != "fonts/app.woff2" {
+		t.Fatalf("filtered = %#v, want only font", filtered)
+	}
+}
+
+func TestFilterResourcesImagesOnlyWithNoImagesSelectsNothing(t *testing.T) {
+	cfg := Config{ProjectRoot: t.TempDir(), Roots: []RootSpec{
+		{Kind: KindAsset, LocalPath: "images", RemoteBase: "images"},
+		{Kind: KindAsset, LocalPath: "stylesheets", RemoteBase: "stylesheets"},
+	}}
+	resources := []Resource{
+		{Kind: KindAsset, LocalPath: "images/logo.svg", DisplayPath: "images/logo.svg"},
+		{Kind: KindAsset, LocalPath: "stylesheets/theme.css", DisplayPath: "stylesheets/theme.css"},
+	}
+
+	filtered, err := FilterResources(cfg, resources, Options{ImagesOnly: true, NoImages: true})
+	if err != nil {
+		t.Fatalf("filter resources: %v", err)
+	}
+	if len(filtered) != 0 {
+		t.Fatalf("filtered = %#v, want none", filtered)
 	}
 }
 

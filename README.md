@@ -464,6 +464,7 @@ Notes:
   can be repeated; commas split multiple selectors.
 - `--liquid-only`, `--css-only`, `--js-only`, `--images-only`, and `--fonts-only`
   select managed resource categories before upload/sync.
+- `--no-images` excludes managed image assets from upload/sync.
 - Explicit selectors and category flags are additive.
 - `--prune` is only available on `themes sync` and deletes managed remote extras.
 
@@ -477,6 +478,7 @@ nimbu themes sync --only javascript/*.js,stylesheets/*.css
 nimbu themes push --only snippets/header.liquid --only stylesheets/theme.css
 nimbu themes push --js-only --css-only --only layouts/default.liquid --only snippets/bundle_app.liquid
 nimbu themes push --all --theme storefront
+nimbu themes push --all --no-images
 nimbu themes pull --theme storefront
 nimbu themes diff --theme storefront
 nimbu themes cdn-root

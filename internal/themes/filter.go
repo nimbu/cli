@@ -19,6 +19,7 @@ type selectionFilter struct {
 	selectors        []themeSelector
 	hasCategory      bool
 	liquidOnly       bool
+	noImages         bool
 	categoryMatchers map[string][]globMatcher
 }
 
@@ -46,6 +47,7 @@ func compileSelectionFilter(cfg Config, opts Options) (*selectionFilter, error) 
 		cfg:              cfg,
 		selectors:        selectors,
 		liquidOnly:       opts.LiquidOnly,
+		noImages:         opts.NoImages,
 		categoryMatchers: map[string][]globMatcher{},
 	}
 	addCategory := func(name string, patterns []string) error {
@@ -88,6 +90,9 @@ func (f *selectionFilter) Match(resource Resource) bool {
 		return true
 	}
 	projectPath, ok := projectPathForResource(f.cfg, resource)
+	if f.noImages && isImageRootResource(resource, projectPath) {
+		return false
+	}
 	onlyMatch := ok && f.matchesOnly(projectPath)
 	if len(f.selectors) > 0 && !f.hasCategory {
 		return onlyMatch
@@ -100,6 +105,15 @@ func (f *selectionFilter) Match(resource Resource) bool {
 		return onlyMatch || categoryMatch
 	}
 	return categoryMatch
+}
+
+func isImageRootResource(resource Resource, projectPath string) bool {
+	if resource.Kind != KindAsset {
+		return false
+	}
+	projectPath = normalizePath(projectPath)
+	remoteName := normalizePath(resource.RemoteName)
+	return hasPathPrefix(projectPath, "images") || hasPathPrefix(remoteName, "images")
 }
 
 // FilterResources applies selection flags to resources.

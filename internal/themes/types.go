@@ -112,6 +112,7 @@ type Options struct {
 	JSOnly     bool
 	ImagesOnly bool
 	FontsOnly  bool
+	NoImages   bool
 
 	ConfirmOverwrite func(context.Context, Resource, error) (bool, error)
 }

@@ -33,6 +33,7 @@ type ThemePushCmd struct {
 	JSOnly     bool     `help:"Only upload JavaScript assets" name:"js-only"`
 	ImagesOnly bool     `help:"Only upload image assets" name:"images-only"`
 	FontsOnly  bool     `help:"Only upload font assets" name:"fonts-only"`
+	NoImages   bool     `help:"Exclude image assets" name:"no-images"`
 }
 
 // Run executes the push command.
@@ -54,6 +55,7 @@ type ThemeSyncCmd struct {
 	JSOnly     bool     `help:"Only sync JavaScript assets" name:"js-only"`
 	ImagesOnly bool     `help:"Only sync image assets" name:"images-only"`
 	FontsOnly  bool     `help:"Only sync font assets" name:"fonts-only"`
+	NoImages   bool     `help:"Exclude image assets" name:"no-images"`
 }
 
 // Run executes the sync command.
@@ -74,6 +76,7 @@ func themePushOptions(c *ThemePushCmd, flags *RootFlags) themes.Options {
 		JSOnly:     c.JSOnly,
 		ImagesOnly: c.ImagesOnly,
 		FontsOnly:  c.FontsOnly,
+		NoImages:   c.NoImages,
 	}
 }
 
@@ -91,6 +94,7 @@ func themeSyncOptions(c *ThemeSyncCmd, flags *RootFlags) themes.Options {
 		JSOnly:     c.JSOnly,
 		ImagesOnly: c.ImagesOnly,
 		FontsOnly:  c.FontsOnly,
+		NoImages:   c.NoImages,
 	}
 }
 

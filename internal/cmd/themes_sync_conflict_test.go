@@ -170,3 +170,34 @@ func TestThemePushAndSyncExpandCommaSeparatedOnlySelectors(t *testing.T) {
 		t.Fatalf("sync selectors = %#v, want %#v", sync.Only, wantSync)
 	}
 }
+
+func TestThemePushAndSyncAcceptNoImages(t *testing.T) {
+	parser, cli, err := newParser()
+	if err != nil {
+		t.Fatalf("new parser: %v", err)
+	}
+
+	if _, err := parser.Parse([]string{"themes", "push", "--no-images"}); err != nil {
+		t.Fatalf("parse themes push --no-images: %v", err)
+	}
+	if !cli.Themes.Push.NoImages {
+		t.Fatal("expected push NoImages flag set")
+	}
+	if opts := themePushOptions(&cli.Themes.Push, nil); !opts.NoImages {
+		t.Fatal("expected push options NoImages set")
+	}
+
+	parser, cli, err = newParser()
+	if err != nil {
+		t.Fatalf("new parser: %v", err)
+	}
+	if _, err := parser.Parse([]string{"themes", "sync", "--no-images"}); err != nil {
+		t.Fatalf("parse themes sync --no-images: %v", err)
+	}
+	if !cli.Themes.Sync.NoImages {
+		t.Fatal("expected sync NoImages flag set")
+	}
+	if opts := themeSyncOptions(&cli.Themes.Sync, nil); !opts.NoImages {
+		t.Fatal("expected sync options NoImages set")
+	}
+}
