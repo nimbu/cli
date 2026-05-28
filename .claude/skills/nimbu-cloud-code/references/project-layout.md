@@ -81,7 +81,7 @@ The Nimbu sandbox is **fixed** — only `Nimbu`, `Mail`, `HTTP`, `crypto`, `jwt`
 - `eslint`, `prettier`, etc.
 - Build tools (CoffeeScript compiler, etc.)
 
-If an agent is tempted to `npm install` something for runtime use, stop and check the [Available Modules docs](https://docs.nimbu.io/cloud-code/modules.md) first.
+If an agent is tempted to `npm install` something for runtime use, stop and check the [Available Modules docs](https://docs.nimbu.io/docs/cloud-code/modules.md) first.
 
 ## Environment branching
 
@@ -120,13 +120,13 @@ nimbu apps config --site my-site EXAMPLE_API_KEY=...
 ## What NOT to do
 
 - Don't put cloud-code logic inside `templates/`, `layouts/`, or `assets/` — those are theme territory and ship via `themes push`.
-- Don't `require` modules that aren't in the [Available Modules](https://docs.nimbu.io/cloud-code/modules.md) list (or already in use elsewhere in the project).
+- Don't `require` modules that aren't in the [Available Modules](https://docs.nimbu.io/docs/cloud-code/modules.md) list (or already in use elsewhere in the project).
 - Don't mix `async/await` and `Nimbu.Future.when().then().fail()` patterns inside one file — pick whichever the file already uses.
 - Don't read env vars before they're set on the site; deploy the config first.
 
 ## Reference
 
-- [Cloud Code overview](https://docs.nimbu.io/cloud-code/overview.md)
-- [Available modules](https://docs.nimbu.io/cloud-code/modules.md)
-- [Runtime API](https://docs.nimbu.io/cloud-code/runtime-api.md)
+- [Cloud Code overview](https://docs.nimbu.io/docs/cloud-code/overview.md)
+- [Available modules](https://docs.nimbu.io/docs/cloud-code/modules.md)
+- [Runtime API](https://docs.nimbu.io/docs/cloud-code/runtime-api.md)
 - Companion `nimbu` skill — `nimbu apps push`, `nimbu apps config`, `themes push/sync` semantics

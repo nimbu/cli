@@ -5,7 +5,7 @@ Most Nimbu sites ship in 2+ languages. There are two layers of localization to k
 1. **Content translations** — pages, articles, products, channel entries each have a per-locale version, edited by the content team in the admin UI. Liquid surfaces them automatically when the request matches that locale's URL prefix.
 2. **Theme strings** — copy that lives in templates ("Read more", "Sign in", "Add to cart"). Translated through the `{% translate %}` tag against translation YAML files managed by the `nimbu` CLI.
 
-> Live docs: <https://docs.nimbu.io/themes/other/multilingual.md>
+> Live docs: <https://docs.nimbu.io/docs/themes/other/multilingual.md>
 
 ## `{% translate %}`
 
@@ -32,7 +32,7 @@ Use `%{name}` placeholders in the default; pass each placeholder as a named opti
 <input data-error="{{ err_required }}">
 ```
 
-Most real themes use the tag form exclusively (a filter form is also documented but rarely seen — confirm against [multilingual.md](https://docs.nimbu.io/themes/other/multilingual.md) before relying on it).
+Most real themes use the tag form exclusively (a filter form is also documented but rarely seen — confirm against [multilingual.md](https://docs.nimbu.io/docs/themes/other/multilingual.md) before relying on it).
 
 ### Where the strings live
 
@@ -172,7 +172,7 @@ Prefer `{% translate %}` for short copy. Fall back to `{% case locale %}` for wh
 
 ## Reference
 
-- <https://docs.nimbu.io/themes/other/multilingual.md> — multilingual overview
-- <https://docs.nimbu.io/themes/filters/dates-time.md> — `localized_date`
-- <https://docs.nimbu.io/themes/liquid-context.md> — `locale`, `default_locale`, `locale_url_prefix`
+- <https://docs.nimbu.io/docs/themes/other/multilingual.md> — multilingual overview
+- <https://docs.nimbu.io/docs/themes/filters/dates-time.md> — `localized_date`
+- <https://docs.nimbu.io/docs/themes/liquid-context.md> — `locale`, `default_locale`, `locale_url_prefix`
 - Companion `nimbu` skill — `nimbu translations push/pull`

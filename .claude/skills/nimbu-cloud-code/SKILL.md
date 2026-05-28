@@ -8,6 +8,8 @@ description: >
   references `Nimbu.Cloud.*`, `Nimbu.Query`, `Nimbu.Object`, `Nimbu.Site`, or
   the `nimbu-js-sdk`. For the CLI side (channel schemas, deploy with
   `nimbu apps push`), use the companion `nimbu` skill.
+metadata:
+  version: "0.2.0"
 ---
 
 # Nimbu Cloud Code
@@ -18,43 +20,44 @@ Cloud Code is server-side JavaScript that runs in Nimbu's V8 sandbox. It extends
 
 **Always fetch the relevant doc page before writing or modifying cloud code.** This skill summarizes shape, conventions, and gotchas; the docs at `docs.nimbu.io` are authoritative and change more often than this skill.
 
-**Use the `.md` variant of every URL.** Every Nimbu doc page has a sibling markdown file at the same path with a `.md` extension instead of `.html`. WebFetch returns these as plain markdown — much cheaper and more accurate to parse than the rendered HTML.
+**Use the `/docs/... .md` variant of every URL.** Every Nimbu doc page has a sibling markdown file at the same path with a `.md` extension. WebFetch returns these as plain markdown — much cheaper and more accurate to parse than rendered HTML.
 
 ```
-docs.nimbu.io/cloud-code/functions.html   →   docs.nimbu.io/cloud-code/functions.md
-docs.nimbu.io/sdk/queries.html            →   docs.nimbu.io/sdk/queries.md
+docs.nimbu.io/docs/cloud-code/functions   →   docs.nimbu.io/docs/cloud-code/functions.md
+docs.nimbu.io/docs/sdk/queries            →   docs.nimbu.io/docs/sdk/queries.md
 ```
 
 ### Cloud Code docs
 
 | Topic | URL |
 |-------|-----|
-| Overview | https://docs.nimbu.io/cloud-code/overview.md |
-| Key Concepts | https://docs.nimbu.io/cloud-code/key-concepts.md |
-| Callbacks | https://docs.nimbu.io/cloud-code/callbacks.md |
-| Cloud Functions | https://docs.nimbu.io/cloud-code/functions.md |
-| Routes | https://docs.nimbu.io/cloud-code/routes.md |
-| Extensions | https://docs.nimbu.io/cloud-code/extensions.md |
-| Background Jobs | https://docs.nimbu.io/cloud-code/jobs.md |
-| Available Modules | https://docs.nimbu.io/cloud-code/modules.md |
-| Runtime API | https://docs.nimbu.io/cloud-code/runtime-api.md |
+| Overview | https://docs.nimbu.io/docs/cloud-code/overview.md |
+| Key Concepts | https://docs.nimbu.io/docs/cloud-code/key-concepts.md |
+| Callbacks | https://docs.nimbu.io/docs/cloud-code/callbacks.md |
+| Cloud Functions | https://docs.nimbu.io/docs/cloud-code/functions.md |
+| Routes | https://docs.nimbu.io/docs/cloud-code/routes.md |
+| Extensions | https://docs.nimbu.io/docs/cloud-code/extensions.md |
+| Background Jobs | https://docs.nimbu.io/docs/cloud-code/jobs.md |
+| Available Modules | https://docs.nimbu.io/docs/cloud-code/modules.md |
+| Module Reference | https://docs.nimbu.io/docs/cloud-code/module-reference/overview.md |
+| Runtime API | https://docs.nimbu.io/docs/cloud-code/runtime-api.md |
 
 ### SDK docs
 
 | Topic | URL |
 |-------|-----|
-| Overview | https://docs.nimbu.io/sdk/overview.md |
-| Getting Started | https://docs.nimbu.io/sdk/getting-started.md |
-| Environments | https://docs.nimbu.io/sdk/environments.md |
-| Objects & Channels | https://docs.nimbu.io/sdk/objects.md |
-| Queries | https://docs.nimbu.io/sdk/queries.md |
-| Collections | https://docs.nimbu.io/sdk/collections.md |
-| Relations & Field Types | https://docs.nimbu.io/sdk/relations-field-types.md |
-| Customers & Sessions | https://docs.nimbu.io/sdk/customers-sessions.md |
-| System Resources | https://docs.nimbu.io/sdk/system-resources.md |
-| Direct API & Cloud Functions | https://docs.nimbu.io/sdk/api-cloud-functions.md |
-| Recipes | https://docs.nimbu.io/sdk/recipes.md |
-| Reference | https://docs.nimbu.io/sdk/reference.md |
+| Overview | https://docs.nimbu.io/docs/sdk/overview.md |
+| Getting Started | https://docs.nimbu.io/docs/sdk/getting-started.md |
+| Environments | https://docs.nimbu.io/docs/sdk/environments.md |
+| Objects & Channels | https://docs.nimbu.io/docs/sdk/objects.md |
+| Queries | https://docs.nimbu.io/docs/sdk/queries.md |
+| Collections | https://docs.nimbu.io/docs/sdk/collections.md |
+| Relations & Field Types | https://docs.nimbu.io/docs/sdk/relations-field-types.md |
+| Customers & Sessions | https://docs.nimbu.io/docs/sdk/customers-sessions.md |
+| System Resources | https://docs.nimbu.io/docs/sdk/system-resources.md |
+| Direct API & Cloud Functions | https://docs.nimbu.io/docs/sdk/api-cloud-functions.md |
+| Recipes | https://docs.nimbu.io/docs/sdk/recipes.md |
+| Reference | https://docs.nimbu.io/docs/sdk/reference.md |
 
 **Agent rule: when in doubt, fetch the `.md` doc first.** Don't guess SDK signatures.
 
@@ -97,20 +100,18 @@ Nimbu.Cloud.before('channel.entries.created', 'articles', async (request, respon
 
 ## Runtime modules
 
-The Nimbu sandbox is **fixed** — `Nimbu` is the only truly pre-injected global. The other built-in modules are available either via `require('name')` at the top of the file, or implicitly as globals (most projects do both — declare them in `.eslintrc.json` *and* `require` them where used). Don't try to `require('nimbu-js-sdk')` — it isn't on the module path.
+The Nimbu sandbox is **fixed** — `Nimbu` is the JS SDK entrypoint and is available globally. The built-in modules are loaded with `require('name')`; many also have convenience bridges under `Nimbu.Cloud.*` such as `Nimbu.Cloud.http`, `Nimbu.Cloud.mail`, `Nimbu.Cloud.pdf`, `Nimbu.Cloud.fs`, `Nimbu.Cloud.zip`, and `Nimbu.Cloud.modules` for advanced access. Don't try to `require('nimbu-js-sdk')` inside cloud code — the SDK is already exposed as `Nimbu`.
 
 | Module | How to use | Docs |
 |--------|-----------|------|
-| `Nimbu` | Pre-injected global. `Nimbu.Query`, `Nimbu.Object`, `Nimbu.Cloud`, `Nimbu.Site`, etc. | [sdk/overview.md](https://docs.nimbu.io/sdk/overview.md) |
-| `Mail` | `const Mail = require('mail');` — `Mail.send({to, subject, html})`. | [cloud-code/modules.md](https://docs.nimbu.io/cloud-code/modules.md) |
-| `HTTP` | `const HTTP = require('http');` — `HTTP.get(url, opts)`, `HTTP.post(url, body, opts)`. | [cloud-code/modules.md](https://docs.nimbu.io/cloud-code/modules.md) |
-| `crypto` | `const crypto = require('crypto');` — hashing, HMAC. | [cloud-code/modules.md](https://docs.nimbu.io/cloud-code/modules.md) |
-| `jwt` | `const jwt = require('jwt');` — sign / verify JWTs. | [cloud-code/modules.md](https://docs.nimbu.io/cloud-code/modules.md) |
-| `I18n` | `const I18n = require('I18n');` — translations for the active locale. | [cloud-code/modules.md](https://docs.nimbu.io/cloud-code/modules.md) |
-| `lodash` | `const _ = require('lodash');` or `const { compact } = require('lodash');` | — |
-| `moment` | `const moment = require('moment');` | — |
+| `Nimbu` | Pre-injected global. `Nimbu.Query`, `Nimbu.Object`, `Nimbu.Cloud`, `Nimbu.Site`, etc. | [sdk/overview.md](https://docs.nimbu.io/docs/sdk/overview.md) |
+| `http` | `const HTTP = require('http');` or `Nimbu.Cloud.http` for external requests. | [http.md](https://docs.nimbu.io/docs/cloud-code/module-reference/http.md) |
+| `mail` | `const Mail = require('mail');` or `Nimbu.Cloud.mail` for transactional email. | [mail.md](https://docs.nimbu.io/docs/cloud-code/module-reference/mail.md) |
+| `crypto` / `jwt` | Hashing, HMAC, JWT signing and verification. | [modules.md](https://docs.nimbu.io/docs/cloud-code/modules.md) |
+| `csv` / `pdf` / `zip` | Export and document generation helpers. | [modules.md](https://docs.nimbu.io/docs/cloud-code/modules.md) |
+| `lodash` / `underscore` / `moment` | Utility modules for older and newer projects. | [modules.md](https://docs.nimbu.io/docs/cloud-code/modules.md) |
 
-The set of available modules is sandbox-fixed. Adding a package to `package.json` does **not** make it loadable at runtime — see [project-layout.md](references/project-layout.md).
+The module catalog is sandbox-fixed and documented in [cloud-code/modules.md](https://docs.nimbu.io/docs/cloud-code/modules.md). Adding a package to `package.json` does **not** make it loadable at runtime — see [project-layout.md](references/project-layout.md).
 
 ## SDK essentials
 
@@ -251,4 +252,4 @@ Verify the exact `@nimbu/testing` API against the package's README for the proje
 - **[references/testing.md](references/testing.md)** — `@nimbu/testing` + Jest setup and patterns.
 - **Companion `nimbu` skill** — CLI for channels, schemas, deploys, env config, theme sync.
 - **Companion `nimbu-themes` skill** — Liquid templates, drops, tags, filters, forms, editables, i18n in `layouts/`/`templates/`/`snippets/`.
-- **Live docs (use `.md` variant)** — [Cloud Code overview](https://docs.nimbu.io/cloud-code/overview.md) and [SDK overview](https://docs.nimbu.io/sdk/overview.md).
+- **Live docs (use `.md` variant)** — [Cloud Code overview](https://docs.nimbu.io/docs/cloud-code/overview.md) and [SDK overview](https://docs.nimbu.io/docs/sdk/overview.md).

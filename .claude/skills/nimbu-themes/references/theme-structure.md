@@ -214,10 +214,10 @@ Notes:
 
 ## Reference
 
-- [Layouts](https://docs.nimbu.io/themes/concepts/layouts.md)
-- [Templates](https://docs.nimbu.io/themes/concepts/templates.md)
-- [Snippets](https://docs.nimbu.io/themes/concepts/snippets.md)
-- [Channels in Liquid](https://docs.nimbu.io/themes/content/channels.md)
-- [Theme config](https://docs.nimbu.io/themes/other/theme-config.md)
-- [Performance & caching](https://docs.nimbu.io/themes/other/performance.md)
+- [Layouts](https://docs.nimbu.io/docs/themes/concepts/layouts.md)
+- [Templates](https://docs.nimbu.io/docs/themes/concepts/templates.md)
+- [Snippets](https://docs.nimbu.io/docs/themes/concepts/snippets.md)
+- [Channels in Liquid](https://docs.nimbu.io/docs/themes/content/channels.md)
+- [Theme config](https://docs.nimbu.io/docs/themes/other/theme-config.md)
+- [Performance & caching](https://docs.nimbu.io/docs/themes/other/performance.md)
 - Companion `nimbu` skill — `themes push/sync/diff/serve`, channel schemas

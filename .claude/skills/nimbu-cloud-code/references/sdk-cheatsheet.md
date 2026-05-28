@@ -74,7 +74,7 @@ const customer = await new Nimbu.Query(Nimbu.Customer)
 
 The slug-string form (`new Nimbu.Query('customers')`) also works but returns plain `Nimbu.Object`.
 
-Docs: https://docs.nimbu.io/sdk/queries.md, https://docs.nimbu.io/sdk/collections.md
+Docs: https://docs.nimbu.io/docs/sdk/queries.md, https://docs.nimbu.io/docs/sdk/collections.md
 
 ## Objects
 
@@ -143,7 +143,7 @@ const diff = article.changedAttributes();   // {field: newValue, ...} or false
 const before = article.previousAttributes();
 ```
 
-Docs: https://docs.nimbu.io/sdk/objects.md, https://docs.nimbu.io/sdk/relations-field-types.md
+Docs: https://docs.nimbu.io/docs/sdk/objects.md, https://docs.nimbu.io/docs/sdk/relations-field-types.md
 
 ## Cloud functions
 
@@ -176,7 +176,7 @@ Nimbu.Cloud.define('archiveArticle', async (request, response) => {
 
 Invoke a function from elsewhere in cloud code with `Nimbu.Cloud.run('name', params)`.
 
-Docs: https://docs.nimbu.io/cloud-code/functions.md, https://docs.nimbu.io/sdk/api-cloud-functions.md
+Docs: https://docs.nimbu.io/docs/cloud-code/functions.md, https://docs.nimbu.io/docs/sdk/api-cloud-functions.md
 
 ## Background jobs
 
@@ -205,7 +205,7 @@ The third argument is **always an object** (or `null`), never a bare cron string
 
 Trigger remotely with the CLI: `nimbu jobs run reindex_articles --site <slug>`.
 
-Docs: https://docs.nimbu.io/cloud-code/jobs.md
+Docs: https://docs.nimbu.io/docs/cloud-code/jobs.md
 
 ## Channel callbacks
 
@@ -265,7 +265,7 @@ The event name is **`deleted`**, not `destroyed` — even though the method that
 - `response.error('message')` — reject with a general error.
 - `response.error('fieldName', 'message')` — reject with a field-level validation error (rendered next to the field in the admin UI).
 
-Docs: https://docs.nimbu.io/cloud-code/callbacks.md
+Docs: https://docs.nimbu.io/docs/cloud-code/callbacks.md
 
 ## HTTP routes
 
@@ -307,7 +307,7 @@ Path patterns: `/static`, `/dynamic/:id`, `/multi/:a/:b`, `/wildcard/*rest`.
 | `response.send(fileData, opts)` | Send a file (with `type`, `filename`) |
 | `response.success()` / `response.error('msg')` / `response.error(code, 'msg')` | Plain responses |
 
-Docs: https://docs.nimbu.io/cloud-code/routes.md
+Docs: https://docs.nimbu.io/docs/cloud-code/routes.md
 
 ## Admin extensions
 
@@ -326,7 +326,7 @@ Nimbu.Cloud.extend('channel.entries.show', 'orders', {
 
 Common actions: `'channel.entries.show'`, `'channel.entries.list'`. The handler shape mirrors callbacks. Use sparingly — anything more than a one-shot button is usually better as a function or job.
 
-Docs: https://docs.nimbu.io/cloud-code/extensions.md
+Docs: https://docs.nimbu.io/docs/cloud-code/extensions.md
 
 ## Customers & sessions
 
@@ -362,7 +362,7 @@ const current = Nimbu.Customer.current();   // current session, if any
 if (current && current.authenticated()) { /* … */ }
 ```
 
-Docs: https://docs.nimbu.io/sdk/customers-sessions.md
+Docs: https://docs.nimbu.io/docs/sdk/customers-sessions.md
 
 ## Mail
 
@@ -378,7 +378,7 @@ await Mail.send({
 
 Templating beyond inline HTML belongs in Nimbu **notification templates** (managed via `nimbu notifications` / `nimbu mails` in the companion CLI skill).
 
-Docs: https://docs.nimbu.io/cloud-code/modules.md
+Docs: https://docs.nimbu.io/docs/cloud-code/modules.md
 
 ## HTTP
 
@@ -395,7 +395,7 @@ await HTTP.post(
 );
 ```
 
-Docs: https://docs.nimbu.io/cloud-code/modules.md
+Docs: https://docs.nimbu.io/docs/cloud-code/modules.md
 
 ## Site & env
 
@@ -406,15 +406,15 @@ Nimbu.Site.env.get('STRIPE_KEY')      // site-level env var, undefined if unset
 
 Set env vars with `nimbu apps config --site <slug> KEY=value` (companion CLI skill) **before** the code that reads them is deployed.
 
-Docs: https://docs.nimbu.io/sdk/system-resources.md, https://docs.nimbu.io/sdk/environments.md
+Docs: https://docs.nimbu.io/docs/sdk/system-resources.md, https://docs.nimbu.io/docs/sdk/environments.md
 
 ## System resources
 
 `Nimbu.Site`, `Nimbu.Customer`, `Nimbu.Order`, `Nimbu.Product`, `Nimbu.Page`, `Nimbu.Role` — specialized classes that follow the same `.get` / `.set` / `.save` shape as `Nimbu.Object`. Use them in queries when the site uses commerce or page resources directly.
 
-Docs: https://docs.nimbu.io/sdk/system-resources.md
+Docs: https://docs.nimbu.io/docs/sdk/system-resources.md
 
 ## Reference
 
-- Full SDK reference: https://docs.nimbu.io/sdk/reference.md
-- Recipes: https://docs.nimbu.io/sdk/recipes.md
+- Full SDK reference: https://docs.nimbu.io/docs/sdk/reference.md
+- Recipes: https://docs.nimbu.io/docs/sdk/recipes.md

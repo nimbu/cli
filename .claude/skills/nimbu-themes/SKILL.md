@@ -10,6 +10,8 @@ description: >
   `cart`, `channels`, `products`, `page`, `menus`. For deploying themes
   (`nimbu themes push/sync`), use the companion `nimbu` skill. For server-side
   JavaScript in `code/`, use `nimbu-cloud-code`.
+metadata:
+  version: "0.2.0"
 ---
 
 # Nimbu Themes
@@ -18,51 +20,52 @@ Nimbu themes are written in **Liquid** (Shopify's templating language) plus a Ni
 
 ## Docs are the source of truth
 
-**Always fetch the relevant doc page before writing or modifying a theme.** This skill summarizes shape, conventions, and gotchas; the docs at `docs.nimbu.io/themes/` are authoritative and change more often than this skill.
+**Always fetch the relevant doc page before writing or modifying a theme.** This skill summarizes shape, conventions, and gotchas; the docs at `docs.nimbu.io/docs/themes/` are authoritative and change more often than this skill.
 
-**Use the `.md` variant of every URL.** Every Nimbu doc page has a sibling markdown file at the same path. WebFetch returns these as plain markdown — far cheaper and more accurate to parse than the HTML.
+**Use the `/docs/... .md` variant of every URL.** Every Nimbu doc page has a sibling markdown file at the same path. WebFetch returns these as plain markdown — far cheaper and more accurate to parse than rendered HTML.
 
 ```
-docs.nimbu.io/themes/concepts/templates.html   →   docs.nimbu.io/themes/concepts/templates.md
-docs.nimbu.io/themes/filters-tags.html         →   docs.nimbu.io/themes/filters-tags.md
+docs.nimbu.io/docs/themes/concepts/templates   →   docs.nimbu.io/docs/themes/concepts/templates.md
+docs.nimbu.io/docs/themes/filters-tags         →   docs.nimbu.io/docs/themes/filters-tags.md
 ```
 
 ### Themes docs
 
 | Topic | URL |
 |-------|-----|
-| Overview | https://docs.nimbu.io/themes/introduction/overview.md |
-| Getting started | https://docs.nimbu.io/themes/introduction/getting-started.md |
-| Layouts | https://docs.nimbu.io/themes/concepts/layouts.md |
-| Templates | https://docs.nimbu.io/themes/concepts/templates.md |
-| Snippets | https://docs.nimbu.io/themes/concepts/snippets.md |
-| Editables | https://docs.nimbu.io/themes/concepts/editables.md |
-| Pages | https://docs.nimbu.io/themes/content/pages.md |
-| Navigation | https://docs.nimbu.io/themes/content/navigation.md |
-| Channels (custom collections) | https://docs.nimbu.io/themes/content/channels.md |
-| Webshop | https://docs.nimbu.io/themes/content/webshop.md |
-| Multilingual & i18n | https://docs.nimbu.io/themes/other/multilingual.md |
-| Forms | https://docs.nimbu.io/themes/other/forms.md |
-| Performance & caching | https://docs.nimbu.io/themes/other/performance.md |
-| Theme config | https://docs.nimbu.io/themes/other/theme-config.md |
-| Global variables | https://docs.nimbu.io/themes/other/global-variables.md |
-| Advanced | https://docs.nimbu.io/themes/other/advanced.md |
-| Forms & editable content (combined) | https://docs.nimbu.io/themes/forms-editable-content.md |
-| Filters & tags reference | https://docs.nimbu.io/themes/filters-tags.md |
-| Liquid context (drops) | https://docs.nimbu.io/themes/liquid-context.md |
+| Overview | https://docs.nimbu.io/docs/themes/introduction/overview.md |
+| Getting started | https://docs.nimbu.io/docs/themes/introduction/getting-started.md |
+| Layouts | https://docs.nimbu.io/docs/themes/concepts/layouts.md |
+| Templates | https://docs.nimbu.io/docs/themes/concepts/templates.md |
+| Snippets | https://docs.nimbu.io/docs/themes/concepts/snippets.md |
+| Editables | https://docs.nimbu.io/docs/themes/concepts/editables.md |
+| Pages | https://docs.nimbu.io/docs/themes/content/pages.md |
+| Navigation | https://docs.nimbu.io/docs/themes/content/navigation.md |
+| Channels (custom collections) | https://docs.nimbu.io/docs/themes/content/channels.md |
+| Webshop | https://docs.nimbu.io/docs/themes/content/webshop.md |
+| Gift cards | https://docs.nimbu.io/docs/themes/content/gift-cards.md |
+| Multilingual & i18n | https://docs.nimbu.io/docs/themes/other/multilingual.md |
+| Forms | https://docs.nimbu.io/docs/themes/other/forms.md |
+| Performance & caching | https://docs.nimbu.io/docs/themes/other/performance.md |
+| Theme config | https://docs.nimbu.io/docs/themes/other/theme-config.md |
+| Global variables | https://docs.nimbu.io/docs/themes/other/global-variables.md |
+| Advanced | https://docs.nimbu.io/docs/themes/other/advanced.md |
+| Forms & editable content (combined) | https://docs.nimbu.io/docs/themes/forms-editable-content.md |
+| Filters & tags reference | https://docs.nimbu.io/docs/themes/filters-tags.md |
+| Liquid context (drops) | https://docs.nimbu.io/docs/themes/liquid-context.md |
 
 ### Filter reference (by purpose)
 
 | Topic | URL |
 |-------|-----|
-| Text formatting | https://docs.nimbu.io/themes/filters/text-formatting.md |
-| Numbers & money | https://docs.nimbu.io/themes/filters/numbers-money.md |
-| Dates & time | https://docs.nimbu.io/themes/filters/dates-time.md |
-| Assets & CDN | https://docs.nimbu.io/themes/filters/assets-cdn.md |
-| Commerce | https://docs.nimbu.io/themes/filters/commerce.md |
-| Arrays & collections | https://docs.nimbu.io/themes/filters/arrays-collections.md |
-| API & JSON | https://docs.nimbu.io/themes/filters/api-json.md |
-| Special-purpose (QR, hashing, …) | https://docs.nimbu.io/themes/filters/special-purpose.md |
+| Text formatting | https://docs.nimbu.io/docs/themes/filters/text-formatting.md |
+| Numbers & money | https://docs.nimbu.io/docs/themes/filters/numbers-money.md |
+| Dates & time | https://docs.nimbu.io/docs/themes/filters/dates-time.md |
+| Assets & CDN | https://docs.nimbu.io/docs/themes/filters/assets-cdn.md |
+| Commerce | https://docs.nimbu.io/docs/themes/filters/commerce.md |
+| Arrays & collections | https://docs.nimbu.io/docs/themes/filters/arrays-collections.md |
+| API & JSON | https://docs.nimbu.io/docs/themes/filters/api-json.md |
+| Special-purpose (QR, hashing, …) | https://docs.nimbu.io/docs/themes/filters/special-purpose.md |
 
 ### Standard Liquid (Shopify)
 
@@ -241,6 +244,6 @@ Deployment specifics live in the `nimbu` skill — this skill focuses on authori
   - [forms-and-editables.md](references/forms-and-editables.md) — `{% form %}`, helpers, full `editable_*` family, `repeatable`
   - [i18n-and-multilingual.md](references/i18n-and-multilingual.md) — `{% translate %}`, locale switching, `localized_date`
 - **External:**
-  - [Nimbu Themes overview](https://docs.nimbu.io/themes/introduction/overview.md)
-  - [Filters & tags reference](https://docs.nimbu.io/themes/filters-tags.md)
+  - [Nimbu Themes overview](https://docs.nimbu.io/docs/themes/introduction/overview.md)
+  - [Filters & tags reference](https://docs.nimbu.io/docs/themes/filters-tags.md)
   - [Shopify Liquid reference](https://shopify.dev/docs/api/liquid) — for standard syntax not specific to Nimbu

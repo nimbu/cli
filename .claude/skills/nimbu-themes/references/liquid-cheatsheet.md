@@ -2,7 +2,7 @@
 
 A reference of the **Nimbu-specific** Liquid tags, filters, and drops. Standard Liquid (Shopify) — `{% if %}`, `{% for %}`, `{% assign %}`, `forloop`, `upcase`, `downcase`, `truncate`, `date`, etc. — is documented at <https://shopify.dev/docs/api/liquid> and not repeated here.
 
-> Always confirm against the live docs: <https://docs.nimbu.io/themes/filters-tags.md> and <https://docs.nimbu.io/themes/liquid-context.md>. The lists here track those pages.
+> Always confirm against the live docs: <https://docs.nimbu.io/docs/themes/filters-tags.md> and <https://docs.nimbu.io/docs/themes/liquid-context.md>. The lists here track those pages.
 
 ## Tags
 
@@ -191,7 +191,7 @@ Beyond standard Liquid (`size`, `first`, `last`, `join`):
 | `update_cart_item` | Render a quantity-update form for a cart line item. |
 | `delete_cart_item` | Render a remove-from-cart button. |
 | `delete_cart_group` | Remove a grouped cart item set. |
-| `checkout_button` | Render the checkout button. Confirm exact arg shape against [commerce.md](https://docs.nimbu.io/themes/filters/commerce.md). |
+| `checkout_button` | Render the checkout button. Confirm exact arg shape against [commerce.md](https://docs.nimbu.io/docs/themes/filters/commerce.md). |
 | `payment_form` | Render a payment-method selection form. |
 | `auto_apply_coupon` | Apply a coupon code on page load. |
 
@@ -353,7 +353,7 @@ Liquid has no hash-literal syntax, so emit each field individually with the `jso
 
 ## References
 
-- <https://docs.nimbu.io/themes/filters-tags.md> — full tags + filters
-- <https://docs.nimbu.io/themes/liquid-context.md> — drops
-- <https://docs.nimbu.io/themes/filters/> — split-by-purpose filter pages
+- <https://docs.nimbu.io/docs/themes/filters-tags.md> — full tags + filters
+- <https://docs.nimbu.io/docs/themes/liquid-context.md> — drops
+- <https://docs.nimbu.io/docs/themes/filters-tags.md> — overview of tags and filters; use the split-by-purpose filter pages linked from there for details
 - <https://shopify.dev/docs/api/liquid> — standard Liquid (Shopify)

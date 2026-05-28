@@ -192,5 +192,5 @@ For end-to-end validation, deploy to a staging site (`nimbu apps push --site my-
 ## Reference
 
 - Real test files in Zenjoy theme repos are the canonical reference — read the actual `@nimbu/testing` source under `node_modules/@nimbu/testing/` if a helper isn't documented.
-- [Cloud Code Functions](https://docs.nimbu.io/cloud-code/functions.md) — handler return shape.
+- [Cloud Code Functions](https://docs.nimbu.io/docs/cloud-code/functions.md) — handler return shape.
 - Companion `nimbu` skill — `nimbu functions run`, `nimbu jobs run` for staging verification.

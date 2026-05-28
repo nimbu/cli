@@ -7,7 +7,7 @@ Nimbu themes have two distinct authoring surfaces:
 
 Don't confuse them: editables don't accept user input at request time, and form helpers don't expose anything to the page editor.
 
-> Live docs: <https://docs.nimbu.io/themes/forms-editable-content.md>, <https://docs.nimbu.io/themes/other/forms.md>
+> Live docs: <https://docs.nimbu.io/docs/themes/forms-editable-content.md>, <https://docs.nimbu.io/docs/themes/other/forms.md>
 
 ## `{% form %}`
 
@@ -230,8 +230,8 @@ The editor can now add/reorder/remove "Feature" items, each with its own `title`
 
 ## Reference
 
-- <https://docs.nimbu.io/themes/forms-editable-content.md> — combined reference
-- <https://docs.nimbu.io/themes/other/forms.md> — forms
-- <https://docs.nimbu.io/themes/concepts/editables.md> — editables
+- <https://docs.nimbu.io/docs/themes/forms-editable-content.md> — combined reference
+- <https://docs.nimbu.io/docs/themes/other/forms.md> — forms
+- <https://docs.nimbu.io/docs/themes/concepts/editables.md> — editables
 - Companion `nimbu` skill — `nimbu channels fields ...` for managing channel schemas
 - Companion `nimbu-cloud-code` skill — `Cloud.before/after` callbacks for server-side validation

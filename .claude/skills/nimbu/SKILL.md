@@ -5,6 +5,8 @@ description: >
   translations, menus, blogs, notifications, redirects, uploads, webhooks,
   cloud code, and local dev server for Nimbu sites. Use when building,
   querying, migrating, or deploying Nimbu CMS content and themes.
+metadata:
+  version: "0.2.0"
 ---
 
 # Nimbu CLI
@@ -14,10 +16,11 @@ The `nimbu` binary is a Go CLI for the [Nimbu](https://nimbu.io) CMS API.
 ## Documentation
 
 - **Full docs**: https://docs.nimbu.io/
-- **Liquid & themes**: https://docs.nimbu.io/themes/introduction/overview.html
-- **Cloud code**: https://docs.nimbu.io/cloud-code/overview.html
+- **Liquid & themes**: https://docs.nimbu.io/docs/themes/introduction/overview.md
+- **Cloud code**: https://docs.nimbu.io/docs/cloud-code/overview.md
+- **REST API**: https://docs.nimbu.io/docs/api/overview.md
 
-Refer to these for Liquid template syntax, theme structure, and cloud code APIs. This skill covers the CLI tool; the docs cover the platform concepts.
+Refer to these for Liquid template syntax, theme structure, cloud code APIs, authentication, ACLs, and custom field payload shapes. This skill covers the CLI tool; the docs cover the platform concepts.
 
 ## Prerequisites
 
