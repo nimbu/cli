@@ -49,6 +49,9 @@ func (c *SitesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
+		if fields := listRequestedFields(&c.QueryFlags); len(fields) > 0 {
+			return output.JSONFromSliceFields(ctx, sites, fields)
+		}
 		return output.JSON(ctx, sites)
 	}
 
