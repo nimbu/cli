@@ -201,7 +201,7 @@ _nimbu_completions() {
     elif [[ ${COMP_WORDS[1]} == "blogs" && (${COMP_WORDS[2]} == "posts" || ${COMP_WORDS[2]} == "articles") ]]; then
         COMPREPLY=($(compgen -W "list get create update delete count" -- "${cur}"))
     elif [[ ${COMP_WORDS[1]} == "channels" && ${COMP_WORDS[2]} == "entries" ]]; then
-        COMPREPLY=($(compgen -W "list get create update delete count copy" -- "${cur}"))
+        COMPREPLY=($(compgen -W "list get create update delete count copy gallery" -- "${cur}"))
     elif [[ ${COMP_WORDS[1]} == "channels" && ${COMP_WORDS[2]} == "fields" ]]; then
         COMPREPLY=($(compgen -W "list add update delete apply replace diff" -- "${cur}"))
     elif [[ ${COMP_WORDS[1]} == "customers" && ${COMP_WORDS[2]} == "config" ]]; then
@@ -366,6 +366,7 @@ _nimbu() {
                     'delete:Delete channel entry'
                     'count:Count channel entries'
                     'copy:Copy channel entries between sites'
+                    'gallery:Manage gallery fields on channel entries'
                 )
                 _describe -t channel-entry-commands 'channel entry command' channel_entry_commands
                 ;;
@@ -711,7 +712,7 @@ complete -c nimbu -n "__fish_seen_subcommand_from auth; and __fish_seen_subcomma
 complete -c nimbu -n "__fish_seen_subcommand_from themes" -a "list get cdn-root pull diff copy push sync layouts templates snippets assets files" -d "Theme commands"
 complete -c nimbu -n "__fish_seen_subcommand_from sites" -a "list get current count settings copy" -d "Site commands"
 complete -c nimbu -n "__fish_seen_subcommand_from channels" -a "list get info copy diff empty fields entries" -d "Channel commands"
-complete -c nimbu -n "__fish_seen_subcommand_from channels entries" -a "list get create update delete count copy" -d "Channel entry commands"
+complete -c nimbu -n "__fish_seen_subcommand_from channels entries" -a "list get create update delete count copy gallery" -d "Channel entry commands"
 complete -c nimbu -n "__fish_seen_subcommand_from channels fields" -a "list add update delete apply replace diff" -d "Channel field commands"
 complete -c nimbu -n "__fish_seen_subcommand_from customers" -a "list get create update delete count copy fields config reset-password resend-confirmation" -d "Customer commands"
 complete -c nimbu -n "__fish_seen_subcommand_from customers config" -a "copy diff" -d "Customer config commands"

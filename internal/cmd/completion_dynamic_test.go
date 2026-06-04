@@ -98,6 +98,7 @@ func TestCompletionRegistryResolvesKinds(t *testing.T) {
 		{name: "site copy", path: []string{"sites", "copy"}, flag: "from", want: completionKindSite},
 		{name: "channel copy", path: []string{"channels", "entries", "copy"}, flag: "to", want: completionKindChannelRef},
 		{name: "channel flag", path: []string{"channels", "fields", "update"}, flag: "channel", want: completionKindChannel},
+		{name: "gallery channel flag", path: []string{"channels", "entries", "gallery", "update"}, flag: "channel", want: completionKindChannel},
 		{name: "theme flag", path: []string{"themes", "files", "get"}, flag: "theme", want: completionKindTheme},
 		{name: "theme copy", path: []string{"themes", "copy"}, flag: "from", want: completionKindThemeRef},
 	}
@@ -598,6 +599,7 @@ func TestGeneratedZshCompletionIncludesNestedCommands(t *testing.T) {
 	for _, want := range []string{
 		`"channels entries")`,
 		`'list:List channel entries'`,
+		`'gallery:Manage gallery fields on channel entries'`,
 		`"channels fields")`,
 		`"themes files")`,
 		`"blogs posts"|"blogs articles")`,

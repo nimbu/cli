@@ -60,6 +60,12 @@ func newCompletionRegistry() completionRegistry {
 		{"channels", "entries", "update"},
 		{"channels", "entries", "delete"},
 		{"channels", "entries", "count"},
+		{"channels", "entries", "gallery", "list"},
+		{"channels", "entries", "gallery", "set"},
+		{"channels", "entries", "gallery", "add"},
+		{"channels", "entries", "gallery", "update"},
+		{"channels", "entries", "gallery", "remove"},
+		{"channels", "entries", "gallery", "reorder"},
 	} {
 		registry.register(path, completionKindChannel, "channel")
 	}
