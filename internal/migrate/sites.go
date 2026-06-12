@@ -17,6 +17,7 @@ type SiteCopyOptions struct {
 	Include          []string
 	Only             []string
 	Recursive        bool
+	SkipCloudCode    bool
 	Upsert           string
 	Force            bool
 }
@@ -41,6 +42,7 @@ type SiteCopyResult struct {
 	Notifications  NotificationCopyResult  `json:"notifications"`
 	Redirects      RedirectCopyResult      `json:"redirects"`
 	Translations   TranslationCopyResult   `json:"translations"`
+	CloudCode      AppCodeCopyResult       `json:"cloud_code"`
 	Warnings       []string                `json:"warnings,omitempty"`
 }
 
@@ -262,6 +264,19 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 		emitStageWarning(ctx, "Translations", w)
 	}
 	result.Warnings = append(result.Warnings, media.Warnings()...)
+
+	emitStageStart(ctx, "Cloud Code")
+	if opts.SkipCloudCode {
+		emitStageSkip(ctx, "Cloud Code", "skipped by flag")
+	} else {
+		cloudCodeResult, err := CopyAppCode(ctx, fromClient, toClient, fromRef, toRef, AppCodeCopyOptions{DryRun: opts.DryRun})
+		if err != nil {
+			return result, err
+		}
+		result.CloudCode = cloudCodeResult
+		result.Warnings = append(result.Warnings, cloudCodeResult.Warnings...)
+		emitStageDone(ctx, "Cloud Code", fmt.Sprintf("%d files", len(cloudCodeResult.Items)))
+	}
 
 	return result, nil
 }

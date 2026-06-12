@@ -71,6 +71,7 @@ func TestReadmeMentionsNewTopLevelCommands(t *testing.T) {
 		"nimbu jobs",
 		"nimbu apps",
 		"nimbu apps push",
+		"nimbu apps code pull",
 		"nimbu server",
 		"nimbu themes pull",
 		"nimbu themes diff",

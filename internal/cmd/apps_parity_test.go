@@ -76,6 +76,37 @@ func TestAppsConfigRejectsNoInput(t *testing.T) {
 	}
 }
 
+func TestAppsCodePullWritesConfiguredAppFiles(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/apps/storefront/code":
+			_, _ = w.Write([]byte(`[
+				{"name":"main.js","code":"main\n"},
+				{"name":"helpers/util.js","code":"util\n"}
+			]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx := newAppsTestContext(t, srv.URL)
+	withTempCWD(t, t.TempDir(), func() {
+		project := "site: demo\napps:\n  - id: storefront\n    name: storefront\n    dir: code\n    glob: \"**/*.js\"\n    host: " + strings.TrimPrefix(srv.URL, "http://") + "\n    site: demo\n"
+		if err := os.WriteFile(config.ProjectFileName, []byte(project), 0o644); err != nil {
+			t.Fatalf("write project config: %v", err)
+		}
+
+		cmd := &AppsCodePullCmd{App: "storefront"}
+		if err := cmd.Run(ctx, &RootFlags{Site: "demo", APIURL: srv.URL}); err != nil {
+			t.Fatalf("run apps code pull: %v", err)
+		}
+
+		assertLocalFile(t, filepath.Join("code", "main.js"), "main\n")
+		assertLocalFile(t, filepath.Join("code", "helpers", "util.js"), "util\n")
+	})
+}
+
 func newAppsTestContext(t *testing.T, apiURL string) context.Context {
 	t.Helper()
 	t.Setenv("NIMBU_TOKEN", "test-token")
@@ -111,4 +142,15 @@ func withTempStdin(t *testing.T, input string, fn func()) {
 		_ = file.Close()
 	}()
 	fn()
+}
+
+func assertLocalFile(t *testing.T, path, want string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	if string(data) != want {
+		t.Fatalf("%s = %q, want %q", path, string(data), want)
+	}
 }

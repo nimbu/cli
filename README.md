@@ -529,10 +529,21 @@ preserving dependency order for `require()` and static ESM imports. `--sync` als
 deletes remote files that no longer exist locally. `--only` can be repeated and
 each value may be comma-separated.
 
+`nimbu apps code pull` pulls remote cloud code files for the selected configured
+app into its local `dir`. `--only` accepts either remote names (`main.js`) or
+project-relative paths (`code/main.js`). Pull overwrites selected local files but
+does not delete local-only files.
+
+`nimbu sites copy` copies cloud code by default after content, theme,
+notifications, redirects, and translations. Pass `--skip-cloud-code` to leave
+target app code untouched.
+
 Examples:
 
 ```bash
 nimbu apps config
+nimbu apps code pull --app storefront
+nimbu apps code pull --app storefront --only main.js,code/jobs/daily.js
 nimbu apps push --app storefront
 nimbu apps push --app storefront --only code/main.js,code/hooks.js --only code/jobs/*.js
 nimbu apps push --app storefront --sync --force

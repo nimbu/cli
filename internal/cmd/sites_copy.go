@@ -27,6 +27,7 @@ type SitesCopyCmd struct {
 	CopyCustomers bool   `name:"copy-customers" help:"Copy related customers when copying channel entries"`
 	AllowErrors   bool   `name:"allow-errors" help:"Continue on item-level validation errors during record copy"`
 	DryRun        bool   `name:"dry-run" help:"Show what would be copied without writing to target site"`
+	SkipCloudCode bool   `name:"skip-cloud-code" help:"Skip copying cloud code app files"`
 }
 
 // Run executes sites copy.
@@ -73,6 +74,7 @@ func (c *SitesCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		Include:          splitCSV(c.EntryChannels),
 		Only:             splitCSV(c.Only),
 		Recursive:        c.Recursive,
+		SkipCloudCode:    c.SkipCloudCode,
 		Upsert:           c.Upsert,
 	})
 
@@ -132,6 +134,9 @@ func (c *SitesCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 			return err
 		}
 		if _, err := output.Fprintf(ctx, "%stranslations\t%d\n", prefix, len(result.Translations.Items)); err != nil {
+			return err
+		}
+		if _, err := output.Fprintf(ctx, "%scloud_code\t%d\n", prefix, len(result.CloudCode.Items)); err != nil {
 			return err
 		}
 		_, err := output.Fprintf(ctx, "%swarnings\t%d\n", prefix, len(result.Warnings))

@@ -195,7 +195,7 @@ _nimbu_completions() {
                 COMPREPLY=($(compgen -W "--app --only --sync" -- "${cur}"))
                 ;;
             code)
-                COMPREPLY=($(compgen -W "list create" -- "${cur}"))
+                COMPREPLY=($(compgen -W "list create pull" -- "${cur}"))
                 ;;
         esac
     elif [[ ${COMP_WORDS[1]} == "blogs" && (${COMP_WORDS[2]} == "posts" || ${COMP_WORDS[2]} == "articles") ]]; then
@@ -428,6 +428,7 @@ _nimbu() {
                 app_code_commands=(
                     'list:List app code files'
                     'create:Create or update an app code file'
+                    'pull:Pull remote app code files'
                 )
                 _describe -t app-code-commands 'app code command' app_code_commands
                 ;;
@@ -743,7 +744,7 @@ complete -c nimbu -n "__fish_seen_subcommand_from templates" -a "list get create
 complete -c nimbu -n "__fish_seen_subcommand_from snippets" -a "list get create delete" -d "Manage snippets"
 complete -c nimbu -n "__fish_seen_subcommand_from assets" -a "list get create delete" -d "Manage assets"
 complete -c nimbu -n "__fish_seen_subcommand_from files" -a "list get put delete" -d "Manage theme files"
-complete -c nimbu -n "__fish_seen_subcommand_from apps; and __fish_seen_subcommand_from code; and not __fish_seen_subcommand_from list create" -a "list create" -d "Manage app code files"
+complete -c nimbu -n "__fish_seen_subcommand_from apps; and __fish_seen_subcommand_from code; and not __fish_seen_subcommand_from list create pull" -a "list create pull" -d "Manage app code files"
 
 # Config subcommands
 complete -c nimbu -n "__fish_seen_subcommand_from config" -a "list" -d "List all config values"
