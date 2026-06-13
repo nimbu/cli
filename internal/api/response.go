@@ -55,6 +55,27 @@ func (l Links) HasNext() bool {
 	return l.Next != ""
 }
 
+// HasMore reports whether another page should be fetched after this one.
+// It prefers the Link header, falls back to X-Total-Count when the header is
+// absent (degraded responses from rate limiters or CDNs may drop it), and as
+// a last resort treats a full page without any Link header as "probably more"
+// so truncation requires an explicit short page rather than a missing header.
+func (p *PagedResponse[T]) HasMore(perPage, collected int) bool {
+	if len(p.Data) == 0 {
+		return false
+	}
+	if p.Links.HasNext() {
+		return true
+	}
+	if p.Pagination.TotalKnown {
+		return collected < p.Pagination.Total
+	}
+	if (p.Links == Links{}) {
+		return len(p.Data) == perPage
+	}
+	return false
+}
+
 // List fetches all items from a paginated endpoint.
 func List[T any](ctx context.Context, c *Client, path string, opts ...RequestOption) ([]T, error) {
 	var all []T
@@ -68,7 +89,7 @@ func List[T any](ctx context.Context, c *Client, path string, opts ...RequestOpt
 
 		all = append(all, paged.Data...)
 
-		if !paged.Links.HasNext() || len(paged.Data) == 0 {
+		if !paged.HasMore(100, len(all)) || page > maxListPages {
 			break
 		}
 		page++
@@ -76,6 +97,10 @@ func List[T any](ctx context.Context, c *Client, path string, opts ...RequestOpt
 
 	return all, nil
 }
+
+// maxListPages caps automatic pagination as a backstop against servers that
+// ignore the page parameter and would otherwise loop forever.
+const maxListPages = 100000
 
 // ListPage fetches a single page from a paginated endpoint.
 func ListPage[T any](ctx context.Context, c *Client, path string, page, perPage int, opts ...RequestOption) (*PagedResponse[T], error) {
