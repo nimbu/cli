@@ -86,21 +86,33 @@ func CopyAllChannelsWithOptions(ctx context.Context, fromClient, toClient *api.C
 	total := len(ordered)
 	reviewAll := ExistingContentAction("")
 	opts.reviewAll = &reviewAll
+	placeholdered := make(map[string]bool, total)
+	copied := make(map[string]bool, total)
 	for i, channel := range ordered {
 		emitStageItem(ctx, "Channels", channel.Slug, int64(i+1), int64(total))
 		if graph.HasCircularDependencies(channel.Slug) {
-			created, err := ensureCircularPlaceholder(ctx, toClient, channel.Slug, opts.DryRun)
-			if err != nil {
-				return result, err
-			}
-			if created {
-				result.Placeholders = append(result.Placeholders, channel.Slug)
+			// Forward references inside a cycle point at channels that are not
+			// copied yet; those need placeholders on the target so this
+			// channel's reference fields validate.
+			for _, dep := range graph.DirectDependencies(channel.Slug) {
+				if copied[dep] || placeholdered[dep] {
+					continue
+				}
+				created, err := ensureCircularPlaceholder(ctx, toClient, dep, opts.DryRun)
+				if err != nil {
+					return result, err
+				}
+				if created {
+					result.Placeholders = append(result.Placeholders, dep)
+				}
+				placeholdered[dep] = true
 			}
 		}
 		item, err := copyChannelDetail(ctx, toClient, channel, channel.Slug, opts)
 		if err != nil {
 			return result, fmt.Errorf("copy channel %s: %w", channel.Slug, err)
 		}
+		copied[channel.Slug] = true
 		result.Items = append(result.Items, item)
 	}
 	return result, nil
@@ -198,7 +210,30 @@ func copyChannelDetail(ctx context.Context, client *api.Client, detail api.Chann
 		}
 	}
 
+	if detail.RSSEnabled && !opts.DryRun {
+		if err := enableRSS(ctx, client, detail, targetSlug); err != nil {
+			return ChannelCopyItem{}, err
+		}
+	}
+
 	return ChannelCopyItem{Source: detail.Slug, Target: targetSlug, Action: action}, nil
+}
+
+// enableRSS applies RSS settings after the channel's fields exist on the
+// target; the platform rejects rss_enabled without its companion settings.
+func enableRSS(ctx context.Context, client *api.Client, source api.ChannelDetail, targetSlug string) error {
+	update := map[string]any{
+		"rss_enabled":           true,
+		"rss_title":             source.RSSTitle,
+		"rss_description":       source.RSSDescription,
+		"rss_title_field":       source.RSSTitleField,
+		"rss_description_field": source.RSSDescriptionField,
+	}
+	path := "/channels/" + url.PathEscape(strings.TrimSpace(targetSlug))
+	if err := client.Patch(ctx, path, update, &map[string]any{}); err != nil {
+		return fmt.Errorf("enable rss for channel %s: %w", targetSlug, err)
+	}
+	return nil
 }
 
 // enableSubmittable maps source submittable_field_ids to target field IDs by name
@@ -338,6 +373,13 @@ func channelPayload(detail api.ChannelDetail, targetSlug string) map[string]any 
 	delete(payload, "updated_at")
 	delete(payload, "submittable")
 	delete(payload, "submittable_field_ids")
+	// RSS settings reference customization fields; they are applied in a
+	// follow-up update once the fields exist on the target (see enableRSS).
+	delete(payload, "rss_enabled")
+	delete(payload, "rss_title")
+	delete(payload, "rss_description")
+	delete(payload, "rss_title_field")
+	delete(payload, "rss_description_field")
 	payload["slug"] = targetSlug
 	payload["customizations"] = NormalizeCustomizations(detail.Customizations)
 	return payload

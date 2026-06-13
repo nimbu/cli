@@ -23,6 +23,10 @@ type ChannelDetail struct {
 	OrderBy             string         `json:"order_by,omitempty"`
 	OrderDirection      string         `json:"order_direction,omitempty"`
 	RSSEnabled          bool           `json:"rss_enabled,omitempty"`
+	RSSTitle            string         `json:"rss_title,omitempty"`
+	RSSDescription      string         `json:"rss_description,omitempty"`
+	RSSTitleField       string         `json:"rss_title_field,omitempty"`
+	RSSDescriptionField string         `json:"rss_description_field,omitempty"`
 	Submittable         bool           `json:"submittable,omitempty"`
 	SubmittableFieldIDs []string       `json:"submittable_field_ids,omitempty"`
 	URL                 string         `json:"url,omitempty"`

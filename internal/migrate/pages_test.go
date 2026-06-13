@@ -1,6 +1,11 @@
 package migrate
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/nimbu/cli/internal/api"
@@ -116,5 +121,67 @@ func TestTopoSortPages(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestCopyPagesAllowErrorsSkipsInvalidPage verifies a page the target API
+// rejects (e.g. "invalid editable") is skipped with a warning under
+// AllowErrors instead of aborting the stage.
+func TestCopyPagesAllowErrorsSkipsInvalidPage(t *testing.T) {
+	created := map[string]bool{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/pages" && r.Header.Get("X-Nimbu-Site") == "source":
+			_, _ = w.Write([]byte(`[{"fullpath":"bad-page"},{"fullpath":"good-page"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/pages/bad-page" && r.Header.Get("X-Nimbu-Site") == "source":
+			_, _ = w.Write([]byte(`{"fullpath":"bad-page","title":"Bad","items":[]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/pages/good-page" && r.Header.Get("X-Nimbu-Site") == "source":
+			_, _ = w.Write([]byte(`{"fullpath":"good-page","title":"Good","items":[]}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/pages/") && r.Header.Get("X-Nimbu-Site") == "target":
+			http.NotFound(w, r)
+		case r.Method == http.MethodPost && r.URL.Path == "/pages" && r.Header.Get("X-Nimbu-Site") == "target":
+			var doc map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&doc)
+			fullpath, _ := doc["fullpath"].(string)
+			if fullpath == "bad-page" {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				_, _ = w.Write([]byte(`{"message":"invalid editable Intro ehbo"}`))
+				return
+			}
+			created[fullpath] = true
+			_, _ = w.Write([]byte(`{"fullpath":"` + fullpath + `"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	fromClient := api.New(srv.URL, "").WithSite("source")
+	toClient := api.New(srv.URL, "").WithSite("target")
+
+	// Without AllowErrors the stage aborts.
+	_, err := CopyPages(context.Background(), fromClient, toClient, SiteRef{Site: "source"}, SiteRef{Site: "target"}, PageCopyOptions{Query: "*"})
+	if err == nil || !strings.Contains(err.Error(), "invalid editable") {
+		t.Fatalf("expected invalid editable error, got %v", err)
+	}
+
+	result, err := CopyPages(context.Background(), fromClient, toClient, SiteRef{Site: "source"}, SiteRef{Site: "target"}, PageCopyOptions{Query: "*", AllowErrors: true})
+	if err != nil {
+		t.Fatalf("CopyPages with AllowErrors error = %v", err)
+	}
+	if !created["good-page"] {
+		t.Fatal("good-page should have been created")
+	}
+	var skips int
+	for _, item := range result.Items {
+		if item.Action == "skip" {
+			skips++
+		}
+	}
+	if skips != 1 {
+		t.Fatalf("skips = %d, want 1 (%v)", skips, result.Items)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[len(result.Warnings)-1], "invalid editable") {
+		t.Fatalf("expected invalid editable warning, got %v", result.Warnings)
 	}
 }

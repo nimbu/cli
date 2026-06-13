@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -517,5 +518,92 @@ func TestAuthLogoutUsesCachedStoreOnce(t *testing.T) {
 	}
 	if store.deleteCredentialCalls != 1 {
 		t.Fatalf("delete credential calls = %d, want 1", store.deleteCredentialCalls)
+	}
+}
+
+func withFakeAuthStoresByHost(t *testing.T, stores map[string]*fakeAuthStore) {
+	t.Helper()
+	old := openAuthStore
+	openAuthStore = func(host string) (auth.Store, error) {
+		store, ok := stores[host]
+		if !ok {
+			return nil, fmt.Errorf("unexpected host %q", host)
+		}
+		return store, nil
+	}
+	t.Cleanup(func() {
+		openAuthStore = old
+	})
+}
+
+func TestResolveAuthTokenForHostUsesHostCredential(t *testing.T) {
+	withFakeAuthStoresByHost(t, map[string]*fakeAuthStore{
+		"api.example.test": {credential: auth.Credential{Token: "default-token", Email: "default@example.test"}},
+		"api.other.test":   {credential: auth.Credential{Token: "other-token", Email: "other@example.test"}},
+	})
+
+	ctx := testAuthContext()
+
+	tests := []struct {
+		name    string
+		baseURL string
+		want    string
+	}{
+		{"default host uses session resolver", "https://api.example.test", "default-token"},
+		{"empty base url uses session resolver", "", "default-token"},
+		{"cross host uses its own credential", "https://api.other.test", "other-token"},
+		{"bare cross host is normalized", "api.other.test", "other-token"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			token, err := ResolveAuthTokenForHost(ctx, tc.baseURL)
+			if err != nil {
+				t.Fatalf("ResolveAuthTokenForHost(%q) error = %v", tc.baseURL, err)
+			}
+			if token != tc.want {
+				t.Fatalf("ResolveAuthTokenForHost(%q) = %q, want %q", tc.baseURL, token, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveAuthTokenForHostPrefersEnvToken(t *testing.T) {
+	t.Setenv("NIMBU_TOKEN", "env-token")
+	withFakeAuthStoresByHost(t, map[string]*fakeAuthStore{})
+
+	token, err := ResolveAuthTokenForHost(testAuthContext(), "https://api.other.test")
+	if err != nil {
+		t.Fatalf("ResolveAuthTokenForHost error = %v", err)
+	}
+	if token != "env-token" {
+		t.Fatalf("token = %q, want env-token", token)
+	}
+}
+
+func TestGetAPIClientWithBaseURLUsesHostToken(t *testing.T) {
+	var gotAuth atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth.Store(r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	serverHost := strings.TrimPrefix(srv.URL, "http://")
+	withFakeAuthStoresByHost(t, map[string]*fakeAuthStore{
+		"api.example.test": {credential: auth.Credential{Token: "default-token", Email: "default@example.test"}},
+		serverHost:         {credential: auth.Credential{Token: "other-token", Email: "other@example.test"}},
+	})
+
+	ctx := testAuthContext()
+	client, err := GetAPIClientWithBaseURL(ctx, srv.URL, "site-1")
+	if err != nil {
+		t.Fatalf("GetAPIClientWithBaseURL error = %v", err)
+	}
+	if err := client.Get(ctx, "/channels", nil); err != nil {
+		t.Fatalf("Get error = %v", err)
+	}
+	if auth, _ := gotAuth.Load().(string); auth != "Bearer other-token" {
+		t.Fatalf("Authorization = %q, want %q", auth, "Bearer other-token")
 	}
 }

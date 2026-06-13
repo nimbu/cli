@@ -29,7 +29,11 @@ func (c *recordCopier) prepareAttachments(ctx context.Context, payload map[strin
 			continue
 		}
 		if err := c.embedFile(ctx, file); err != nil {
-			return err
+			if !c.options.AllowErrors {
+				return err
+			}
+			emitStageWarning(ctx, info.stage, fmt.Sprintf("%s.%s: %v, dropping attachment", info.resource, field.Name, err))
+			payload[field.Name] = nil
 		}
 	}
 	for _, field := range info.galleryFields {
@@ -47,21 +51,30 @@ func (c *recordCopier) prepareAttachments(ctx context.Context, payload map[strin
 		if !ok {
 			continue
 		}
+		kept := make([]any, 0, len(images))
 		for _, rawImage := range images {
 			image, ok := rawImage.(map[string]any)
 			if !ok {
+				kept = append(kept, rawImage)
 				continue
 			}
 			image["__type"] = "GalleryImage"
 			delete(image, "id")
 			file, ok := image["file"].(map[string]any)
 			if !ok {
+				kept = append(kept, rawImage)
 				continue
 			}
 			if err := c.embedFile(ctx, file); err != nil {
-				return err
+				if !c.options.AllowErrors {
+					return err
+				}
+				emitStageWarning(ctx, info.stage, fmt.Sprintf("%s.%s: %v, dropping gallery image", info.resource, field.Name, err))
+				continue
 			}
+			kept = append(kept, rawImage)
 		}
+		gallery["images"] = kept
 	}
 	return nil
 }

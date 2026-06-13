@@ -33,7 +33,7 @@ func resolveProjectRoot() (string, config.ProjectConfig, error) {
 
 func newAPIClientForBase(ctx context.Context, baseURL string, site string) (*api.Client, error) {
 	flags := ctx.Value(rootFlagsKey{}).(*RootFlags)
-	token, err := ResolveAuthToken(ctx)
+	token, err := ResolveAuthTokenForHost(ctx, baseURL)
 	if err != nil {
 		return nil, err
 	}

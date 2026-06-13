@@ -82,7 +82,7 @@ func TestCopyUploadsReusesAndCreatesUploadsAndBuildsRewritePlan(t *testing.T) {
 	fromClient := api.New(srv.URL, "").WithSite("source")
 	toClient := api.New(srv.URL, "").WithSite("target")
 
-	result, plan, err := CopyUploads(context.Background(), fromClient, toClient, SiteRef{Site: "source"}, SiteRef{Site: "target"}, false)
+	result, plan, err := CopyUploads(context.Background(), fromClient, toClient, SiteRef{Site: "source"}, SiteRef{Site: "target"}, UploadCopyOptions{})
 	if err != nil {
 		t.Fatalf("copy uploads: %v", err)
 	}
@@ -293,9 +293,7 @@ func TestCopyPagesRewritesTextContentAndPreservesFileAttachments(t *testing.T) {
 		api.New(srv.URL, "").WithSite("target"),
 		SiteRef{Site: "source"},
 		SiteRef{Site: "target"},
-		"*",
-		plan,
-		false,
+		PageCopyOptions{Query: "*", Media: plan},
 	)
 	if err != nil {
 		t.Fatalf("copy pages: %v", err)
@@ -399,4 +397,69 @@ func sortedStrings(values []string) []string {
 	out := append([]string(nil), values...)
 	sort.Strings(out)
 	return out
+}
+
+// TestCopyUploadsAllowErrorsSkipsBadDownloads verifies that a size-mismatched
+// or otherwise failing source download skips just that upload when
+// AllowErrors is set, instead of aborting the whole stage.
+func TestCopyUploadsAllowErrorsSkipsBadDownloads(t *testing.T) {
+	baseURL := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/uploads" && r.Header.Get("X-Nimbu-Site") == "source":
+			_, _ = w.Write([]byte(`[
+				{"id":"src-bad","url":"` + baseURL + `/uploads/src-bad","source":{"filename":"bad.jpg","url":"` + baseURL + `/cdn/bad.jpg","content_type":"image/jpeg","size":9999}},
+				{"id":"src-good","url":"` + baseURL + `/uploads/src-good","source":{"filename":"good.jpg","url":"` + baseURL + `/cdn/good.jpg","content_type":"image/jpeg","size":4}}
+			]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/uploads" && r.Header.Get("X-Nimbu-Site") == "target":
+			_, _ = w.Write([]byte(`[]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/sites/source":
+			_, _ = w.Write([]byte(`{"id":"source","subdomain":"source","domain":"old-site.test"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/cdn/bad.jpg":
+			_, _ = w.Write([]byte("mismatched-size-content"))
+		case r.Method == http.MethodGet && r.URL.Path == "/cdn/good.jpg":
+			_, _ = w.Write([]byte("good"))
+		case r.Method == http.MethodPost && r.URL.Path == "/uploads" && r.Header.Get("X-Nimbu-Site") == "target":
+			_, _ = w.Write([]byte(`{"id":"uploaded-good","url":"https://api.target.test/uploads/good","source":{"filename":"good.jpg","url":"https://cdn.target.test/good.jpg","size":4}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	baseURL = srv.URL
+
+	fromClient := api.New(srv.URL, "").WithSite("source")
+	toClient := api.New(srv.URL, "").WithSite("target")
+
+	// Without AllowErrors the stage fails outright.
+	_, _, err := CopyUploads(context.Background(), fromClient, toClient, SiteRef{Site: "source"}, SiteRef{Site: "target"}, UploadCopyOptions{})
+	if err == nil || !strings.Contains(err.Error(), "size mismatch") {
+		t.Fatalf("expected size mismatch error without AllowErrors, got %v", err)
+	}
+
+	result, plan, err := CopyUploads(context.Background(), fromClient, toClient, SiteRef{Site: "source"}, SiteRef{Site: "target"}, UploadCopyOptions{AllowErrors: true})
+	if err != nil {
+		t.Fatalf("copy uploads with AllowErrors: %v", err)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("expected 2 items, got %d (%v)", len(result.Items), result.Items)
+	}
+	var skipped, created int
+	for _, item := range result.Items {
+		switch item.Action {
+		case "skip":
+			skipped++
+		case "create":
+			created++
+		}
+	}
+	if skipped != 1 || created != 1 {
+		t.Fatalf("expected 1 skip + 1 create, got skip=%d create=%d", skipped, created)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "size mismatch") {
+		t.Fatalf("expected size mismatch warning, got %v", result.Warnings)
+	}
+	if plan == nil {
+		t.Fatal("expected media rewrite plan")
+	}
 }

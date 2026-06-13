@@ -621,3 +621,57 @@ func TestContentEqualSkipsShortID(t *testing.T) {
 		t.Fatal("expected equal — short_id should be skipped")
 	}
 }
+
+func TestPrepareAttachmentsAllowErrorsDropsMissingFiles(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ok.jpg" {
+			_, _ = w.Write([]byte("image-bytes"))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	info := schemaInfo{
+		resource:      "articles",
+		fileFields:    []api.CustomField{{Name: "document"}},
+		galleryFields: []api.CustomField{{Name: "photos"}},
+	}
+	newPayload := func() map[string]any {
+		return map[string]any{
+			"document": map[string]any{"url": srv.URL + "/missing.jpg"},
+			"photos": map[string]any{
+				"images": []any{
+					map[string]any{"file": map[string]any{"url": srv.URL + "/ok.jpg"}},
+					map[string]any{"file": map[string]any{"url": srv.URL + "/gone.jpg"}},
+				},
+			},
+		}
+	}
+
+	strict := &recordCopier{fromClient: api.New(srv.URL, "")}
+	if err := strict.prepareAttachments(context.Background(), newPayload(), info); err == nil {
+		t.Fatal("expected error without AllowErrors")
+	}
+
+	lenient := &recordCopier{
+		fromClient: api.New(srv.URL, ""),
+		options:    RecordCopyOptions{AllowErrors: true},
+	}
+	payload := newPayload()
+	if err := lenient.prepareAttachments(context.Background(), payload, info); err != nil {
+		t.Fatalf("prepareAttachments with AllowErrors error = %v", err)
+	}
+	if payload["document"] != nil {
+		t.Fatalf("document = %v, want nil after dropping missing attachment", payload["document"])
+	}
+	gallery := payload["photos"].(map[string]any)
+	images := gallery["images"].([]any)
+	if len(images) != 1 {
+		t.Fatalf("gallery images = %d, want 1 (missing image dropped)", len(images))
+	}
+	file := images[0].(map[string]any)["file"].(map[string]any)
+	if _, ok := file["attachment"]; !ok {
+		t.Fatal("surviving gallery image should have embedded attachment")
+	}
+}
