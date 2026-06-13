@@ -296,7 +296,7 @@ func (c *recordCopier) listRecordsWithOptions(ctx context.Context, sourceChannel
 				return nil, err
 			}
 			all = append(all, paged.Data...)
-			if !paged.Links.HasNext() || len(paged.Data) == 0 {
+			if !paged.HasMore(c.options.PerPage, len(all)) {
 				break
 			}
 			page++

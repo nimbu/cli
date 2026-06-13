@@ -36,7 +36,14 @@ type UploadCopyResult struct {
 	Warnings []string         `json:"warnings,omitempty"`
 }
 
-func CopyUploads(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, dryRun bool) (UploadCopyResult, *MediaRewritePlan, error) {
+// UploadCopyOptions configures CopyUploads.
+type UploadCopyOptions struct {
+	DryRun      bool
+	AllowErrors bool
+}
+
+func CopyUploads(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, opts UploadCopyOptions) (UploadCopyResult, *MediaRewritePlan, error) {
+	dryRun := opts.DryRun
 	sourceUploads, err := api.List[api.Upload](ctx, fromClient, "/uploads")
 	if err != nil {
 		return UploadCopyResult{From: fromRef, To: toRef}, nil, err
@@ -81,7 +88,18 @@ func CopyUploads(ctx context.Context, fromClient, toClient *api.Client, fromRef,
 
 		targetUpload, action, warning, err := resolveTargetUpload(ctx, fromClient, toClient, sourceUpload, targetIndex, sourceCounts, dryRun)
 		if err != nil {
-			return result, nil, fmt.Errorf("copy upload %s: %w", sourceUpload.Name, err)
+			if !opts.AllowErrors {
+				return result, nil, fmt.Errorf("copy upload %s: %w", sourceUpload.Name, err)
+			}
+			result.Warnings = append(result.Warnings, fmt.Sprintf("skip upload %s: %v", sourceUpload.Name, err))
+			result.Items = append(result.Items, UploadCopyItem{
+				Action:    "skip",
+				Name:      sourceUpload.Name,
+				Size:      sourceUpload.Size,
+				SourceID:  sourceUpload.ID,
+				SourceURL: sourceUpload.URL,
+			})
+			continue
 		}
 		if warning != "" {
 			result.Warnings = append(result.Warnings, warning)

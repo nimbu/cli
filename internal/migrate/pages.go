@@ -24,17 +24,34 @@ type PageCopyResult struct {
 	Warnings []string       `json:"warnings,omitempty"`
 }
 
+// PageCopyOptions configures CopyPages.
+type PageCopyOptions struct {
+	Query       string
+	Media       *MediaRewritePlan
+	DryRun      bool
+	AllowErrors bool
+}
+
 // CopyPages copies pages matching query (`*`, prefix*, exact).
-func CopyPages(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, query string, media *MediaRewritePlan, dryRun bool) (PageCopyResult, error) {
+func CopyPages(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef, opts PageCopyOptions) (PageCopyResult, error) {
+	query := opts.Query
+	media := opts.Media
+	dryRun := opts.DryRun
+	result := PageCopyResult{From: fromRef, To: toRef, Query: query}
 	summaries, err := listPageSummaries(ctx, fromClient, query)
 	if err != nil {
-		return PageCopyResult{From: fromRef, To: toRef, Query: query}, err
+		return result, err
 	}
 	docs := make([]api.PageDocument, 0, len(summaries))
 	for _, summary := range summaries {
 		doc, err := api.GetPageDocument(ctx, fromClient, summary.Fullpath, api.WithParam("x-cdn-expires", "600"))
 		if err != nil {
-			return PageCopyResult{From: fromRef, To: toRef, Query: query}, err
+			if !opts.AllowErrors {
+				return result, err
+			}
+			result.Warnings = append(result.Warnings, fmt.Sprintf("page %s: read source: %v — skipped", summary.Fullpath, err))
+			result.Items = append(result.Items, PageCopyItem{Fullpath: summary.Fullpath, Action: "skip"})
+			continue
 		}
 		docs = append(docs, doc)
 	}
@@ -44,8 +61,6 @@ func CopyPages(ctx context.Context, fromClient, toClient *api.Client, fromRef, t
 	for _, doc := range docs {
 		copySet[api.PageDocumentFullpath(doc)] = struct{}{}
 	}
-
-	result := PageCopyResult{From: fromRef, To: toRef, Query: query}
 	for i, doc := range docs {
 		fullpath := api.PageDocumentFullpath(doc)
 		parentPath := api.PageDocumentParentPath(doc)
@@ -76,6 +91,7 @@ func CopyPages(ctx context.Context, fromClient, toClient *api.Client, fromRef, t
 		}
 
 		action := "create"
+		var writeErr error
 		_, err = api.GetPageDocument(ctx, toClient, fullpath)
 		switch {
 		case err == nil:
@@ -83,7 +99,7 @@ func CopyPages(ctx context.Context, fromClient, toClient *api.Client, fromRef, t
 			if dryRun {
 				action = "dry-run:" + action
 			} else if _, err := api.PatchPageDocument(ctx, toClient, fullpath, doc); err != nil {
-				return result, fmt.Errorf("update page %s: %w", fullpath, err)
+				writeErr = fmt.Errorf("update page %s: %w", fullpath, err)
 			}
 		case api.IsNotFound(err):
 			if dryRun {
@@ -91,11 +107,19 @@ func CopyPages(ctx context.Context, fromClient, toClient *api.Client, fromRef, t
 			} else {
 				var created api.PageDocument
 				if err := toClient.Post(ctx, "/pages", doc, &created); err != nil {
-					return result, fmt.Errorf("create page %s: %w", fullpath, err)
+					writeErr = fmt.Errorf("create page %s: %w", fullpath, err)
 				}
 			}
 		default:
-			return result, err
+			writeErr = err
+		}
+		if writeErr != nil {
+			if !opts.AllowErrors {
+				return result, writeErr
+			}
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%v — skipped", writeErr))
+			result.Items = append(result.Items, PageCopyItem{Fullpath: fullpath, Action: "skip"})
+			continue
 		}
 		result.Items = append(result.Items, PageCopyItem{Fullpath: fullpath, Action: action})
 	}

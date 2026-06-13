@@ -75,7 +75,10 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 	emitStageDone(ctx, "Channels", fmt.Sprintf("%d synced", len(channelsResult.Items)))
 
 	emitStageStart(ctx, "Uploads")
-	uploadsResult, media, err := CopyUploads(ctx, fromClient, toClient, fromRef, toRef, opts.DryRun)
+	uploadsResult, media, err := CopyUploads(ctx, fromClient, toClient, fromRef, toRef, UploadCopyOptions{
+		DryRun:      opts.DryRun,
+		AllowErrors: opts.AllowErrors,
+	})
 	if err != nil {
 		return result, err
 	}
@@ -194,7 +197,12 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 	}
 
 	emitStageStart(ctx, "Pages")
-	pagesResult, err := CopyPages(ctx, fromClient, toClient, fromRef, toRef, "*", media, opts.DryRun)
+	pagesResult, err := CopyPages(ctx, fromClient, toClient, fromRef, toRef, PageCopyOptions{
+		Query:       "*",
+		Media:       media,
+		DryRun:      opts.DryRun,
+		AllowErrors: opts.AllowErrors,
+	})
 	if err != nil {
 		return result, err
 	}

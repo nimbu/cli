@@ -10,11 +10,12 @@ import (
 
 // PagesCopyCmd copies pages between sites.
 type PagesCopyCmd struct {
-	Fullpath string `help:"Page fullpath or prefix* to copy" default:"*" name:"only"`
-	From     string `help:"Source site" required:"" name:"from"`
-	To       string `help:"Target site" required:"" name:"to"`
-	FromHost string `help:"Source API base URL or host" name:"from-host"`
-	ToHost   string `help:"Target API base URL or host" name:"to-host"`
+	Fullpath    string `help:"Page fullpath or prefix* to copy" default:"*" name:"only"`
+	From        string `help:"Source site" required:"" name:"from"`
+	To          string `help:"Target site" required:"" name:"to"`
+	FromHost    string `help:"Source API base URL or host" name:"from-host"`
+	ToHost      string `help:"Target API base URL or host" name:"to-host"`
+	AllowErrors bool   `help:"Continue on page-level errors" name:"allow-errors"`
 }
 
 // Run executes pages copy.
@@ -42,7 +43,10 @@ func (c *PagesCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if tl != nil {
 		defer tl.Close()
 	}
-	result, err := migrate.CopyPages(ctx, fromClient, toClient, fromRef, toRef, c.Fullpath, nil, false)
+	result, err := migrate.CopyPages(ctx, fromClient, toClient, fromRef, toRef, migrate.PageCopyOptions{
+		Query:       c.Fullpath,
+		AllowErrors: c.AllowErrors,
+	})
 	if err != nil {
 		return finishCopyTimelineError(tl, err)
 	}
