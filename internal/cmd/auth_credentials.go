@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nimbu/cli/internal/apps"
 	"github.com/nimbu/cli/internal/auth"
 	"github.com/nimbu/cli/internal/config"
 )
@@ -52,6 +53,21 @@ func ResolveAuthToken(ctx context.Context) (string, error) {
 		return token, nil
 	}
 	return resolverFromContext(ctx).Token()
+}
+
+// ResolveAuthTokenForHost resolves the token for the host of baseURL, so
+// cross-host commands (--from-host/--to-host) authenticate against each API
+// with its own stored credential instead of the session default's.
+func ResolveAuthTokenForHost(ctx context.Context, baseURL string) (string, error) {
+	if token := strings.TrimSpace(os.Getenv("NIMBU_TOKEN")); token != "" {
+		return token, nil
+	}
+	resolver := resolverFromContext(ctx)
+	host := apps.NormalizeHost(baseURL)
+	if host == "" || host == resolver.host {
+		return resolver.Token()
+	}
+	return newAuthCredentialResolver(host).Token()
 }
 
 func ResolveAuthCredential(ctx context.Context) (auth.Credential, error) {

@@ -400,17 +400,17 @@ func GetAPIClientWithSite(ctx context.Context, site string) (*api.Client, error)
 func GetAPIClientWithBaseURL(ctx context.Context, baseURL, site string) (*api.Client, error) {
 	flags := ctx.Value(rootFlagsKey{}).(*RootFlags)
 
-	token, err := ResolveAuthToken(ctx)
-	if err != nil {
-		if errors.Is(err, auth.ErrNoToken) {
-			return nil, fmt.Errorf("%w: run 'nimbu auth login' first", auth.ErrNoToken)
-		}
-		return nil, err
-	}
-
 	apiURL := strings.TrimSpace(baseURL)
 	if apiURL == "" {
 		apiURL = flags.APIURL
+	}
+
+	token, err := ResolveAuthTokenForHost(ctx, apiURL)
+	if err != nil {
+		if errors.Is(err, auth.ErrNoToken) {
+			return nil, fmt.Errorf("%w for %s: run 'NIMBU_API_URL=%s nimbu auth login' first", auth.ErrNoToken, apiURL, apiURL)
+		}
+		return nil, err
 	}
 
 	client := api.New(apiURL, token)
