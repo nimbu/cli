@@ -45,9 +45,19 @@ func (m *initTeaModel) allOptions() []initChoiceOption {
 		return repeatableOptions(m.prompt.RepeatableOptions)
 	case initTeaStepBundles:
 		return bundleOptions(m.prompt.BundleOptions)
+	case initTeaStepOverwrite:
+		return conflictOptions(m.conflicts)
 	default:
 		return nil
 	}
+}
+
+func conflictOptions(conflicts []string) []initChoiceOption {
+	out := make([]initChoiceOption, 0, len(conflicts))
+	for _, rel := range conflicts {
+		out = append(out, initChoiceOption{ID: rel, Label: rel})
+	}
+	return out
 }
 
 func (m *initTeaModel) isSelected(id string) bool {
@@ -57,6 +67,9 @@ func (m *initTeaModel) isSelected(id string) bool {
 		return ok
 	case initTeaStepBundles:
 		_, ok := m.bundles[id]
+		return ok
+	case initTeaStepOverwrite:
+		_, ok := m.overwrite[id]
 		return ok
 	default:
 		return false
@@ -127,22 +140,34 @@ func (m *initTeaModel) loadThemesCmd(siteID string) tea.Cmd {
 	}
 }
 
+// destinationPath is the directory the project will be written to: the fixed
+// positional target when given, otherwise the prompted name under the output dir.
+func (m *initTeaModel) destinationPath() string {
+	if strings.TrimSpace(m.fixedTarget) != "" {
+		return m.fixedTarget
+	}
+	return filepath.Join(m.outputDir, m.answers.DirectoryName)
+}
+
+func (m *initTeaModel) bootstrapOptions() bootstrap.BootstrapOptions {
+	return bootstrap.BootstrapOptions{
+		Manifest:       m.manifest,
+		SourceDir:      m.sourceDir,
+		DestinationDir: m.destinationPath(),
+		Site:           m.answers.SiteID,
+		Theme:          m.answers.ThemeID,
+		BundleIDs:      m.answers.BundleIDs,
+		RepeatableIDs:  m.answers.RepeatableIDs,
+		AllowExisting:  m.inPlace,
+		SkipPaths:      m.skip,
+	}
+}
+
 func (m *initTeaModel) bootstrapCmd() tea.Cmd {
-	manifest := m.manifest
-	sourceDir := m.sourceDir
-	outputDir := m.outputDir
-	answers := m.answers
+	opts := m.bootstrapOptions()
+	sourceLabel := m.sourceLabel
 	return func() tea.Msg {
-		finalPath := filepath.Join(outputDir, answers.DirectoryName)
-		result, err := bootstrap.BootstrapProject(bootstrap.BootstrapOptions{
-			Manifest:       manifest,
-			SourceDir:      sourceDir,
-			DestinationDir: finalPath,
-			Site:           answers.SiteID,
-			Theme:          answers.ThemeID,
-			BundleIDs:      answers.BundleIDs,
-			RepeatableIDs:  answers.RepeatableIDs,
-		})
+		result, err := bootstrap.BootstrapProject(opts)
 		if err != nil {
 			return initTeaErrMsg{err: err}
 		}
@@ -151,7 +176,7 @@ func (m *initTeaModel) bootstrapCmd() tea.Cmd {
 				Path:        result.Path,
 				Site:        result.Site,
 				Theme:       result.Theme,
-				Source:      m.sourceLabel,
+				Source:      sourceLabel,
 				Bundles:     result.Bundles,
 				Repeatables: result.Repeatables,
 			},

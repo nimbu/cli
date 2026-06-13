@@ -307,6 +307,262 @@ repeatables:
 	}
 }
 
+func TestPlanPathsReturnsConcreteFiles(t *testing.T) {
+	sourceDir := t.TempDir()
+	writeStarterFixture(t, sourceDir)
+
+	manifest, err := LoadManifest(sourceDir)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+
+	plan, err := PlanPaths(BootstrapOptions{
+		Manifest:      manifest,
+		SourceDir:     sourceDir,
+		RepeatableIDs: []string{"text"},
+	})
+	if err != nil {
+		t.Fatalf("plan paths: %v", err)
+	}
+
+	got := map[string]struct{}{}
+	for _, p := range plan {
+		got[p] = struct{}{}
+	}
+	for _, want := range []string{"nimbu.yml", "package.json", "templates/page.liquid", "snippets/repeatables/text.liquid"} {
+		if _, ok := got[want]; !ok {
+			t.Fatalf("expected plan to include %q, got %v", want, plan)
+		}
+	}
+	if _, ok := got["snippets/repeatables/header.liquid"]; ok {
+		t.Fatalf("expected unselected repeatable to be absent from plan, got %v", plan)
+	}
+}
+
+func TestBootstrapProjectRefusesExistingWithoutAllowExisting(t *testing.T) {
+	sourceDir := t.TempDir()
+	destDir := t.TempDir()
+	writeStarterFixture(t, sourceDir)
+
+	manifest, err := LoadManifest(sourceDir)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+
+	target := filepath.Join(destDir, "theme-demo")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatalf("mkdir target: %v", err)
+	}
+
+	_, err = BootstrapProject(BootstrapOptions{
+		Manifest:       manifest,
+		SourceDir:      sourceDir,
+		DestinationDir: target,
+		Site:           "demo-site",
+		Theme:          "storefront",
+	})
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected 'already exists' error, got %v", err)
+	}
+}
+
+func TestBootstrapProjectInPlaceLeavesGitAloneAndHonorsSkipPaths(t *testing.T) {
+	sourceDir := t.TempDir()
+	writeStarterFixture(t, sourceDir)
+
+	target := t.TempDir()
+	// Pre-existing git repo (no commits) and a user-authored nimbu.yml.
+	cmd := exec.Command("git", "-C", target, "init")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	writeTestFile(t, filepath.Join(target, "nimbu.yml"), "site: keep-me\ntheme: keep-me\n")
+
+	manifest, err := LoadManifest(sourceDir)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+
+	result, err := BootstrapProject(BootstrapOptions{
+		Manifest:       manifest,
+		SourceDir:      sourceDir,
+		DestinationDir: target,
+		Site:           "demo-site",
+		Theme:          "storefront",
+		RepeatableIDs:  []string{"text"},
+		AllowExisting:  true,
+		SkipPaths:      map[string]struct{}{"nimbu.yml": {}},
+	})
+	if err != nil {
+		t.Fatalf("bootstrap project: %v", err)
+	}
+	if result.Path != filepath.Clean(target) {
+		t.Fatalf("expected result path %q, got %q", filepath.Clean(target), result.Path)
+	}
+
+	// Declined file preserved (not overwritten, not rewritten).
+	project := readTestFile(t, filepath.Join(target, "nimbu.yml"))
+	if !strings.Contains(project, "site: keep-me") || strings.Contains(project, "demo-site") {
+		t.Fatalf("expected user nimbu.yml to be preserved, got:\n%s", project)
+	}
+
+	// Non-conflicting files written.
+	if _, err := os.Stat(filepath.Join(target, "package.json")); err != nil {
+		t.Fatalf("expected package.json to be copied: %v", err)
+	}
+
+	// Git left alone: repo still present, no commit created.
+	if _, err := os.Stat(filepath.Join(target, ".git")); err != nil {
+		t.Fatalf("expected existing .git to be preserved: %v", err)
+	}
+	count := strings.TrimSpace(gitOutput(t, target, "rev-list", "--all", "--count"))
+	if count != "0" {
+		t.Fatalf("expected no commits created in existing repo, got %q", count)
+	}
+}
+
+func TestBootstrapProjectInPlaceOverwritesNonSkippedConflict(t *testing.T) {
+	sourceDir := t.TempDir()
+	writeStarterFixture(t, sourceDir)
+
+	target := t.TempDir()
+	writeTestFile(t, filepath.Join(target, "package.json"), "OLD\n")
+
+	manifest, err := LoadManifest(sourceDir)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+
+	if _, err := BootstrapProject(BootstrapOptions{
+		Manifest:       manifest,
+		SourceDir:      sourceDir,
+		DestinationDir: target,
+		Site:           "demo-site",
+		Theme:          "storefront",
+		RepeatableIDs:  []string{"text"},
+		AllowExisting:  true,
+	}); err != nil {
+		t.Fatalf("bootstrap project: %v", err)
+	}
+
+	pkg := readTestFile(t, filepath.Join(target, "package.json"))
+	if strings.TrimSpace(pkg) != "{}" {
+		t.Fatalf("expected package.json to be overwritten with source content, got %q", pkg)
+	}
+	// nimbu.yml not skipped → rewritten with selected site/theme.
+	project := readTestFile(t, filepath.Join(target, "nimbu.yml"))
+	if !strings.Contains(project, "site: demo-site") || !strings.Contains(project, "theme: storefront") {
+		t.Fatalf("expected nimbu.yml rewrite, got:\n%s", project)
+	}
+}
+
+func TestPlanPathsIncludesGeneratedRecipeIndexes(t *testing.T) {
+	sourceDir := t.TempDir()
+	writeStarterFixture(t, sourceDir)
+
+	manifest, err := LoadManifest(sourceDir)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+
+	plan, err := PlanPaths(BootstrapOptions{Manifest: manifest, SourceDir: sourceDir})
+	if err != nil {
+		t.Fatalf("plan paths: %v", err)
+	}
+	got := map[string]struct{}{}
+	for _, p := range plan {
+		got[p] = struct{}{}
+	}
+	// Generated index files are written by BootstrapProject but not copied, so
+	// PlanPaths must still report them for in-place conflict detection.
+	for _, want := range []string{"src/recipes/index.ts", "src/recipes/index.css", "build/recipes/index.ts"} {
+		if _, ok := got[want]; !ok {
+			t.Fatalf("expected plan to include generated %q, got %v", want, plan)
+		}
+	}
+}
+
+func TestBootstrapProjectInPlaceDoesNotClobberDeclinedGeneratedIndex(t *testing.T) {
+	sourceDir := t.TempDir()
+	writeStarterFixture(t, sourceDir)
+
+	target := t.TempDir()
+	const userIndex = "// MY HAND-WRITTEN RECIPE INDEX\n"
+	writeTestFile(t, filepath.Join(target, "src", "recipes", "index.ts"), userIndex)
+
+	manifest, err := LoadManifest(sourceDir)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+
+	if _, err := BootstrapProject(BootstrapOptions{
+		Manifest:       manifest,
+		SourceDir:      sourceDir,
+		DestinationDir: target,
+		Site:           "demo-site",
+		Theme:          "storefront",
+		BundleIDs:      []string{"customer-auth"}, // selects the filepond recipe
+		RepeatableIDs:  []string{"text"},
+		AllowExisting:  true,
+		SkipPaths:      map[string]struct{}{"src/recipes/index.ts": {}},
+	}); err != nil {
+		t.Fatalf("bootstrap project: %v", err)
+	}
+
+	// Declined generated index preserved verbatim.
+	if got := readTestFile(t, filepath.Join(target, "src", "recipes", "index.ts")); got != userIndex {
+		t.Fatalf("expected declined recipe index preserved, got:\n%s", got)
+	}
+	// A non-declined generated index is still written.
+	if _, err := os.Stat(filepath.Join(target, "build", "recipes", "index.ts")); err != nil {
+		t.Fatalf("expected non-declined generated index written: %v", err)
+	}
+}
+
+func TestBootstrapProjectInPlaceSkipsTransformsOnDeclinedFiles(t *testing.T) {
+	sourceDir := t.TempDir()
+	writeStarterFixture(t, sourceDir)
+
+	target := t.TempDir()
+	// User's own page.liquid lacking the header block. If the "header"
+	// remove_repeatable transform ran against it, removeRepeatableBlock would
+	// fail with "manifest drift" — so a clean run proves the transform was skipped.
+	const userPage = "<main>my own layout</main>\n"
+	writeTestFile(t, filepath.Join(target, "templates", "page.liquid"), userPage)
+
+	manifest, err := LoadManifest(sourceDir)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+
+	if _, err := BootstrapProject(BootstrapOptions{
+		Manifest:       manifest,
+		SourceDir:      sourceDir,
+		DestinationDir: target,
+		Site:           "demo-site",
+		Theme:          "storefront",
+		RepeatableIDs:  []string{"text"}, // leaves "header" unselected → header transform would run
+		AllowExisting:  true,
+		SkipPaths:      map[string]struct{}{"templates/page.liquid": {}},
+	}); err != nil {
+		t.Fatalf("bootstrap project: %v", err)
+	}
+
+	if got := readTestFile(t, filepath.Join(target, "templates", "page.liquid")); got != userPage {
+		t.Fatalf("expected declined page.liquid preserved untouched, got:\n%s", got)
+	}
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, out)
+	}
+	return string(out)
+}
+
 func writeStarterFixture(t *testing.T, root string) {
 	t.Helper()
 

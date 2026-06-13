@@ -47,14 +47,18 @@ func (p lineInitPrompter) Run(model initPromptModel) (initAnswers, error) {
 	}
 	answers.ThemeID = model.Themes[themeIndex].Theme.ID
 
-	dir, err := promptWithReader(p.reader, fmt.Sprintf("Directory name [%s]: ", model.DefaultDirectoryName))
-	if err != nil {
-		return initAnswers{}, err
+	if strings.TrimSpace(model.FixedTarget) == "" {
+		dir, err := promptWithReader(p.reader, fmt.Sprintf("Directory name [%s]: ", model.DefaultDirectoryName))
+		if err != nil {
+			return initAnswers{}, err
+		}
+		if strings.TrimSpace(dir) == "" {
+			dir = model.DefaultDirectoryName
+		}
+		answers.DirectoryName = dir
+	} else {
+		answers.DirectoryName = filepath.Base(model.FixedTarget)
 	}
-	if strings.TrimSpace(dir) == "" {
-		dir = model.DefaultDirectoryName
-	}
-	answers.DirectoryName = dir
 
 	repeatableMode, err := promptWithReader(p.reader, "Repeatables [none|all|select] [none]: ")
 	if err != nil {
@@ -87,7 +91,11 @@ func (p lineInitPrompter) Run(model initPromptModel) (initAnswers, error) {
 		answers.RepeatableIDs = splitCSVValues(repeatableValue)
 	}
 
-	fmt.Fprintf(os.Stderr, "Source: %s\nOutput: %s\n", model.Source, filepath.Join(model.OutputDir, answers.DirectoryName))
+	outputPath := filepath.Join(model.OutputDir, answers.DirectoryName)
+	if strings.TrimSpace(model.FixedTarget) != "" {
+		outputPath = model.FixedTarget
+	}
+	fmt.Fprintf(os.Stderr, "Source: %s\nOutput: %s\n", model.Source, outputPath)
 	confirmed, err := promptConfirmWithReader(p.reader, "Create project")
 	if err != nil {
 		return initAnswers{}, err
@@ -97,6 +105,33 @@ func (p lineInitPrompter) Run(model initPromptModel) (initAnswers, error) {
 	}
 	answers.Confirmed = true
 	return answers, nil
+}
+
+// ResolveConflicts asks per file whether to overwrite an existing file, in the
+// classic [y]es / [n]o / [a]ll style. It returns the set of source-relative
+// paths the user declined to overwrite (kept as-is).
+func (p lineInitPrompter) ResolveConflicts(conflicts []string) (map[string]struct{}, error) {
+	skip := make(map[string]struct{})
+	overwriteAll := false
+	fmt.Fprintf(os.Stderr, "%d file(s) already exist in the target directory.\n", len(conflicts))
+	for _, rel := range conflicts {
+		if overwriteAll {
+			continue
+		}
+		value, err := promptWithReader(p.reader, fmt.Sprintf("Overwrite %s? [y/N/a]: ", rel))
+		if err != nil {
+			return nil, err
+		}
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "a", "all":
+			overwriteAll = true
+		case "y", "yes":
+			// overwrite this one
+		default:
+			skip[rel] = struct{}{}
+		}
+	}
+	return skip, nil
 }
 
 func cloneStarterRepo(destDir, repo, branch string) error {

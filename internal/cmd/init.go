@@ -13,6 +13,7 @@ import (
 )
 
 type InitCmd struct {
+	Directory string `arg:"" optional:"" help:"Target directory (use '.' for the current directory); created if it does not exist. Overrides --output-dir and skips the directory-name prompt."`
 	Repo      string `help:"GitHub repo shorthand for the starterskit" default:"zenjoy/theme-starterskit"`
 	Branch    string `help:"Branch to bootstrap from" default:"main"`
 	Dir       string `help:"Use a local starterskit directory instead of cloning"`
@@ -50,6 +51,10 @@ type initAnswers struct {
 
 type initPrompter interface {
 	Run(initPromptModel) (initAnswers, error)
+	// ResolveConflicts asks which of the conflicting (already-existing) files
+	// may be overwritten. It returns the set of source-relative paths the user
+	// declined to overwrite (kept as-is).
+	ResolveConflicts(conflicts []string) (map[string]struct{}, error)
 }
 
 type initPromptModel struct {
@@ -60,6 +65,10 @@ type initPromptModel struct {
 	DefaultDirectoryName string
 	OutputDir            string
 	Source               string
+	// FixedTarget is the resolved absolute path when a positional directory
+	// argument was given. When set, the directory-name prompt is skipped and
+	// this path is used verbatim.
+	FixedTarget string
 }
 
 func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -72,6 +81,17 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 	writer := output.WriterFromContext(ctx)
 	if output.IsHuman(ctx) && writer != nil && writer.ErrIsTTY() && stdinIsTerminal() {
 		return c.runInteractiveTTY(ctx, flags)
+	}
+
+	// Resolve and validate the positional target up front so an invalid target
+	// fails before any starterskit clone.
+	fixedTarget, fixed, err := c.resolveFixedTarget()
+	if err != nil {
+		return err
+	}
+	inPlace, err := targetIsExistingDir(fixed, fixedTarget)
+	if err != nil {
+		return err
 	}
 
 	newServerPresenter(ctx, false).PrintBanner()
@@ -127,6 +147,7 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 		OutputDir:            outputDir,
 		Source:               sourceLabel,
 		DefaultDirectoryName: "theme-" + parameterize(sites[0].Subdomain),
+		FixedTarget:          fixedTarget,
 	}
 
 	answers, err := prompter.Run(promptModel)
@@ -167,8 +188,12 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("selected theme %q not found", answers.ThemeID)
 	}
 
-	finalPath := filepath.Join(outputDir, answers.DirectoryName)
-	result, err := bootstrap.BootstrapProject(bootstrap.BootstrapOptions{
+	finalPath := fixedTarget
+	if !fixed {
+		finalPath = filepath.Join(outputDir, answers.DirectoryName)
+	}
+
+	opts := bootstrap.BootstrapOptions{
 		Manifest:       manifest,
 		SourceDir:      sourceDir,
 		DestinationDir: finalPath,
@@ -176,7 +201,23 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 		Theme:          selectedTheme.ID,
 		BundleIDs:      answers.BundleIDs,
 		RepeatableIDs:  answers.RepeatableIDs,
-	})
+		AllowExisting:  inPlace,
+	}
+	if inPlace {
+		conflicts, err := planConflicts(opts, finalPath)
+		if err != nil {
+			return err
+		}
+		if len(conflicts) > 0 {
+			skip, err := prompter.ResolveConflicts(conflicts)
+			if err != nil {
+				return err
+			}
+			opts.SkipPaths = skip
+		}
+	}
+
+	result, err := bootstrap.BootstrapProject(opts)
 	if err != nil {
 		return err
 	}
@@ -214,6 +255,57 @@ func (c *InitCmd) resolveSource() (string, string, func(), error) {
 		return "", "", nil, err
 	}
 	return sourceDir, c.Repo + "@" + c.Branch, cleanup, nil
+}
+
+// resolveFixedTarget resolves the optional positional directory argument to an
+// absolute path. The second return reports whether an explicit target was given
+// — which skips the directory-name prompt and overrides --output-dir.
+func (c *InitCmd) resolveFixedTarget() (string, bool, error) {
+	raw := strings.TrimSpace(c.Directory)
+	if raw == "" {
+		return "", false, nil
+	}
+	dir, err := filepath.Abs(raw)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve target directory %q: %w", raw, err)
+	}
+	return dir, true, nil
+}
+
+// targetIsExistingDir reports whether a fixed positional target already exists
+// as a directory (→ in-place init). A target that exists but is not a directory
+// is a user error and surfaces a clear message instead of a cryptic mkdir error.
+func targetIsExistingDir(fixed bool, path string) (bool, error) {
+	if !fixed {
+		return false, nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil // fresh target — will be created
+		}
+		return false, fmt.Errorf("inspect target %s: %w", path, err)
+	}
+	if !info.IsDir() {
+		return false, fmt.Errorf("target %s exists and is not a directory", path)
+	}
+	return true, nil
+}
+
+// planConflicts returns the source-relative paths that would be written and
+// already exist under target.
+func planConflicts(opts bootstrap.BootstrapOptions, target string) ([]string, error) {
+	plan, err := bootstrap.PlanPaths(opts)
+	if err != nil {
+		return nil, err
+	}
+	var conflicts []string
+	for _, rel := range plan {
+		if fileExists(filepath.Join(target, filepath.FromSlash(rel))) {
+			conflicts = append(conflicts, rel)
+		}
+	}
+	return conflicts, nil
 }
 
 func (c *InitCmd) resolveOutputDir() (string, error) {
@@ -255,12 +347,46 @@ func emitInitResult(ctx context.Context, result initResult) error {
 	case mode.Plain:
 		return output.Plain(ctx, result.Path, result.Site, result.Theme, result.Source)
 	default:
-		dirname := filepath.Base(result.Path)
-		command := "cd " + dirname
-		if install := detectInstallCommand(result.Path); install != "" {
-			command += " && " + install
+		out := output.WriterFromContext(ctx).Out
+		if command := initNextStepCommand(result.Path); command != "" {
+			_, _ = fmt.Fprintf(out, "Done! To start working, run: %s\n", command)
+		} else {
+			_, _ = fmt.Fprintf(out, "Done! Your project is ready.\n")
 		}
-		_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Out, "Done! To start working, run: %s\n", command)
 		return nil
 	}
+}
+
+// initNextStepCommand returns the shell command to suggest after init, or "" when
+// the project is the current directory and needs no install step (in-place init).
+func initNextStepCommand(resultPath string) string {
+	install := detectInstallCommand(resultPath)
+	if initResultIsCWD(resultPath) {
+		// Already inside the project directory — no `cd` needed.
+		return install
+	}
+	command := "cd " + filepath.Base(resultPath)
+	if install != "" {
+		command += " && " + install
+	}
+	return command
+}
+
+func initResultIsCWD(path string) bool {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	// Resolve symlinks so e.g. /tmp vs /private/tmp on macOS compare equal.
+	if resolved, err := filepath.EvalSymlinks(cwd); err == nil {
+		cwd = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
+	}
+	return filepath.Clean(cwd) == filepath.Clean(abs)
 }

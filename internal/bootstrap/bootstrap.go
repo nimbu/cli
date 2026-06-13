@@ -74,6 +74,14 @@ type BootstrapOptions struct {
 	Theme          string
 	BundleIDs      []string
 	RepeatableIDs  []string
+
+	// AllowExisting permits scaffolding into a directory that already exists
+	// (in-place init). When set, the destination-exists guard is relaxed and
+	// git is left untouched so an existing repository is preserved.
+	AllowExisting bool
+	// SkipPaths holds source-relative file paths (forward-slash) the caller
+	// chose not to overwrite. Planned files in this set are left as-is.
+	SkipPaths map[string]struct{}
 }
 
 type Result struct {
@@ -119,7 +127,9 @@ func BootstrapProject(opts BootstrapOptions) (Result, error) {
 
 	destDir := filepath.Clean(opts.DestinationDir)
 	if _, err := os.Stat(destDir); err == nil {
-		return Result{}, fmt.Errorf("destination already exists: %s", destDir)
+		if !opts.AllowExisting {
+			return Result{}, fmt.Errorf("destination already exists: %s", destDir)
+		}
 	} else if !os.IsNotExist(err) {
 		return Result{}, err
 	}
@@ -132,14 +142,19 @@ func BootstrapProject(opts BootstrapOptions) (Result, error) {
 		return Result{}, err
 	}
 
+	plan, err := planFiles(opts.SourceDir, pathSet)
+	if err != nil {
+		return Result{}, err
+	}
+
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return Result{}, fmt.Errorf("create destination: %w", err)
 	}
-	for _, rel := range sortedKeys(pathSet) {
-		if err := copyPath(filepath.Join(opts.SourceDir, filepath.FromSlash(rel)), filepath.Join(destDir, filepath.FromSlash(rel))); err != nil {
-			if shouldSkipMissingBootstrapPath(rel, err) {
-				continue
-			}
+	for _, rel := range plan {
+		if _, skip := opts.SkipPaths[rel]; skip {
+			continue
+		}
+		if err := copyFile(filepath.Join(opts.SourceDir, filepath.FromSlash(rel)), filepath.Join(destDir, filepath.FromSlash(rel))); err != nil {
 			return Result{}, err
 		}
 	}
@@ -147,17 +162,25 @@ func BootstrapProject(opts BootstrapOptions) (Result, error) {
 		return Result{}, err
 	}
 
-	if err := applyTransforms(destDir, transformList); err != nil {
+	if err := applyTransforms(destDir, transformList, opts.SkipPaths); err != nil {
 		return Result{}, err
 	}
-	if err := writeRecipeIndexes(destDir, opts.Manifest, recipeSet); err != nil {
+	if err := writeRecipeIndexes(destDir, opts.Manifest, recipeSet, opts.SkipPaths); err != nil {
 		return Result{}, err
 	}
-	if err := rewriteProjectConfig(filepath.Join(destDir, "nimbu.yml"), opts.Site, opts.Theme); err != nil {
-		return Result{}, err
+	// Skip rewriting nimbu.yml when the user declined to overwrite it — their
+	// site/theme config stays intact.
+	if _, skip := opts.SkipPaths["nimbu.yml"]; !skip {
+		if err := rewriteProjectConfig(filepath.Join(destDir, "nimbu.yml"), opts.Site, opts.Theme); err != nil {
+			return Result{}, err
+		}
 	}
-	if err := initGitRepo(destDir); err != nil {
-		return Result{}, err
+	// In-place init leaves git untouched so an existing repository is preserved;
+	// freshly-created targets get an initial commit.
+	if !opts.AllowExisting {
+		if err := initGitRepo(destDir); err != nil {
+			return Result{}, err
+		}
 	}
 
 	return Result{
@@ -167,6 +190,36 @@ func BootstrapProject(opts BootstrapOptions) (Result, error) {
 		Bundles:     selectedBundles,
 		Repeatables: selectedRepeatables,
 	}, nil
+}
+
+// PlanPaths returns the source-relative file paths (forward-slash, sorted) that
+// BootstrapProject would write for the given options. It is used to detect
+// conflicts against an existing directory before any file is written.
+func PlanPaths(opts BootstrapOptions) ([]string, error) {
+	if strings.TrimSpace(opts.SourceDir) == "" {
+		return nil, fmt.Errorf("source dir required")
+	}
+	if err := opts.Manifest.validate(); err != nil {
+		return nil, err
+	}
+	_, _, _, _, pathSet, err := opts.Manifest.resolve(opts.SourceDir, opts.BundleIDs, opts.RepeatableIDs)
+	if err != nil {
+		return nil, err
+	}
+	files, err := planFiles(opts.SourceDir, pathSet)
+	if err != nil {
+		return nil, err
+	}
+	// Recipe index files are generated (not copied), but BootstrapProject still
+	// writes them — include them so in-place conflict detection sees them too.
+	set := make(map[string]struct{}, len(files)+len(generatedRecipeIndexPaths()))
+	for _, f := range files {
+		set[f] = struct{}{}
+	}
+	for _, f := range generatedRecipeIndexPaths() {
+		set[f] = struct{}{}
+	}
+	return sortedKeys(set), nil
 }
 
 func (m Manifest) resolve(sourceDir string, bundleIDs, repeatableIDs []string) ([]string, []string, map[string]Recipe, []Transform, map[string]struct{}, error) {
@@ -408,28 +461,55 @@ func (m Manifest) recipeMap() map[string]Recipe {
 	return out
 }
 
-func copyPath(sourcePath, destPath string) error {
-	info, err := os.Stat(sourcePath)
-	if err != nil {
-		return fmt.Errorf("stat source %s: %w", sourcePath, err)
+// planFiles expands the resolved path set into concrete source-relative file
+// paths (forward-slash, sorted), walking directory entries. Declared paths that
+// are absent in the source are skipped when allowlisted (generated outputs),
+// otherwise they surface as an error. Empty directories are not materialized
+// here — intentional empty dirs come from the manifest's generated_dirs.
+// normalizeRel canonicalizes a relative path to clean forward-slash form so the
+// same file always yields the same SkipPaths key, regardless of how it was
+// declared (e.g. "./nimbu.yml" and "nimbu.yml" must match).
+func normalizeRel(rel string) string {
+	return filepath.ToSlash(filepath.Clean(filepath.FromSlash(rel)))
+}
+
+func planFiles(sourceDir string, pathSet map[string]struct{}) ([]string, error) {
+	seen := make(map[string]struct{})
+	add := func(rel string) {
+		seen[normalizeRel(rel)] = struct{}{}
 	}
-	if info.IsDir() {
-		return filepath.WalkDir(sourcePath, func(path string, d fs.DirEntry, walkErr error) error {
+	for _, rel := range sortedKeys(pathSet) {
+		sourcePath := filepath.Join(sourceDir, filepath.FromSlash(rel))
+		info, err := os.Stat(sourcePath)
+		if err != nil {
+			if shouldSkipMissingBootstrapPath(rel, err) {
+				continue
+			}
+			return nil, fmt.Errorf("stat source %s: %w", sourcePath, err)
+		}
+		if !info.IsDir() {
+			add(rel)
+			continue
+		}
+		walkErr := filepath.WalkDir(sourcePath, func(path string, d fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
-			rel, err := filepath.Rel(sourcePath, path)
+			if d.IsDir() {
+				return nil
+			}
+			sub, err := filepath.Rel(sourceDir, path)
 			if err != nil {
 				return err
 			}
-			target := filepath.Join(destPath, rel)
-			if d.IsDir() {
-				return os.MkdirAll(target, 0o755)
-			}
-			return copyFile(path, target)
+			add(sub)
+			return nil
 		})
+		if walkErr != nil {
+			return nil, walkErr
+		}
 	}
-	return copyFile(sourcePath, destPath)
+	return sortedKeys(seen), nil
 }
 
 func copyFile(sourcePath, destPath string) error {
@@ -494,8 +574,12 @@ func materializeGeneratedDirs(root string, dirs []string) error {
 	return nil
 }
 
-func applyTransforms(root string, transforms []Transform) error {
+func applyTransforms(root string, transforms []Transform, skip map[string]struct{}) error {
 	for _, transform := range transforms {
+		// Never mutate a file the user chose to keep (declined overwrite).
+		if _, skipped := skip[normalizeRel(transform.Path)]; skipped {
+			continue
+		}
 		targetPath := filepath.Join(root, filepath.FromSlash(transform.Path))
 		switch transform.Type {
 		case "remove_file":
@@ -555,7 +639,18 @@ func removeRepeatableBlock(path string, name string) error {
 	return fmt.Errorf("manifest drift: repeatable %q not found in %s", name, filepath.ToSlash(path))
 }
 
-func writeRecipeIndexes(root string, manifest Manifest, selected map[string]Recipe) error {
+// generatedRecipeIndexPaths are written by writeRecipeIndexes regardless of the
+// manifest's copy plan. They participate in conflict detection (via PlanPaths)
+// and SkipPaths so in-place init never clobbers a user's file without consent.
+func generatedRecipeIndexPaths() []string {
+	return []string{
+		"src/recipes/index.ts",
+		"src/recipes/index.css",
+		"build/recipes/index.ts",
+	}
+}
+
+func writeRecipeIndexes(root string, manifest Manifest, selected map[string]Recipe, skip map[string]struct{}) error {
 	recipes := make([]Recipe, 0, len(selected))
 	for _, manifestRecipe := range manifest.Recipes {
 		if recipe, ok := selected[manifestRecipe.ID]; ok {
@@ -563,14 +658,21 @@ func writeRecipeIndexes(root string, manifest Manifest, selected map[string]Reci
 		}
 	}
 
-	if err := writeFile(root, "src/recipes/index.ts", renderRuntimeRecipeIndex(recipes)); err != nil {
-		return err
+	indexes := []struct {
+		path     string
+		contents string
+	}{
+		{"src/recipes/index.ts", renderRuntimeRecipeIndex(recipes)},
+		{"src/recipes/index.css", renderCSSRecipeIndex(recipes)},
+		{"build/recipes/index.ts", renderBuildRecipeIndex(recipes)},
 	}
-	if err := writeFile(root, "src/recipes/index.css", renderCSSRecipeIndex(recipes)); err != nil {
-		return err
-	}
-	if err := writeFile(root, "build/recipes/index.ts", renderBuildRecipeIndex(recipes)); err != nil {
-		return err
+	for _, index := range indexes {
+		if _, skipped := skip[index.path]; skipped {
+			continue
+		}
+		if err := writeFile(root, index.path, index.contents); err != nil {
+			return err
+		}
 	}
 	return nil
 }

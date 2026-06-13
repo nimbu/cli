@@ -180,20 +180,27 @@ func activeTimelineLines(model *initTeaModel, width int) []string {
 func renderInitTeaDoneFooter(model *initTeaModel) string {
 	corner := "└"
 	label := "Done!"
-	dirname := filepath.Base(model.result.Path)
+	command := initNextStepCommand(model.result.Path)
 	hint := "To start working, run:"
-	command := "cd " + dirname
-	if install := detectInstallCommand(model.result.Path); install != "" {
-		command += " && " + install
+	if command == "" {
+		// In-place into the current directory — nothing to cd into.
+		hint = "Your project is ready."
 	}
 
 	if model.useColor {
 		corner = initTeaDimStyle(model).Render(corner)
 		label = initTeaStyle(model).Bold(true).Foreground(lipgloss.Color("#22c55e")).Render(label)
 		hint = initTeaDimStyle(model).Render(hint)
-		command = initTeaBrightText(model, command)
+		if command != "" {
+			command = initTeaBrightText(model, command)
+		}
 	}
-	return corner + " " + label + " " + hint + " " + command
+
+	parts := []string{corner, label, hint}
+	if command != "" {
+		parts = append(parts, command)
+	}
+	return strings.Join(parts, " ")
 }
 
 func detectInstallCommand(projectPath string) string {
@@ -246,10 +253,15 @@ func promptTimelineLines(model *initTeaModel, width int) []string {
 			dimTimelineText(model, "Type to edit, Enter confirm"),
 		}
 		return lines
+	case initTeaStepOverwrite:
+		lines := []string{renderLabelValueLine(model, "Overwrite", "checked files are replaced", width)}
+		lines = append(lines, optionRows(model, width)...)
+		lines = append(lines, dimTimelineText(model, "↑↓ move, Space toggle, Enter confirm"))
+		return lines
 	case initTeaStepConfirm:
 		lines := []string{
 			renderLabelValueLine(model, "Creating project", "review your settings", width),
-			renderLabelValueLine(model, "Path", filepath.Join(model.outputDir, model.answers.DirectoryName), width),
+			renderLabelValueLine(model, "Path", model.destinationPath(), width),
 			renderLabelValueLine(model, "Theme", model.answers.ThemeID, width),
 		}
 		if len(model.answers.RepeatableIDs) > 0 {

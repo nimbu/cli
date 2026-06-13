@@ -30,6 +30,12 @@ func TestPublicCommandsUseFlagsForIdentity(t *testing.T) {
 			if strings.Contains(compactLine, "Assignments []string") || strings.Contains(compactLine, "Words []string") {
 				continue
 			}
+			// `nimbu init [directory]` takes a filesystem destination (like
+			// `git init <dir>`), not a resource-identity value, so a positional
+			// argument is the idiomatic syntax here.
+			if strings.Contains(compactLine, "Directory string") && strings.Contains(compactLine, `help:"Target directory`) {
+				continue
+			}
 			offenders = append(offenders, filepath.ToSlash(file)+":"+itoa(idx+1)+": "+strings.TrimSpace(line))
 		}
 	}

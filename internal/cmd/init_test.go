@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -77,6 +79,168 @@ func TestInitBootstrapsProjectIntoOutputDir(t *testing.T) {
 	if !strings.Contains(normalizedOutput, `"path": `) || !strings.Contains(normalizedOutput, normalizedPath) {
 		t.Fatalf("expected json output with final path, got %s", stdout.String())
 	}
+}
+
+func TestInitInPlaceLeavesGitAloneAndHonorsConflictChoice(t *testing.T) {
+	sourceDir := t.TempDir()
+	writeInitStarterFixture(t, sourceDir)
+
+	srv := httptest.NewServer(http.HandlerFunc(initSiteThemeHandler(t)))
+	defer srv.Close()
+
+	ctx, stdout, _ := newInitTestContext(t, srv.URL, output.Mode{JSON: true})
+	target := t.TempDir()
+	// Existing repo (no commits) and a user-authored nimbu.yml in the target.
+	runGitForTest(t, target, "init")
+	if err := os.WriteFile(filepath.Join(target, "nimbu.yml"), []byte("site: keep-me\ntheme: keep-me\n"), 0o644); err != nil {
+		t.Fatalf("write user nimbu.yml: %v", err)
+	}
+
+	withTempCWD(t, target, func() {
+		// site, theme, repeatable-mode (all), bundle-ids, confirm, then overwrite nimbu.yml -> "n" (keep mine)
+		withTempStdin(t, strings.Join([]string{"", "", "all", "", "y", "n"}, "\n"), func() {
+			cmd := &InitCmd{Dir: sourceDir, Directory: "."}
+			if err := cmd.Run(ctx, &RootFlags{}); err != nil {
+				t.Fatalf("run init: %v", err)
+			}
+		})
+	})
+
+	// Scaffolded in place: no nested directory, files land in target.
+	if _, err := os.Stat(filepath.Join(target, "package.json")); err != nil {
+		t.Fatalf("expected package.json scaffolded in place: %v", err)
+	}
+	// Declined conflict preserved and not rewritten.
+	project, err := os.ReadFile(filepath.Join(target, "nimbu.yml"))
+	if err != nil {
+		t.Fatalf("read nimbu.yml: %v", err)
+	}
+	if !strings.Contains(string(project), "site: keep-me") || strings.Contains(string(project), "site-1") {
+		t.Fatalf("expected user nimbu.yml preserved, got:\n%s", project)
+	}
+	// Git left alone: repo intact, no commit created.
+	if _, err := os.Stat(filepath.Join(target, ".git")); err != nil {
+		t.Fatalf("expected existing .git preserved: %v", err)
+	}
+	if count := strings.TrimSpace(runGitForTest(t, target, "rev-list", "--all", "--count")); count != "0" {
+		t.Fatalf("expected no commit in existing repo, got %q", count)
+	}
+	// JSON output reports the in-place target path.
+	normalized := strings.ReplaceAll(stdout.String(), `\\`, `/`)
+	if !strings.Contains(normalized, filepath.ToSlash(target)) {
+		t.Fatalf("expected output path %q, got %s", target, stdout.String())
+	}
+}
+
+func TestInitPositionalNewPathCreatesAndCommits(t *testing.T) {
+	sourceDir := t.TempDir()
+	writeInitStarterFixture(t, sourceDir)
+
+	srv := httptest.NewServer(http.HandlerFunc(initSiteThemeHandler(t)))
+	defer srv.Close()
+
+	ctx, _, _ := newInitTestContext(t, srv.URL, output.Mode{JSON: true})
+	target := filepath.Join(t.TempDir(), "new-theme")
+
+	withTempCWD(t, t.TempDir(), func() {
+		// site, theme, repeatable-mode (all), bundle-ids, confirm (no conflict prompt — fresh path)
+		withTempStdin(t, strings.Join([]string{"", "", "all", "", "y"}, "\n"), func() {
+			cmd := &InitCmd{Dir: sourceDir, Directory: target}
+			if err := cmd.Run(ctx, &RootFlags{}); err != nil {
+				t.Fatalf("run init: %v", err)
+			}
+		})
+	})
+
+	// Fresh path created with rewritten config and an initial commit.
+	project, err := os.ReadFile(filepath.Join(target, "nimbu.yml"))
+	if err != nil {
+		t.Fatalf("read nimbu.yml: %v", err)
+	}
+	if !strings.Contains(string(project), "site: site-1") {
+		t.Fatalf("expected nimbu.yml rewritten with selected site, got:\n%s", project)
+	}
+	if count := strings.TrimSpace(runGitForTest(t, target, "rev-list", "--all", "--count")); count == "0" {
+		t.Fatalf("expected an initial commit in fresh project, got %q", count)
+	}
+}
+
+func TestLineInitPrompterResolveConflicts(t *testing.T) {
+	// y → overwrite, n → keep (skip), a → overwrite all remaining (no further prompts).
+	p := lineInitPrompter{reader: bufio.NewReader(strings.NewReader("y\nn\na\n"))}
+	skip, err := p.ResolveConflicts([]string{"a.txt", "b.txt", "c.txt", "d.txt"})
+	if err != nil {
+		t.Fatalf("resolve conflicts: %v", err)
+	}
+	if _, ok := skip["b.txt"]; !ok {
+		t.Fatalf("expected b.txt declined (skipped), got %v", skip)
+	}
+	for _, overwritten := range []string{"a.txt", "c.txt", "d.txt"} {
+		if _, ok := skip[overwritten]; ok {
+			t.Fatalf("expected %s to be overwritten (not skipped), got %v", overwritten, skip)
+		}
+	}
+	if len(skip) != 1 {
+		t.Fatalf("expected exactly one declined file, got %v", skip)
+	}
+}
+
+func TestLineInitPrompterResolveConflictsDefaultsToKeep(t *testing.T) {
+	// Blank and unrecognized answers default to keeping the user's file.
+	p := lineInitPrompter{reader: bufio.NewReader(strings.NewReader("\nmaybe\n"))}
+	skip, err := p.ResolveConflicts([]string{"x", "y"})
+	if err != nil {
+		t.Fatalf("resolve conflicts: %v", err)
+	}
+	if len(skip) != 2 {
+		t.Fatalf("expected both files kept (skipped), got %v", skip)
+	}
+}
+
+func TestTargetIsExistingDir(t *testing.T) {
+	dir := t.TempDir()
+
+	if in, err := targetIsExistingDir(true, dir); err != nil || !in {
+		t.Fatalf("existing dir: expected (true,nil), got (%v,%v)", in, err)
+	}
+	if in, err := targetIsExistingDir(true, filepath.Join(dir, "missing")); err != nil || in {
+		t.Fatalf("missing path: expected (false,nil), got (%v,%v)", in, err)
+	}
+
+	file := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if in, err := targetIsExistingDir(true, file); err == nil || in {
+		t.Fatalf("file target: expected (false,error), got (%v,%v)", in, err)
+	}
+	if in, err := targetIsExistingDir(false, file); err != nil || in {
+		t.Fatalf("not fixed: expected (false,nil), got (%v,%v)", in, err)
+	}
+}
+
+func initSiteThemeHandler(t *testing.T) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/sites":
+			_, _ = w.Write([]byte(`[{"id":"site-1","subdomain":"demo-shop","name":"Demo Shop"}]`))
+		case "/themes":
+			_, _ = w.Write([]byte(`[{"id":"storefront","name":"Storefront"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}
+}
+
+func runGitForTest(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, out)
+	}
+	return string(out)
 }
 
 func TestCloneStarterRepoPrefersGHForGitHubShorthand(t *testing.T) {

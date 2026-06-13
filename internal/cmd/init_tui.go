@@ -44,6 +44,7 @@ const (
 	initTeaStepRepeatableMode initTeaStep = "repeatable_mode"
 	initTeaStepRepeatables    initTeaStep = "repeatables"
 	initTeaStepBundles        initTeaStep = "bundles"
+	initTeaStepOverwrite      initTeaStep = "overwrite"
 	initTeaStepConfirm        initTeaStep = "confirm"
 )
 
@@ -117,6 +118,13 @@ type initTeaModel struct {
 	bundles     map[string]struct{}
 	err         error
 	result      initResult
+
+	// In-place init state (set when a positional directory argument is given).
+	fixedTarget string
+	inPlace     bool
+	conflicts   []string            // planned files that already exist in the target
+	overwrite   map[string]struct{} // checked = overwrite; default all conflicts
+	skip        map[string]struct{} // resolved: paths the user declined to overwrite
 }
 
 func (c *InitCmd) runInteractiveTTY(ctx context.Context, flags *RootFlags) error {
@@ -166,6 +174,20 @@ func newInitTeaModel(ctx context.Context, cmd *InitCmd, flags *RootFlags) *initT
 			model.palette = theme.Palette
 		}
 	}
+	fixedTarget, fixed, ferr := cmd.resolveFixedTarget()
+	switch {
+	case ferr != nil:
+		model.err = ferr
+	case fixed:
+		model.fixedTarget = fixedTarget
+		// A file target (or stat failure) is a clear user error — surface it so
+		// the program quits with the precise message instead of a generic one.
+		if dir, derr := targetIsExistingDir(true, fixedTarget); derr != nil {
+			model.err = derr
+		} else {
+			model.inPlace = dir
+		}
+	}
 	if strings.TrimSpace(cmd.Dir) == "" {
 		model.loadingSummary = "Template"
 		model.loadingDetail = "Cloning repository..."
@@ -213,6 +235,7 @@ func newInitTeaBaseModel(useColor bool, renderer *lipgloss.Renderer) *initTeaMod
 		renderer:       renderer,
 		repeatables:    map[string]struct{}{},
 		bundles:        map[string]struct{}{},
+		overwrite:      map[string]struct{}{},
 	}
 }
 
@@ -241,6 +264,11 @@ func initTeaRendererForWriter(writer *output.Writer, useColor bool) *lipgloss.Re
 }
 
 func (m *initTeaModel) Init() tea.Cmd {
+	if m.err != nil {
+		// A construction-time error (e.g. a file target) — quit immediately so
+		// runInteractiveTTY returns the precise message.
+		return tea.Quit
+	}
 	return tea.Batch(m.spinner.Tick, m.resolveSourceCmd())
 }
 
@@ -305,7 +333,7 @@ func (m *initTeaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.answers.ThemeID = choice.Theme.ID
 			m.appendTranscript("Theme", choice.Label)
 			m.phase = initTeaPhasePrompt
-			m.enterStep(initTeaStepDirectory)
+			m.enterStep(m.stepAfterTheme())
 			return m, nil
 		}
 		m.phase = initTeaPhasePrompt
@@ -452,7 +480,7 @@ func (m *initTeaModel) confirmCurrentSelection() (tea.Model, tea.Cmd) {
 	case initTeaStepTheme:
 		m.answers.ThemeID = current.ID
 		m.appendTranscript("Theme", current.Label)
-		m.enterStep(initTeaStepDirectory)
+		m.enterStep(m.stepAfterTheme())
 	case initTeaStepRepeatableMode:
 		m.answers.RepeatableMode = current.ID
 		switch current.ID {
@@ -475,10 +503,54 @@ func (m *initTeaModel) confirmCurrentSelection() (tea.Model, tea.Cmd) {
 	case initTeaStepBundles:
 		m.answers.BundleIDs = sortedSelection(m.bundles)
 		m.appendTranscript("Bundles", joinSelectionsOrNone(m.answers.BundleIDs))
+		m.enterStep(m.confirmStep())
+	case initTeaStepOverwrite:
+		m.resolveOverwriteSelection()
 		m.enterStep(initTeaStepConfirm)
 	}
 
 	return m, nil
+}
+
+// stepAfterTheme skips the directory-name prompt when a positional target was
+// given — the destination path is already fixed.
+func (m *initTeaModel) stepAfterTheme() initTeaStep {
+	if strings.TrimSpace(m.fixedTarget) != "" {
+		return m.nextStepAfterDirectory()
+	}
+	return initTeaStepDirectory
+}
+
+// confirmStep routes to the overwrite checklist when initializing in place and
+// planned files already exist; otherwise straight to the final confirmation.
+// PlanPaths failures are deferred to bootstrap, which surfaces them as an error.
+func (m *initTeaModel) confirmStep() initTeaStep {
+	if !m.inPlace {
+		return initTeaStepConfirm
+	}
+	conflicts, err := planConflicts(m.bootstrapOptions(), m.fixedTarget)
+	if err != nil || len(conflicts) == 0 {
+		return initTeaStepConfirm
+	}
+	m.conflicts = conflicts
+	m.overwrite = make(map[string]struct{}, len(conflicts))
+	for _, rel := range conflicts {
+		m.overwrite[rel] = struct{}{} // default: overwrite all
+	}
+	return initTeaStepOverwrite
+}
+
+// resolveOverwriteSelection converts the checklist selection into the skip set
+// (conflicts left unchecked are kept as-is).
+func (m *initTeaModel) resolveOverwriteSelection() {
+	skip := make(map[string]struct{})
+	for _, rel := range m.conflicts {
+		if _, overwrite := m.overwrite[rel]; !overwrite {
+			skip[rel] = struct{}{}
+		}
+	}
+	m.skip = skip
+	m.appendTranscript("Overwrite", fmt.Sprintf("%d replaced, %d kept", len(m.conflicts)-len(skip), len(skip)))
 }
 
 func (m *initTeaModel) moveCursor(delta int) {
@@ -530,13 +602,15 @@ func (m *initTeaModel) selectionTarget() map[string]struct{} {
 		return m.repeatables
 	case initTeaStepBundles:
 		return m.bundles
+	case initTeaStepOverwrite:
+		return m.overwrite
 	default:
 		return map[string]struct{}{}
 	}
 }
 
 func (m *initTeaModel) isMultiSelectStep() bool {
-	return m.step == initTeaStepRepeatables || m.step == initTeaStepBundles
+	return m.step == initTeaStepRepeatables || m.step == initTeaStepBundles || m.step == initTeaStepOverwrite
 }
 
 func (m *initTeaModel) enterStep(step initTeaStep) {
@@ -564,14 +638,14 @@ func (m *initTeaModel) nextStepAfterDirectory() initTeaStep {
 	if len(m.prompt.BundleOptions) > 0 {
 		return initTeaStepBundles
 	}
-	return initTeaStepConfirm
+	return m.confirmStep()
 }
 
 func (m *initTeaModel) nextStepAfterRepeatables() initTeaStep {
 	if len(m.prompt.BundleOptions) > 0 {
 		return initTeaStepBundles
 	}
-	return initTeaStepConfirm
+	return m.confirmStep()
 }
 
 func (m *initTeaModel) resizeInputs() {
