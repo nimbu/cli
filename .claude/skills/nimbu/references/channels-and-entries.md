@@ -17,6 +17,8 @@ For different API hosts, add `--from-host` / `--to-host` (bare domain or full UR
 |---------|--------|-----------|-------|
 | `list` | `nimbu channels list` | `--all`, `--page`, `--per-page`, `--no-entry-count` | Entry counts fetched by default (6 parallel workers). Use `--no-entry-count` to skip. |
 | `get` | `nimbu channels get --channel <slug>` | | Returns schema, customizations, ACL, dependency graph. |
+| `create` | `nimbu channels create --file <ch.json>` or `nimbu channels create name=… slug=…` | `--file` | Creates a channel. `--file` (full JSON incl. `customizations`) XOR inline assignments. Use `customizations:=@fields.json` for the field array inline. Requires write mode. |
+| `delete` | `nimbu channels delete --channel <slug>` | `--force` (required) | Deletes the whole channel definition (not just entries). Requires both `--force` and write mode. |
 | `info` | `nimbu channels info --channel <slug or site/channel>` | `--typescript` | Accepts cross-site ref. `--typescript` emits a TS interface. |
 | `fields` | `nimbu channels fields list --channel <slug>` | | Schema introspection — see detailed section below. |
 | `diff` | `nimbu channels diff --from <ref> --to <ref>` | `--from-host`, `--to-host` | Compares channel attrs + field schema. Reports added/removed/updated. |
@@ -108,6 +110,16 @@ nimbu channels list --all --json
 
 # Inspect channel schema
 nimbu channels get --channel blog --json
+
+# Create a channel from a full JSON file (name, slug, title_field, customizations[])
+nimbu channels create --file testimonials.json --json
+
+# Create a channel from inline assignments (customizations as typed JSON)
+nimbu channels create name=Testimonials slug=testimonials title_field=author \
+  customizations:=@fields.json --json
+
+# Delete a whole channel definition (requires --force)
+nimbu channels delete --channel testimonials --force
 
 # Generate TypeScript interface from a remote site
 nimbu channels info --channel staging/blog --typescript

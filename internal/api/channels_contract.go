@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"sort"
 	"strings"
@@ -90,6 +91,27 @@ func PatchChannelCustomizations(ctx context.Context, c *Client, slug string, fie
 // ListChannelDetails fetches all channels with their richer schema fields.
 func ListChannelDetails(ctx context.Context, c *Client, opts ...RequestOption) ([]ChannelDetail, error) {
 	return List[ChannelDetail](ctx, c, "/channels", opts...)
+}
+
+// CreateChannel creates a channel from a payload and returns the created detail.
+// The payload may be a ChannelDetail or a raw map[string]any (e.g. from inline
+// assignments or a --file body), and should carry name, slug, and optionally
+// title_field/label_field/order_by/order_direction and a customizations array.
+func CreateChannel(ctx context.Context, c *Client, payload any, opts ...RequestOption) (ChannelDetail, error) {
+	var detail ChannelDetail
+	if err := c.Post(ctx, "/channels", payload, &detail, opts...); err != nil {
+		return ChannelDetail{}, err
+	}
+	return detail, nil
+}
+
+// DeleteChannel deletes a channel by slug or ID.
+func DeleteChannel(ctx context.Context, c *Client, slug string, opts ...RequestOption) error {
+	trimmed := strings.TrimSpace(slug)
+	if trimmed == "" {
+		return fmt.Errorf("channel slug is required")
+	}
+	return c.Delete(ctx, "/channels/"+url.PathEscape(trimmed), nil, opts...)
 }
 
 // IsRelational reports whether the field references another channel.

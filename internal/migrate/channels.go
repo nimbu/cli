@@ -185,7 +185,7 @@ func copyChannelDetail(ctx context.Context, client *api.Client, detail api.Chann
 	case api.IsNotFound(err):
 		if opts.DryRun {
 			action = "dry-run:" + action
-		} else if err := client.Post(ctx, "/channels", payload, &existing); err != nil {
+		} else if existing, err = api.CreateChannel(ctx, client, payload); err != nil {
 			return ChannelCopyItem{}, err
 		}
 	default:
@@ -274,7 +274,10 @@ func ensureCircularPlaceholder(ctx context.Context, client *api.Client, slug str
 			},
 		},
 	}
-	return true, client.Post(ctx, "/channels", payload, &existing)
+	if _, err := api.CreateChannel(ctx, client, payload); err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
 // mergeCustomizations builds a customizations payload that preserves target field/option IDs.

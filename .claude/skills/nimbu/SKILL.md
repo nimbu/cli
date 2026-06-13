@@ -136,7 +136,7 @@ nimbu pages update --page about --file payload.json
 
 | Command | Subcommands | Notes |
 |---------|-------------|-------|
-| `channels` | list, get, info, diff, copy, fields | Schema introspection via `info` |
+| `channels` | list, get, create, info, copy, diff, empty, delete, fields | `create` from JSON/inline; `delete` needs `--force` |
 | `channels fields` | list, add, update, delete, apply, replace, diff | Channel field schema workflows |
 | `channels entries` | list, get, create, update, delete, count, copy | Entry CRUD within a channel |
 | `pages` | list, get, create, update, delete, count, copy | Fullpath as identifier |

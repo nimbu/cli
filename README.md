@@ -176,6 +176,15 @@ nimbu menus get --menu main --json
 
 # Rich channel contract with schema and ACL data
 nimbu channels get --channel articles --json
+
+# Create a channel from a full JSON file (name, slug, title_field, customizations[])
+nimbu channels create --file articles.json --json
+
+# Create a channel from inline assignments (customizations as typed JSON)
+nimbu channels create name=Articles slug=articles title_field=title customizations:=@fields.json
+
+# Delete a whole channel definition (requires --force)
+nimbu channels delete --channel articles --force
 ```
 
 ### Channel field workflows
