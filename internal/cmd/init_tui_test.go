@@ -115,6 +115,96 @@ func TestInitTeaConfirmStepHighlightsFinalAction(t *testing.T) {
 	}
 }
 
+func TestInitTeaConfirmStepShowsHumanReadableTheme(t *testing.T) {
+	model := newInitTeaTestModel(initPromptModel{
+		Themes: initThemeChoices([]api.Theme{{ID: "theme-1", Name: "Storefront", Short: "storefront"}}),
+	})
+	model.width = 120
+	model.height = 24
+	model.step = initTeaStepConfirm
+	model.answers.ThemeID = "theme-1"
+
+	view := model.View()
+
+	// Confirm screen shows the friendly label, never the raw selection ID.
+	if !strings.Contains(view, "storefront") {
+		t.Fatalf("expected confirm screen to show the theme short, got:\n%s", view)
+	}
+	if strings.Contains(view, "theme-1") {
+		t.Fatalf("expected confirm screen to hide the raw theme ID, got:\n%s", view)
+	}
+}
+
+func TestInitTeaBootstrapOptionsUsesReadableIdentifiers(t *testing.T) {
+	model := newInitTeaTestModel(initPromptModel{})
+	model.sites = []api.Site{{ID: "site-1", Subdomain: "demo-shop", Name: "Demo Shop"}}
+	model.themes = []api.Theme{{ID: "theme-1", Short: "storefront", Name: "Storefront"}}
+	model.answers.SiteID = "site-1"
+	model.answers.ThemeID = "theme-1"
+
+	opts := model.bootstrapOptions()
+
+	if opts.Site != "demo-shop" {
+		t.Fatalf("expected site subdomain in bootstrap options, got %q", opts.Site)
+	}
+	if opts.Theme != "storefront" {
+		t.Fatalf("expected theme short in bootstrap options, got %q", opts.Theme)
+	}
+}
+
+func TestInitTeaBootstrapOptionsFallsBackToSelectionIDWhenUnknown(t *testing.T) {
+	model := newInitTeaTestModel(initPromptModel{})
+	// sites/themes are empty, so the selection IDs cannot be resolved and must
+	// pass through unchanged rather than collapsing to an empty value.
+	model.answers.SiteID = "site-1"
+	model.answers.ThemeID = "theme-1"
+
+	opts := model.bootstrapOptions()
+
+	if opts.Site != "site-1" || opts.Theme != "theme-1" {
+		t.Fatalf("expected raw selection IDs to pass through, got site=%q theme=%q", opts.Site, opts.Theme)
+	}
+}
+
+func TestSiteConfigValuePrefersSubdomain(t *testing.T) {
+	cases := []struct {
+		name string
+		site api.Site
+		want string
+	}{
+		{"subdomain wins", api.Site{ID: "site-1", Subdomain: "demo-shop"}, "demo-shop"},
+		{"id fallback when no subdomain", api.Site{ID: "site-1"}, "site-1"},
+		{"whitespace subdomain falls back to id", api.Site{ID: "site-1", Subdomain: "   "}, "site-1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := siteConfigValue(tc.site); got != tc.want {
+				t.Fatalf("siteConfigValue(%+v) = %q, want %q", tc.site, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestThemeConfigValueFallbackChain(t *testing.T) {
+	cases := []struct {
+		name  string
+		theme api.Theme
+		want  string
+	}{
+		{"short wins over everything", api.Theme{ID: "theme-1", Short: "storefront", ThemeShortID: "ignored"}, "storefront"},
+		{"theme_short_id when no short", api.Theme{ID: "theme-1", ThemeShortID: "preview"}, "preview"},
+		{"id fallback when short and theme_short_id empty", api.Theme{ID: "theme-1", Name: "Storefront"}, "theme-1"},
+		{"whitespace short falls through to theme_short_id", api.Theme{ID: "theme-1", Short: "  ", ThemeShortID: "preview"}, "preview"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := themeConfigValue(tc.theme); got != tc.want {
+				t.Fatalf("themeConfigValue(%+v) = %q, want %q", tc.theme, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestInitTeaIntroUsesDimCornerAndBrightText(t *testing.T) {
 	view := renderInitTeaViewForTheme(t, "")
 

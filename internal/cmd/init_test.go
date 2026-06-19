@@ -115,7 +115,7 @@ func TestInitInPlaceLeavesGitAloneAndHonorsConflictChoice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read nimbu.yml: %v", err)
 	}
-	if !strings.Contains(string(project), "site: keep-me") || strings.Contains(string(project), "site-1") {
+	if !strings.Contains(string(project), "site: keep-me") || strings.Contains(string(project), "demo-shop") {
 		t.Fatalf("expected user nimbu.yml preserved, got:\n%s", project)
 	}
 	// Git left alone: repo intact, no commit created.
@@ -157,8 +157,11 @@ func TestInitPositionalNewPathCreatesAndCommits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read nimbu.yml: %v", err)
 	}
-	if !strings.Contains(string(project), "site: site-1") {
-		t.Fatalf("expected nimbu.yml rewritten with selected site, got:\n%s", project)
+	if !strings.Contains(string(project), "site: demo-shop") {
+		t.Fatalf("expected nimbu.yml rewritten with site subdomain, got:\n%s", project)
+	}
+	if !strings.Contains(string(project), "theme: storefront") {
+		t.Fatalf("expected nimbu.yml rewritten with theme short, got:\n%s", project)
 	}
 	if count := strings.TrimSpace(runGitForTest(t, target, "rev-list", "--all", "--count")); count == "0" {
 		t.Fatalf("expected an initial commit in fresh project, got %q", count)
@@ -226,7 +229,7 @@ func initSiteThemeHandler(t *testing.T) http.HandlerFunc {
 		case "/sites":
 			_, _ = w.Write([]byte(`[{"id":"site-1","subdomain":"demo-shop","name":"Demo Shop"}]`))
 		case "/themes":
-			_, _ = w.Write([]byte(`[{"id":"storefront","name":"Storefront"}]`))
+			_, _ = w.Write([]byte(`[{"id":"theme-1","short":"storefront","name":"Storefront"}]`))
 		default:
 			http.NotFound(w, r)
 		}

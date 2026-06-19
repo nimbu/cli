@@ -262,7 +262,7 @@ func promptTimelineLines(model *initTeaModel, width int) []string {
 		lines := []string{
 			renderLabelValueLine(model, "Creating project", "review your settings", width),
 			renderLabelValueLine(model, "Path", model.destinationPath(), width),
-			renderLabelValueLine(model, "Theme", model.answers.ThemeID, width),
+			renderLabelValueLine(model, "Theme", model.selectedThemeLabel(), width),
 		}
 		if len(model.answers.RepeatableIDs) > 0 {
 			lines = append(lines, renderLabelValueLine(model, "Repeatables", strings.Join(model.answers.RepeatableIDs, ", "), width))

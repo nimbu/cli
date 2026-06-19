@@ -149,13 +149,35 @@ func (m *initTeaModel) destinationPath() string {
 	return filepath.Join(m.outputDir, m.answers.DirectoryName)
 }
 
+// selectedThemeLabel returns the human-readable theme label shown on the confirm
+// screen, matching the label used in the transcript. It falls back to the
+// selection ID when the choice list has not been populated (e.g. in tests).
+func (m *initTeaModel) selectedThemeLabel() string {
+	for _, choice := range m.prompt.Themes {
+		if choice.Theme.ID == m.answers.ThemeID {
+			return choice.Label
+		}
+	}
+	return m.answers.ThemeID
+}
+
 func (m *initTeaModel) bootstrapOptions() bootstrap.BootstrapOptions {
+	// answers.SiteID/ThemeID stay the API IDs used for selection and the
+	// init-time API calls; nimbu.yml gets the human-readable subdomain/short.
+	site := m.answers.SiteID
+	if selected, ok := findSiteByID(m.sites, m.answers.SiteID); ok {
+		site = siteConfigValue(selected)
+	}
+	theme := m.answers.ThemeID
+	if selected, ok := findThemeByID(m.themes, m.answers.ThemeID); ok {
+		theme = themeConfigValue(selected)
+	}
 	return bootstrap.BootstrapOptions{
 		Manifest:       m.manifest,
 		SourceDir:      m.sourceDir,
 		DestinationDir: m.destinationPath(),
-		Site:           m.answers.SiteID,
-		Theme:          m.answers.ThemeID,
+		Site:           site,
+		Theme:          theme,
 		BundleIDs:      m.answers.BundleIDs,
 		RepeatableIDs:  m.answers.RepeatableIDs,
 		AllowExisting:  m.inPlace,

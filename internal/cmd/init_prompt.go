@@ -391,3 +391,27 @@ func findThemeByID(themes []api.Theme, id string) (api.Theme, bool) {
 	}
 	return api.Theme{}, false
 }
+
+// siteConfigValue is the identifier persisted as `site:` in nimbu.yml. The Nimbu
+// API resolves the X-Nimbu-Site header by subdomain or ID, so we prefer the
+// human-readable subdomain and fall back to the ID when it is unavailable.
+func siteConfigValue(site api.Site) string {
+	if value := strings.TrimSpace(site.Subdomain); value != "" {
+		return value
+	}
+	return site.ID
+}
+
+// themeConfigValue is the identifier persisted as `theme:` in nimbu.yml. Theme
+// API paths (/themes/<x>) accept the short slug or the ID, so we prefer the
+// human-readable short slug, then the theme_short_id, and fall back to the ID.
+// Name is intentionally excluded: it may contain spaces and makes a poor path
+// segment.
+func themeConfigValue(theme api.Theme) string {
+	for _, candidate := range []string{theme.Short, theme.ThemeShortID} {
+		if value := strings.TrimSpace(candidate); value != "" {
+			return value
+		}
+	}
+	return theme.ID
+}
