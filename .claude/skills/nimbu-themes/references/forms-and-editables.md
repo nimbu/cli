@@ -26,12 +26,14 @@ Don't confuse them: editables don't accept user input at request time, and form 
   {% input 'email',   label: 'Your email', type: 'email', required: true %}
   {% text_area 'message', label: 'Message', rows: 6 %}
 
-  {% error_messages_for channels.contact %}
+  {% error_messages_for contact_data_object %}
   {% submit_tag 'Send', class: 'btn btn-primary' %}
 {% endform %}
 ```
 
 When this submits, Nimbu validates `name`/`email`/`message` against the `contact` channel's field schema. Validation errors come back via `error_messages_for`; on success, flash messages or redirect kick in.
+
+> **Pass the entry, not the collection.** `error_messages_for` needs an object that responds to `.errors` — that is the submitted **entry**, which a `{% form channels.contact %}` block exposes as `contact_data_object` (`<slug>_data_object`). Passing `channels.contact` (the channel *collection* proxy) crashes with `NoMethodError: undefined method 'errors'` because the collection has no `.errors`. The pattern is `error_messages_for <slug>_data_object`.
 
 ### Built-in flows by name
 
@@ -79,14 +81,14 @@ These wire up to Nimbu's customer/auth/order flows. Pass `action:` only when ove
 
 ```liquid
 {% form channels.contact %}
-  {% error_messages_for channels.contact %}
+  {% error_messages_for contact_data_object %}
 
   {% input 'email', label: 'Email', type: 'email', required: true %}
   {% submit_tag 'Send' %}
 {% endform %}
 ```
 
-`{% error_messages_for %}` renders all validation errors for the bound object as a single block. Many real-world themes pair this with client-side validation (Parsley, native `required`/`type=email`) so users see immediate feedback before round-tripping.
+`{% error_messages_for %}` renders all validation errors for the submitted **entry** as a single block. Pass the `<slug>_data_object` (here `contact_data_object`) — the entry that responds to `.errors` — **not** `channels.contact`, which is the channel collection and crashes with `NoMethodError`. Many real-world themes pair this with client-side validation (Parsley, native `required`/`type=email`) so users see immediate feedback before round-tripping.
 
 Server-side validation lives in the channel schema (manage via the `nimbu` CLI, `nimbu channels fields ...`) or in a `Cloud.before('channel.entries.created', 'contact', …)` callback in `code/` (see `nimbu-cloud-code` skill).
 
@@ -223,7 +225,7 @@ The editor can now add/reorder/remove "Feature" items, each with its own `title`
 2. **Editables wrap defaults**, not output. The content between the open/close tags is the **default** value used until someone edits in the admin UI.
 3. **Form fields without `{% form %}`** miss CSRF and won't pass channel validation. Always wrap.
 4. **`{% input %}` outside a `{% form %}` block** is meaningless — the helpers need form context.
-5. **`error_messages_for` requires the form to be bound** to a channel (or to whatever you pass in). Generic `form_tag` forms don't get auto-validation.
+5. **`error_messages_for` takes the entry, not the channel.** Pass the `<slug>_data_object` (e.g. `contact_data_object`) — the submitted entry, which responds to `.errors`. Passing the channel collection (`channels.contact`) raises `NoMethodError: undefined method 'errors'`. The form must be bound to a channel; generic `form_tag` forms don't get auto-validation.
 6. **`editable_reference` returns `nil` until set** — guard with `{% if banner %}`.
 7. **`{% editable_file %}` content is the URL string**, not an HTML tag. Always wrap it in `<img src="…">` or `<a href="…">` yourself.
 8. **`{% repeatable %}` items share the surrounding scope** — variables you `{% assign %}` outside leak in, which is sometimes useful and sometimes surprising.

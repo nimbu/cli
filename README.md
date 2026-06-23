@@ -104,6 +104,10 @@ nimbu pages update --page about --file payload.json
 nimbu sites settings --site staging --json
 ```
 
+## Upgrade Notes
+
+`pages update --file` now merges by default. Use `--replace` with a file payload when existing automation depends on omission removing page content.
+
 Migration examples:
 
 ```bash

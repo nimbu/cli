@@ -59,6 +59,15 @@ Env overrides: `NIMBU_JSON=1`, `NIMBU_PLAIN=1`.
 
 **Agent rule: always pass `--json` to get structured output.**
 
+### Output Contract
+
+In `--json` mode, **stdout is the bare JSON value** — nothing else:
+
+- A list command prints a JSON **array**.
+- A single-resource command (`get`, `create`, `update`) prints a JSON **object**.
+
+Progress UI, applied-count lines, warnings, and the structured error envelope all go to **stderr**, never stdout. So `nimbu ... --json 2>/dev/null | jq` always gets clean, parseable JSON, and you can watch stderr separately for warnings (e.g. the `pages update --replace` dropped-editables warning).
+
 ## Global Flags
 
 | Flag | Purpose |
@@ -168,7 +177,7 @@ nimbu pages update --page about --file payload.json
 | `themes assets` | list, get, create, delete | Asset CRUD |
 | `themes files` | list, get, create, delete | Generic file CRUD |
 | `apps` | list, get, config, push | Cloud code management |
-| `uploads` | list, get, create, delete, count | File uploads |
+| `uploads` | list, get, create, delete, count | File uploads — `create` takes `--file`/`-f` (or `--source`) |
 | `webhooks` | list, get, create, update, delete, count | Webhook management |
 | `redirects` | list, get, create, update, delete, copy | URL redirects |
 | `roles` | list, get, create, update, delete, count, copy | Permission roles |
@@ -185,7 +194,7 @@ nimbu pages update --page about --file payload.json
 | `config` | list, get, set, unset, banner, path | CLI configuration |
 | `functions` | run | Execute cloud functions |
 | `jobs` | run | Execute cloud jobs |
-| `api` | get, post, put, patch, delete | Raw API access |
+| `api` | *(run directly)* | Raw API access — `nimbu api --method=POST --path=/... -d '{...}'` (no subcommands) |
 | `completion` | --shell bash/zsh/fish | Shell completions |
 
 ## Schema Discovery for Theme Development
@@ -248,8 +257,10 @@ Three resource types have special contracts beyond standard CRUD:
 
 - **Identifier**: fullpath (e.g., `about/team`), not UUID
 - `pages get --page <fullpath> --json` returns full page document with nested `items`
+- `pages get --page <fullpath> --shape` emits just the canvas/repeatable skeleton (editable names, types, repeatable slugs) — use it to learn the exact structure before writing
 - `pages get --page <fullpath> --download-assets DIR --json` downloads file editables, rewrites to `attachment_path`
-- `pages update --page <fullpath> --file page.json` uses replace-safe patch semantics
+- `pages update --page <fullpath> --file page.json` **MERGES by default** — omitted canvases are left intact
+- `pages update --file page.json --replace` does a full destructive rebuild; inline assignments always use merge semantics. Replace is guarded against wiping a populated canvas to 0 (override with `--allow-empty-canvas`). File editables with no writable attachment/source are rejected unless you intentionally pass `--allow-empty-file`. **Never blind-resend a raw GET under `--replace`.**
 - `pages update` inline: only `title`, `template`, `published`, `locale` — deep edits need `--file`
 
 ### Menus
@@ -303,6 +314,18 @@ nimbu pages update --page about/team --file page.json
 ```
 
 See [references/pages-menus-content.md](references/pages-menus-content.md) for pages, menus, blogs, translations, and notification sync.
+
+### Upload a file and reuse its CDN URL
+
+```bash
+# Upload (use --file/-f or --source); --json prints the upload object
+URL=$(nimbu uploads create --file ./logo.png --json | jq -r '.url')
+
+# The response `url` is the public CDN link — feed it into a page file editable
+# as a FileRef (attachment_url), or use it anywhere a public URL is needed.
+```
+
+`uploads create` accepts `--file`/`-f` (matching every other create command) and keeps `--source` for back-compat. The returned `url` field is the public CDN link.
 
 ### Push theme changes after build
 

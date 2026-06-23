@@ -69,7 +69,7 @@ All editable tags accept `label`, `hint`, and `assign`. See [forms-and-editables
 | `password_field`, `hidden_field`, `file_field` | Same shape as `input` |
 | `check_box`, `select_tag`, `collection_select`, `date_select`, `time_select`, `multi_date_tag` | Specialized inputs |
 | `inputs_for_fields` | Auto-generates inputs from a channel's schema |
-| `error_messages_for` | `{% error_messages_for object %}` |
+| `error_messages_for` | `{% error_messages_for contact_data_object %}` — pass the `<slug>_data_object` entry (responds to `.errors`), NOT `channels.contact` (the collection, which crashes with `NoMethodError`) |
 | `submit_tag` | `{% submit_tag 'Send', class: 'btn btn-primary' %}` |
 | `input_tag_template` | Customize widget rendering |
 
