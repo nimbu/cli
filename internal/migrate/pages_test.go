@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -183,5 +184,143 @@ func TestCopyPagesAllowErrorsSkipsInvalidPage(t *testing.T) {
 	}
 	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[len(result.Warnings)-1], "invalid editable") {
 		t.Fatalf("expected invalid editable warning, got %v", result.Warnings)
+	}
+}
+
+func TestCopyPagesUpdatesExistingPagesWithReplaceSemantics(t *testing.T) {
+	var patchRawQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/pages" && r.Header.Get("X-Nimbu-Site") == "source":
+			_, _ = w.Write([]byte(`[{"fullpath":"about"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/pages/about" && r.Header.Get("X-Nimbu-Site") == "source":
+			_, _ = w.Write([]byte(`{"fullpath":"about","title":"Source","items":{"intro":{"type":"string","content":"Source"}}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/pages/about" && r.Header.Get("X-Nimbu-Site") == "target":
+			_, _ = w.Write([]byte(`{"fullpath":"about","title":"Target","items":{"stale":{"type":"string","content":"Stale"}}}`))
+		case r.Method == http.MethodPatch && r.URL.Path == "/pages/about" && r.Header.Get("X-Nimbu-Site") == "target":
+			patchRawQuery = r.URL.RawQuery
+			_, _ = w.Write([]byte(`{"fullpath":"about"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	fromClient := api.New(srv.URL, "").WithSite("source")
+	toClient := api.New(srv.URL, "").WithSite("target")
+
+	_, err := CopyPages(context.Background(), fromClient, toClient, SiteRef{Site: "source"}, SiteRef{Site: "target"}, PageCopyOptions{Query: "*"})
+	if err != nil {
+		t.Fatalf("CopyPages error = %v", err)
+	}
+	if !strings.Contains(patchRawQuery, "replace=1") {
+		t.Fatalf("expected update copy to use replace=1, got raw query %q", patchRawQuery)
+	}
+}
+
+func TestCopyPagesUpdatesExistingPageWithEmbeddedFileAttachment(t *testing.T) {
+	var patched api.PageDocument
+	baseURL := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/pages" && r.Header.Get("X-Nimbu-Site") == "source":
+			_, _ = w.Write([]byte(`[{"fullpath":"about"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/pages/about" && r.Header.Get("X-Nimbu-Site") == "source":
+			_, _ = w.Write([]byte(`{"fullpath":"about","items":{"hero":{"file":{"url":"` + baseURL + `/page-assets/hero.bin","filename":"hero.bin"}}}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/page-assets/hero.bin":
+			_, _ = w.Write([]byte("asset"))
+		case r.Method == http.MethodGet && r.URL.Path == "/pages/about" && r.Header.Get("X-Nimbu-Site") == "target":
+			_, _ = w.Write([]byte(`{"fullpath":"about","items":{"hero":{"file":{"url":"https://target.example.test/old.bin"}}}}`))
+		case r.Method == http.MethodPatch && r.URL.Path == "/pages/about" && r.Header.Get("X-Nimbu-Site") == "target":
+			if r.URL.Query().Get("replace") != "1" {
+				t.Fatalf("expected replace=1, got %q", r.URL.RawQuery)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&patched); err != nil {
+				t.Fatalf("decode patched page: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"fullpath":"about"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	baseURL = srv.URL
+
+	_, err := CopyPages(
+		context.Background(),
+		api.New(srv.URL, "").WithSite("source"),
+		api.New(srv.URL, "").WithSite("target"),
+		SiteRef{Site: "source"},
+		SiteRef{Site: "target"},
+		PageCopyOptions{Query: "*"},
+	)
+	if err != nil {
+		t.Fatalf("copy pages: %v", err)
+	}
+
+	file := patched["items"].(map[string]any)["hero"].(map[string]any)["file"].(map[string]any)
+	if file["__type"] != "File" {
+		t.Fatalf("expected embedded File payload, got %#v", file["__type"])
+	}
+	if file["attachment"] != base64.StdEncoding.EncodeToString([]byte("asset")) {
+		t.Fatalf("expected attachment payload, got %#v", file["attachment"])
+	}
+	if _, ok := file["url"]; ok {
+		t.Fatalf("expected read-only url removed, got %#v", file["url"])
+	}
+}
+
+func TestCopyPagesSkipsPageWhenFileEmbeddingFailsWithAllowErrors(t *testing.T) {
+	patchCalled := false
+	baseURL := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/pages" && r.Header.Get("X-Nimbu-Site") == "source":
+			_, _ = w.Write([]byte(`[{"fullpath":"about"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/pages/about" && r.Header.Get("X-Nimbu-Site") == "source":
+			_, _ = w.Write([]byte(`{"fullpath":"about","items":{"hero":{"file":{"url":"` + baseURL + `/missing.bin","filename":"hero.bin"}}}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/pages/about" && r.Header.Get("X-Nimbu-Site") == "target":
+			_, _ = w.Write([]byte(`{"fullpath":"about"}`))
+		case r.Method == http.MethodPatch && r.URL.Path == "/pages/about" && r.Header.Get("X-Nimbu-Site") == "target":
+			patchCalled = true
+			_, _ = w.Write([]byte(`{"fullpath":"about"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	baseURL = srv.URL
+
+	_, err := CopyPages(
+		context.Background(),
+		api.New(srv.URL, "").WithSite("source"),
+		api.New(srv.URL, "").WithSite("target"),
+		SiteRef{Site: "source"},
+		SiteRef{Site: "target"},
+		PageCopyOptions{Query: "*"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "embed page files") {
+		t.Fatalf("expected embedding error, got %v", err)
+	}
+
+	result, err := CopyPages(
+		context.Background(),
+		api.New(srv.URL, "").WithSite("source"),
+		api.New(srv.URL, "").WithSite("target"),
+		SiteRef{Site: "source"},
+		SiteRef{Site: "target"},
+		PageCopyOptions{Query: "*", AllowErrors: true},
+	)
+	if err != nil {
+		t.Fatalf("copy pages with AllowErrors: %v", err)
+	}
+	if patchCalled {
+		t.Fatalf("page with failed file embedding should not be patched")
+	}
+	if len(result.Items) != 1 || result.Items[0].Action != "skip" {
+		t.Fatalf("expected skipped item, got %#v", result.Items)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(strings.Join(result.Warnings, "\n"), "embed page files") {
+		t.Fatalf("expected embedding warning, got %#v", result.Warnings)
 	}
 }

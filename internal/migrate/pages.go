@@ -67,9 +67,17 @@ func CopyPages(ctx context.Context, fromClient, toClient *api.Client, fromRef, t
 		emitStageItem(ctx, "Pages", fullpath, int64(i+1), int64(len(docs)))
 
 		embedWarnings := embedPageFiles(ctx, fromClient, doc)
-		for _, w := range embedWarnings {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("page %s: %s", fullpath, w))
+		if len(embedWarnings) > 0 {
+			err := fmt.Errorf("page %s: embed page files: %s", fullpath, strings.Join(embedWarnings, "; "))
+			if !opts.AllowErrors {
+				return result, err
+			}
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%v — skipped", err))
+			result.Items = append(result.Items, PageCopyItem{Fullpath: fullpath, Action: "skip"})
+			continue
 		}
+		// Embed file editables before replace writes; page reads expose file.url,
+		// but page writes need a File payload.
 		sanitizePageDocument(doc)
 		if media != nil {
 			media.RewriteValue("pages."+fullpath, doc)
@@ -98,7 +106,7 @@ func CopyPages(ctx context.Context, fromClient, toClient *api.Client, fromRef, t
 			action = "update"
 			if dryRun {
 				action = "dry-run:" + action
-			} else if _, err := api.PatchPageDocument(ctx, toClient, fullpath, doc); err != nil {
+			} else if _, err := api.PatchPageDocument(ctx, toClient, fullpath, doc, api.WithReplace(true)); err != nil {
 				writeErr = fmt.Errorf("update page %s: %w", fullpath, err)
 			}
 		case api.IsNotFound(err):
@@ -127,13 +135,8 @@ func CopyPages(ctx context.Context, fromClient, toClient *api.Client, fromRef, t
 }
 
 func sanitizePageDocument(doc api.PageDocument) {
-	delete(doc, "id")
-	delete(doc, "created_at")
-	delete(doc, "updated_at")
-	delete(doc, "creator_id")
-	delete(doc, "updater_id")
+	api.NormalizePageDocumentForWrite(doc)
 	delete(doc, "parent")
-	delete(doc, "parent_path")
 }
 
 // topoSortPages sorts page documents so parents come before children.

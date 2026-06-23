@@ -59,7 +59,10 @@ func TestExpandPageAttachmentPaths(t *testing.T) {
 			"hero": map[string]any{
 				"file": map[string]any{
 					"attachment_path": filePath,
+					"attachment_url":  "https://cdn.example.test/new",
 					"url":             "https://example.test/old",
+					"public_url":      "https://example.test/public",
+					"permanent_url":   "https://example.test/permanent",
 				},
 			},
 		},
@@ -73,14 +76,408 @@ func TestExpandPageAttachmentPaths(t *testing.T) {
 	if file["attachment"] != base64.StdEncoding.EncodeToString([]byte("hello")) {
 		t.Fatalf("unexpected attachment payload: %#v", file["attachment"])
 	}
+	if file["__type"] != "File" {
+		t.Fatalf("expected __type File, got %#v", file["__type"])
+	}
 	if file["filename"] != "hero.txt" {
 		t.Fatalf("unexpected filename: %#v", file["filename"])
 	}
 	if _, ok := file["url"]; ok {
 		t.Fatalf("url should be removed, got %#v", file["url"])
 	}
+	if _, ok := file["public_url"]; ok {
+		t.Fatalf("public_url should be removed, got %#v", file["public_url"])
+	}
+	if _, ok := file["permanent_url"]; ok {
+		t.Fatalf("permanent_url should be removed, got %#v", file["permanent_url"])
+	}
+	if _, ok := file["attachment_url"]; ok {
+		t.Fatalf("attachment_url should be removed when attachment_path wins")
+	}
 	if _, ok := file["attachment_path"]; ok {
 		t.Fatalf("attachment_path should be removed")
+	}
+}
+
+func TestExpandPageAttachmentPathsRewritesAttachmentURL(t *testing.T) {
+	doc := PageDocument{
+		"items": map[string]any{
+			"hero": map[string]any{
+				"file": map[string]any{
+					"attachment_url":  "https://cdn.example.test/hero.jpg",
+					"attachment_path": "",
+				},
+			},
+		},
+	}
+
+	if err := ExpandPageAttachmentPaths(doc); err != nil {
+		t.Fatalf("expand attachment_url: %v", err)
+	}
+
+	file := doc["items"].(map[string]any)["hero"].(map[string]any)["file"].(map[string]any)
+	if file["__type"] != "FileRef" {
+		t.Fatalf("expected __type FileRef, got %#v", file["__type"])
+	}
+	if file["source"] != "https://cdn.example.test/hero.jpg" {
+		t.Fatalf("unexpected source: %#v", file["source"])
+	}
+	if _, ok := file["attachment_url"]; ok {
+		t.Fatalf("attachment_url should be removed")
+	}
+	if _, ok := file["attachment_path"]; ok {
+		t.Fatalf("attachment_path should be removed")
+	}
+}
+
+func TestExpandPageAttachmentPathsAllowsDirectFileRefSource(t *testing.T) {
+	doc := PageDocument{
+		"items": map[string]any{
+			"hero": map[string]any{
+				"file": map[string]any{
+					"__type":        "FileRef",
+					"source":        "https://cdn.example.test/hero.jpg",
+					"url":           "https://cdn.example.test/read-only-url.jpg",
+					"public_url":    "https://cdn.example.test/read-only-public.jpg",
+					"permanent_url": "https://cdn.example.test/read-only-permanent.jpg",
+				},
+			},
+		},
+	}
+
+	if err := ExpandPageAttachmentPaths(doc); err != nil {
+		t.Fatalf("direct FileRef source should be accepted: %v", err)
+	}
+
+	stats := PageStats(doc)
+	if stats.AttachmentCount != 1 {
+		t.Fatalf("FileRef source should count as attachment, got %d", stats.AttachmentCount)
+	}
+	file := doc["items"].(map[string]any)["hero"].(map[string]any)["file"].(map[string]any)
+	if _, ok := file["url"]; ok {
+		t.Fatalf("read-only url should be removed from direct FileRef payload")
+	}
+	if _, ok := file["public_url"]; ok {
+		t.Fatalf("read-only public_url should be removed from direct FileRef payload")
+	}
+	if _, ok := file["permanent_url"]; ok {
+		t.Fatalf("read-only permanent_url should be removed from direct FileRef payload")
+	}
+}
+
+func TestExpandPageAttachmentPathsMarksRawAttachmentAsFile(t *testing.T) {
+	doc := PageDocument{
+		"items": map[string]any{
+			"hero": map[string]any{
+				"file": map[string]any{
+					"attachment":    base64.StdEncoding.EncodeToString([]byte("hello")),
+					"filename":      "hero.txt",
+					"url":           "https://cdn.example.test/read-only-url.jpg",
+					"public_url":    "https://cdn.example.test/read-only-public.jpg",
+					"permanent_url": "https://cdn.example.test/read-only-permanent.jpg",
+				},
+			},
+		},
+	}
+
+	if err := ExpandPageAttachmentPaths(doc); err != nil {
+		t.Fatalf("raw attachment should be accepted: %v", err)
+	}
+
+	file := doc["items"].(map[string]any)["hero"].(map[string]any)["file"].(map[string]any)
+	if file["__type"] != "File" {
+		t.Fatalf("expected raw attachment to be marked as File, got %#v", file["__type"])
+	}
+	if _, ok := file["url"]; ok {
+		t.Fatalf("read-only url should be removed from raw attachment payload")
+	}
+	if _, ok := file["public_url"]; ok {
+		t.Fatalf("read-only public_url should be removed from raw attachment payload")
+	}
+	if _, ok := file["permanent_url"]; ok {
+		t.Fatalf("read-only permanent_url should be removed from raw attachment payload")
+	}
+}
+
+func TestExpandPageAttachmentPathsErrorsOnEmptyFile(t *testing.T) {
+	doc := PageDocument{
+		"items": map[string]any{
+			"hero": map[string]any{
+				"file": map[string]any{
+					"filename": "hero.jpg",
+				},
+			},
+		},
+	}
+
+	err := ExpandPageAttachmentPaths(doc)
+	if err == nil || !strings.Contains(err.Error(), "refusing to write an empty file") {
+		t.Fatalf("expected empty-file error, got %v", err)
+	}
+}
+
+func TestExpandPageAttachmentPathsErrorsOnURLOnlyFile(t *testing.T) {
+	doc := PageDocument{
+		"items": map[string]any{
+			"hero": map[string]any{
+				"file": map[string]any{
+					"url": "https://cdn.example.test/hero.jpg",
+				},
+			},
+		},
+	}
+
+	err := ExpandPageAttachmentPaths(doc)
+	if err == nil || !strings.Contains(err.Error(), "refusing to write an empty file") {
+		t.Fatalf("expected url-only file error, got %v", err)
+	}
+}
+
+func TestExpandPageAttachmentPathsCanDropURLOnlyFile(t *testing.T) {
+	doc := PageDocument{
+		"items": map[string]any{
+			"hero": map[string]any{
+				"type": "file",
+				"file": map[string]any{
+					"url": "https://cdn.example.test/hero.jpg",
+				},
+			},
+		},
+	}
+
+	err := ExpandPageAttachmentPathsWithOptions(doc, PageAttachmentExpansionOptions{DropReadOnlyFileURL: true})
+	if err != nil {
+		t.Fatalf("drop url-only file should not error: %v", err)
+	}
+	hero := doc["items"].(map[string]any)["hero"].(map[string]any)
+	if _, ok := hero["file"]; ok {
+		t.Fatalf("url-only file should be dropped from write payload, got %#v", hero["file"])
+	}
+}
+
+func TestExpandPageAttachmentPathsCanAllowEmptyFile(t *testing.T) {
+	doc := PageDocument{
+		"items": map[string]any{
+			"hero": map[string]any{
+				"file": map[string]any{
+					"filename": "hero.jpg",
+				},
+			},
+		},
+	}
+
+	err := ExpandPageAttachmentPathsWithOptions(doc, PageAttachmentExpansionOptions{AllowEmptyFile: true})
+	if err != nil {
+		t.Fatalf("allow empty file should skip guard: %v", err)
+	}
+}
+
+func TestNormalizePageDocumentForWrite(t *testing.T) {
+	doc := PageDocument{
+		"id":          "p1",
+		"created_at":  "2020-01-01",
+		"updated_at":  "2020-01-02",
+		"creator_id":  "u1",
+		"updater_id":  "u2",
+		"parent":      "about",
+		"parent_path": "about",
+		"title":       "About",
+		"items":       map[string]any{},
+	}
+
+	NormalizePageDocumentForWrite(doc)
+
+	for _, key := range []string{"id", "created_at", "updated_at", "creator_id", "updater_id", "parent_path"} {
+		if _, ok := doc[key]; ok {
+			t.Fatalf("expected %q to be removed", key)
+		}
+	}
+	if doc["parent"] != "about" {
+		t.Fatalf("parent should be preserved as writable fullpath, got %#v", doc["parent"])
+	}
+	if doc["title"] != "About" {
+		t.Fatalf("title should be preserved, got %#v", doc["title"])
+	}
+	if _, ok := doc["items"]; !ok {
+		t.Fatalf("items should be preserved")
+	}
+}
+
+func TestPatchPageDocumentReplaceParam(t *testing.T) {
+	tests := []struct {
+		name        string
+		opts        []RequestOption
+		wantReplace bool
+	}{
+		{name: "default merges without replace", wantReplace: false},
+		{name: "with replace adds replace=1", opts: []RequestOption{WithReplace(true)}, wantReplace: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotRawQuery string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotRawQuery = r.URL.RawQuery
+				_, _ = w.Write([]byte(`{"id":"p1"}`))
+			}))
+			defer srv.Close()
+
+			_, err := PatchPageDocument(context.Background(), New(srv.URL, ""), "about", PageDocument{"title": "X"}, tt.opts...)
+			if err != nil {
+				t.Fatalf("patch page: %v", err)
+			}
+
+			hasReplace := strings.Contains(gotRawQuery, "replace=1")
+			if hasReplace != tt.wantReplace {
+				t.Fatalf("replace=1 present=%v, want %v (raw query %q)", hasReplace, tt.wantReplace, gotRawQuery)
+			}
+		})
+	}
+}
+
+func TestPageShape(t *testing.T) {
+	doc := PageDocument{
+		"items": map[string]any{
+			"intro": map[string]any{
+				"type": "string",
+			},
+			"blocks": map[string]any{
+				"type": "canvas",
+				"repeatables": []any{
+					map[string]any{
+						"slug": "text_block",
+						"items": map[string]any{
+							"body": map[string]any{"type": "text"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	shape, ok := PageShape(doc).(map[string]any)
+	if !ok {
+		t.Fatalf("expected map shape, got %T", PageShape(doc))
+	}
+
+	intro := shape["intro"].(map[string]any)
+	if intro["type"] != "string" {
+		t.Fatalf("unexpected intro type: %#v", intro["type"])
+	}
+	if _, ok := intro["repeatables"]; ok {
+		t.Fatalf("non-canvas editable should have no repeatables: %#v", intro)
+	}
+
+	blocks := shape["blocks"].(map[string]any)
+	reps := blocks["repeatables"].([]any)
+	if len(reps) != 1 {
+		t.Fatalf("expected 1 repeatable, got %d", len(reps))
+	}
+	rep := reps[0].(map[string]any)
+	if rep["slug"] != "text_block" {
+		t.Fatalf("unexpected slug: %#v", rep["slug"])
+	}
+	nested := rep["items"].(map[string]any)["body"].(map[string]any)
+	if nested["type"] != "text" {
+		t.Fatalf("unexpected nested type: %#v", nested["type"])
+	}
+}
+
+func TestPageCanvasRepeatableCounts(t *testing.T) {
+	doc := PageDocument{
+		"items": map[string]any{
+			"intro": map[string]any{"type": "string"},
+			"blocks": map[string]any{
+				"type": "canvas",
+				"repeatables": []any{
+					map[string]any{"slug": "a"},
+					map[string]any{"slug": "b"},
+				},
+			},
+		},
+	}
+
+	counts := PageCanvasRepeatableCounts(doc)
+	if counts["blocks"] != 2 {
+		t.Fatalf("expected 2 repeatables for blocks, got %d", counts["blocks"])
+	}
+	if _, ok := counts["intro"]; ok {
+		t.Fatalf("non-canvas editable should be omitted: %#v", counts)
+	}
+}
+
+func TestPageCanvasRepeatableCountsIncludesNestedCanvasPaths(t *testing.T) {
+	doc := PageDocument{
+		"items": map[string]any{
+			"blocks": map[string]any{
+				"type": "canvas",
+				"repeatables": []any{
+					map[string]any{
+						"slug": "section",
+						"items": map[string]any{
+							"gallery": map[string]any{
+								"type": "canvas",
+								"repeatables": []any{
+									map[string]any{"slug": "image"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	counts := PageCanvasRepeatableCounts(doc)
+	if counts["blocks"] != 1 {
+		t.Fatalf("top-level canvas count = %d, want 1", counts["blocks"])
+	}
+	if counts["blocks.gallery"] != 1 {
+		t.Fatalf("nested canvas count = %d, want 1 (counts %#v)", counts["blocks.gallery"], counts)
+	}
+}
+
+func TestPageCanvasRepeatableInstanceCountsIncludesNestedIndexes(t *testing.T) {
+	doc := PageDocument{
+		"items": map[string]any{
+			"blocks": map[string]any{
+				"type": "canvas",
+				"repeatables": []any{
+					map[string]any{
+						"slug": "section",
+						"items": map[string]any{
+							"gallery": map[string]any{
+								"type": "canvas",
+								"repeatables": []any{
+									map[string]any{"slug": "image"},
+									map[string]any{"slug": "image"},
+								},
+							},
+						},
+					},
+					map[string]any{
+						"slug": "section",
+						"items": map[string]any{
+							"gallery": map[string]any{
+								"type":        "canvas",
+								"repeatables": []any{map[string]any{"slug": "image"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	counts := PageCanvasRepeatableInstanceCounts(doc)
+	if counts["blocks"] != 2 {
+		t.Fatalf("top-level canvas count = %d, want 2", counts["blocks"])
+	}
+	if counts["blocks[0].gallery"] != 2 {
+		t.Fatalf("first nested canvas count = %d, want 2 (counts %#v)", counts["blocks[0].gallery"], counts)
+	}
+	if counts["blocks[1].gallery"] != 1 {
+		t.Fatalf("second nested canvas count = %d, want 1 (counts %#v)", counts["blocks[1].gallery"], counts)
 	}
 }
 

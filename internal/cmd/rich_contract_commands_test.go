@@ -31,7 +31,7 @@ func TestPagesUpdateRejectsDeepInlineAssignments(t *testing.T) {
 	}
 }
 
-func TestPagesUpdateUsesPatchReplaceAndPreservesDocument(t *testing.T) {
+func TestPagesUpdateMergesByDefaultAndPreservesDocument(t *testing.T) {
 	var gotMethod string
 	var gotReplace string
 	var gotBody map[string]any
@@ -67,8 +67,8 @@ func TestPagesUpdateUsesPatchReplaceAndPreservesDocument(t *testing.T) {
 	if gotMethod != http.MethodPatch {
 		t.Fatalf("expected PATCH, got %s", gotMethod)
 	}
-	if gotReplace != "1" {
-		t.Fatalf("expected replace=1, got %q", gotReplace)
+	if gotReplace != "" {
+		t.Fatalf("expected no replace param by default (merge), got %q", gotReplace)
 	}
 	if gotBody["title"] != "New" {
 		t.Fatalf("expected merged title, got %#v", gotBody["title"])
@@ -126,6 +126,84 @@ func TestPagesGetDownloadsAssetsAndReturnsJSONDocument(t *testing.T) {
 	}
 	if _, ok := file["url"]; ok {
 		t.Fatalf("expected url removed after download")
+	}
+}
+
+func TestPagesGetShapeDoesNotDownloadAssets(t *testing.T) {
+	downloadCalled := false
+	assetURL := "/assets/hero.jpg"
+	assetBase := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/pages/about":
+			_, _ = w.Write([]byte(`{"id":"p1","fullpath":"about","items":{"hero":{"type":"file","file":{"url":"` + assetBase + assetURL + `","filename":"hero.jpg"}}}}`))
+		case assetURL:
+			downloadCalled = true
+			_, _ = w.Write([]byte("page-asset"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	assetBase = srv.URL
+
+	ctx, out, errOut := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	dir := t.TempDir()
+	cmd := &PagesGetCmd{
+		Page:           "about",
+		DownloadAssets: dir,
+		Shape:          true,
+	}
+
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run pages get --shape: %v", err)
+	}
+	if downloadCalled {
+		t.Fatalf("--shape should not download assets")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read download dir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("--shape should leave download dir empty, got %d entries", len(entries))
+	}
+	if !strings.Contains(errOut.String(), "--shape ignores --download-assets") {
+		t.Fatalf("expected ignored download warning on stderr, got %q", errOut.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatalf("decode shape json: %v", err)
+	}
+	if _, ok := body["hero"]; !ok {
+		t.Fatalf("expected shape output, got %#v", body)
+	}
+}
+
+func TestPagesGetShapeWarnsWhenPlainModeIsIgnored(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/pages/about" {
+			_, _ = w.Write([]byte(`{"id":"p1","fullpath":"about","items":{"hero":{"type":"string"}}}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	ctx, out, errOut := newContractTestContext(t, srv.URL, output.Mode{Plain: true})
+	cmd := &PagesGetCmd{
+		Page:  "about",
+		Shape: true,
+	}
+
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run pages get --shape --plain: %v", err)
+	}
+	if !strings.Contains(out.String(), "hero (string)") {
+		t.Fatalf("expected shape tree output, got %q", out.String())
+	}
+	if !strings.Contains(errOut.String(), "--shape ignores --plain") {
+		t.Fatalf("expected ignored plain warning on stderr, got %q", errOut.String())
 	}
 }
 

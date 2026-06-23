@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -12,6 +14,7 @@ import (
 type PagesGetCmd struct {
 	QueryFlags     `embed:""`
 	DownloadAssets string `help:"Download page file editables into DIR and rewrite JSON to attachment_path refs"`
+	Shape          bool   `help:"Emit canvas/repeatable skeleton instead of content"`
 	Page           string `required:"" help:"Page fullpath"`
 }
 
@@ -36,6 +39,22 @@ func (c *PagesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return fmt.Errorf("get page: %w", err)
 	}
+
+	mode := output.FromContext(ctx)
+	if c.Shape {
+		if c.DownloadAssets != "" {
+			_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Err, "warning: --shape ignores --download-assets\n")
+		}
+		if mode.Plain {
+			_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Err, "warning: --shape ignores --plain\n")
+		}
+		shape := api.PageShape(page)
+		if mode.JSON {
+			return output.JSON(ctx, shape)
+		}
+		return printPageShape(ctx, shape)
+	}
+
 	if c.DownloadAssets != "" {
 		_, warnings, err := api.DownloadPageAssets(ctx, client, page, c.DownloadAssets)
 		if err != nil {
@@ -46,7 +65,6 @@ func (c *PagesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		}
 	}
 
-	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, page)
 	}
@@ -98,6 +116,52 @@ func (c *PagesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if c.DownloadAssets != "" {
 		if _, err := output.Fprintf(ctx, "Assets dir:   %s\n", c.DownloadAssets); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// printPageShape renders the page skeleton as an indented, sorted tree.
+func printPageShape(ctx context.Context, shape any) error {
+	root, ok := shape.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return writePageShapeItems(ctx, root, 0)
+}
+
+func writePageShapeItems(ctx context.Context, items map[string]any, depth int) error {
+	indent := strings.Repeat("  ", depth)
+	names := make([]string, 0, len(items))
+	for name := range items {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		entry, _ := items[name].(map[string]any)
+		typ, _ := entry["type"].(string)
+		if _, err := output.Fprintf(ctx, "%s%s (%s)\n", indent, name, typ); err != nil {
+			return err
+		}
+		repeatables, ok := entry["repeatables"].([]any)
+		if !ok {
+			continue
+		}
+		for _, raw := range repeatables {
+			rep, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			slug, _ := rep["slug"].(string)
+			if _, err := output.Fprintf(ctx, "%s  - %s\n", indent, slug); err != nil {
+				return err
+			}
+			if childItems, ok := rep["items"].(map[string]any); ok && len(childItems) > 0 {
+				if err := writePageShapeItems(ctx, childItems, depth+2); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil

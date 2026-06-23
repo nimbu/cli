@@ -23,6 +23,13 @@ type PageDocumentStats struct {
 	EditableCount   int
 }
 
+// PageAttachmentExpansionOptions configures file editable expansion for writes.
+type PageAttachmentExpansionOptions struct {
+	AllowEmptyFile      bool
+	DropEmptyFile       bool
+	DropReadOnlyFileURL bool
+}
+
 // GetPageDocument fetches the full page document by fullpath.
 func GetPageDocument(ctx context.Context, c *Client, fullpath string, opts ...RequestOption) (PageDocument, error) {
 	var doc PageDocument
@@ -33,15 +40,160 @@ func GetPageDocument(ctx context.Context, c *Client, fullpath string, opts ...Re
 	return doc, nil
 }
 
-// PatchPageDocument updates a page document with replace semantics.
+// PatchPageDocument updates a page document. The caller controls merge vs.
+// replace semantics via opts (see WithReplace); by default the API merges.
 func PatchPageDocument(ctx context.Context, c *Client, fullpath string, doc PageDocument, opts ...RequestOption) (PageDocument, error) {
 	var out PageDocument
 	path := "/pages/" + neturl.PathEscape(NormalizePageFullpath(fullpath))
-	opts = append(opts, WithParam("replace", "1"))
 	if err := c.Patch(ctx, path, doc, &out, opts...); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// pageReadOnlyKeys are server-managed top-level keys that must never be written back.
+var pageReadOnlyKeys = []string{
+	"id",
+	"created_at",
+	"updated_at",
+	"creator_id",
+	"updater_id",
+	"parent_path",
+}
+
+// NormalizePageDocumentForWrite removes server-managed top-level keys so the
+// document can be safely sent on create/update requests.
+func NormalizePageDocumentForWrite(doc PageDocument) {
+	for _, key := range pageReadOnlyKeys {
+		delete(doc, key)
+	}
+}
+
+// PageCanvasRepeatableCounts returns, for each canvas editable path, the number
+// of repeatables it contains. Nested paths use dot notation and aggregate
+// repeatables across repeated instances of the same editable path.
+func PageCanvasRepeatableCounts(doc PageDocument) map[string]int {
+	counts := map[string]int{}
+	items, ok := mapValue(doc["items"])
+	if !ok {
+		return counts
+	}
+	pageCanvasRepeatableCounts(items, "", counts)
+	return counts
+}
+
+func pageCanvasRepeatableCounts(items map[string]any, prefix string, counts map[string]int) {
+	for name, rawEditable := range items {
+		editable, ok := mapValue(rawEditable)
+		if !ok {
+			continue
+		}
+		path := name
+		if prefix != "" {
+			path = prefix + "." + name
+		}
+		repeatables, ok := sliceValue(editable["repeatables"])
+		if !ok {
+			continue
+		}
+		counts[path] += len(repeatables)
+		for _, rawRepeatable := range repeatables {
+			repeatable, ok := mapValue(rawRepeatable)
+			if !ok {
+				continue
+			}
+			childItems, ok := mapValue(repeatable["items"])
+			if !ok {
+				continue
+			}
+			pageCanvasRepeatableCounts(childItems, path, counts)
+		}
+	}
+}
+
+// PageCanvasRepeatableInstanceCounts returns repeatable counts for each canvas
+// instance. Nested paths include repeatable indexes, e.g. blocks[0].gallery.
+func PageCanvasRepeatableInstanceCounts(doc PageDocument) map[string]int {
+	counts := map[string]int{}
+	items, ok := mapValue(doc["items"])
+	if !ok {
+		return counts
+	}
+	pageCanvasRepeatableInstanceCounts(items, "", counts)
+	return counts
+}
+
+func pageCanvasRepeatableInstanceCounts(items map[string]any, prefix string, counts map[string]int) {
+	for name, rawEditable := range items {
+		editable, ok := mapValue(rawEditable)
+		if !ok {
+			continue
+		}
+		currentPath := name
+		if prefix != "" {
+			currentPath = prefix + "." + name
+		}
+		repeatables, ok := sliceValue(editable["repeatables"])
+		if !ok {
+			continue
+		}
+		counts[currentPath] = len(repeatables)
+		for index, rawRepeatable := range repeatables {
+			repeatable, ok := mapValue(rawRepeatable)
+			if !ok {
+				continue
+			}
+			childItems, ok := mapValue(repeatable["items"])
+			if !ok {
+				continue
+			}
+			pageCanvasRepeatableInstanceCounts(childItems, fmt.Sprintf("%s[%d]", currentPath, index), counts)
+		}
+	}
+}
+
+// PageShape returns a skeleton of the page's editables: editable name -> type,
+// and for canvases the list of repeatables with their slug and nested skeleton.
+func PageShape(doc PageDocument) any {
+	items, ok := mapValue(doc["items"])
+	if !ok {
+		return map[string]any{}
+	}
+	return pageShapeItems(items)
+}
+
+func pageShapeItems(items map[string]any) map[string]any {
+	shape := map[string]any{}
+	for name, rawEditable := range items {
+		editable, ok := mapValue(rawEditable)
+		if !ok {
+			continue
+		}
+		entry := map[string]any{
+			"type": stringValue(editable["type"]),
+		}
+		if repeatables, ok := sliceValue(editable["repeatables"]); ok {
+			reps := make([]any, 0, len(repeatables))
+			for _, rawRepeatable := range repeatables {
+				repeatable, ok := mapValue(rawRepeatable)
+				if !ok {
+					continue
+				}
+				rep := map[string]any{
+					"slug": stringValue(repeatable["slug"]),
+				}
+				if childItems, ok := mapValue(repeatable["items"]); ok {
+					rep["items"] = pageShapeItems(childItems)
+				} else {
+					rep["items"] = map[string]any{}
+				}
+				reps = append(reps, rep)
+			}
+			entry["repeatables"] = reps
+		}
+		shape[name] = entry
+	}
+	return shape
 }
 
 // NormalizePageFullpath strips leading slashes and whitespace from a page fullpath.
@@ -103,32 +255,84 @@ func PageStats(doc PageDocument) PageDocumentStats {
 	return stats
 }
 
-// ExpandPageAttachmentPaths loads local file refs from attachment_path and rewrites them for API upload.
+// ExpandPageAttachmentPaths prepares file editables for an API write:
+//   - attachment_path: read the local file, base64-encode it, mark __type "File"
+//   - attachment_url:   rewrite the file to a {__type:FileRef, source:<url>} ref
+//
+// A file editable that ends up with neither an inline attachment nor a writable
+// source is an error, since writing it would silently clear the asset.
 func ExpandPageAttachmentPaths(doc PageDocument) error {
-	return WalkPageEditables(doc, func(_ string, editable map[string]any) error {
+	return ExpandPageAttachmentPathsWithOptions(doc, PageAttachmentExpansionOptions{})
+}
+
+// ExpandPageAttachmentPathsWithOptions prepares file editables for an API write
+// with explicit handling for dangerous empty-file payloads.
+func ExpandPageAttachmentPathsWithOptions(doc PageDocument, opts PageAttachmentExpansionOptions) error {
+	return WalkPageEditables(doc, func(name string, editable map[string]any) error {
 		file := PageEditableFile(editable)
 		if file == nil {
 			return nil
 		}
 
 		rawPath := stringValue(file["attachment_path"])
-		if rawPath == "" {
+		if rawPath != "" {
+			data, err := os.ReadFile(rawPath)
+			if err != nil {
+				return fmt.Errorf("read attachment_path %q: %w", rawPath, err)
+			}
+
+			file["__type"] = "File"
+			file["attachment"] = base64.StdEncoding.EncodeToString(data)
+			if stringValue(file["filename"]) == "" {
+				file["filename"] = filepath.Base(rawPath)
+			}
+			stripReadOnlyFileWriteKeys(file)
 			return nil
 		}
 
-		data, err := os.ReadFile(rawPath)
-		if err != nil {
-			return fmt.Errorf("read attachment_path %q: %w", rawPath, err)
+		if stringValue(file["attachment"]) != "" {
+			file["__type"] = "File"
+			stripReadOnlyFileWriteKeys(file)
+			return nil
 		}
 
-		file["attachment"] = base64.StdEncoding.EncodeToString(data)
-		if stringValue(file["filename"]) == "" {
-			file["filename"] = filepath.Base(rawPath)
+		if attachmentURL := stringValue(file["attachment_url"]); attachmentURL != "" {
+			editable["file"] = map[string]any{
+				"__type": "FileRef",
+				"source": attachmentURL,
+			}
+			return nil
 		}
-		delete(file, "url")
-		delete(file, "attachment_path")
+
+		if stringValue(file["source"]) != "" {
+			file["__type"] = "FileRef"
+			stripReadOnlyFileWriteKeys(file)
+			return nil
+		}
+
+		if opts.DropReadOnlyFileURL && pageFileURL(file) != "" && !pageFileHasWritePayload(file) {
+			delete(editable, "file")
+			return nil
+		}
+
+		if opts.DropEmptyFile && !pageFileHasWritePayload(file) && pageFileURL(file) == "" {
+			delete(editable, "file")
+			return nil
+		}
+
+		if !opts.AllowEmptyFile && !pageFileHasWritePayload(file) {
+			return fmt.Errorf("file editable %q has no attachment, attachment_path, attachment_url, or source; refusing to write an empty file", name)
+		}
 		return nil
 	})
+}
+
+func stripReadOnlyFileWriteKeys(file map[string]any) {
+	delete(file, "url")
+	delete(file, "public_url")
+	delete(file, "permanent_url")
+	delete(file, "attachment_url")
+	delete(file, "attachment_path")
 }
 
 // DownloadPageAssets downloads remote file editables and rewrites them to local attachment_path refs.
@@ -233,7 +437,26 @@ func pageFileHasAttachment(file map[string]any) bool {
 		return true
 	case stringValue(file["attachment_path"]) != "":
 		return true
+	case stringValue(file["attachment_url"]) != "":
+		return true
+	case stringValue(file["source"]) != "":
+		return true
 	case pageFileURL(file) != "":
+		return true
+	default:
+		return false
+	}
+}
+
+func pageFileHasWritePayload(file map[string]any) bool {
+	switch {
+	case stringValue(file["attachment"]) != "":
+		return true
+	case stringValue(file["attachment_path"]) != "":
+		return true
+	case stringValue(file["attachment_url"]) != "":
+		return true
+	case stringValue(file["source"]) != "":
 		return true
 	default:
 		return false

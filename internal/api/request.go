@@ -53,6 +53,20 @@ func WithParam(key, value string) RequestOption {
 	}
 }
 
+// WithReplace sets the replace query parameter for destructive rebuilds.
+// It is a no-op when replace is false, leaving merge semantics in place.
+func WithReplace(replace bool) RequestOption {
+	return func(o *requestOptions) {
+		if !replace {
+			return
+		}
+		if o.Query == nil {
+			o.Query = make(map[string]string)
+		}
+		o.Query["replace"] = "1"
+	}
+}
+
 // WithHeader adds a request header.
 func WithHeader(key, value string) RequestOption {
 	return func(o *requestOptions) {

@@ -12,7 +12,8 @@ import (
 
 // UploadsCreateCmd uploads a file.
 type UploadsCreateCmd struct {
-	Source      string   `required:"" help:"Path to file to upload" name:"source"`
+	Source      string   `optional:"" help:"Path to file to upload" name:"source"`
+	File        string   `name:"file" short:"f" help:"Path to file to upload"`
 	Name        string   `help:"Override filename" short:"n"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=custom.jpg)"`
 }
@@ -21,6 +22,17 @@ type UploadsCreateCmd struct {
 func (c *UploadsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err := requireWrite(flags, "upload file"); err != nil {
 		return err
+	}
+
+	if c.Source != "" && c.File != "" {
+		return fmt.Errorf("use either --source or --file, not both")
+	}
+	source := c.Source
+	if source == "" {
+		source = c.File
+	}
+	if source == "" {
+		return fmt.Errorf("uploads create requires --source or --file")
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -63,11 +75,11 @@ func (c *UploadsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		filename = name
 	}
 	if filename == "" {
-		filename = filepath.Base(c.Source)
+		filename = filepath.Base(source)
 	}
 
 	task := output.ProgressFromContext(ctx).Transfer("upload "+filename, 0)
-	content, err := os.ReadFile(c.Source)
+	content, err := os.ReadFile(source)
 	if err != nil {
 		task.Fail(err)
 		return err

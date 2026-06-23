@@ -65,6 +65,15 @@ func PatchMenuDocument(ctx context.Context, c *Client, slug string, doc MenuDocu
 	return out, nil
 }
 
+// PostMenuDocument creates a menu document, preserving the nested items tree.
+func PostMenuDocument(ctx context.Context, c *Client, doc MenuDocument, opts ...RequestOption) (MenuDocument, error) {
+	var out MenuDocument
+	if err := c.Post(ctx, "/menus", doc, &out, opts...); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MenuDocumentHasItems returns whether the raw menu response explicitly includes a nested items tree.
 func MenuDocumentHasItems(doc MenuDocument) bool {
 	if doc == nil {
