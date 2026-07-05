@@ -12,4 +12,6 @@ pre-push:
   parallel: true
   commands:
     test:
-      run: make test
+      # git sets GIT_DIR/GIT_INDEX_FILE for hooks; in linked worktrees these
+      # leak into test subprocesses and break git-in-tempdir tests
+      run: env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE make test
