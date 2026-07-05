@@ -588,7 +588,7 @@ func TestGeneratedCompletionsDoNotRepeatAppsCodeCommand(t *testing.T) {
 	if !strings.Contains(zsh, `if (( CURRENT != 3 )); then`) || !strings.Contains(zsh, `"apps code"`) {
 		t.Fatal("zsh apps code completions should be depth-gated")
 	}
-	if !strings.Contains(fish, "not __fish_seen_subcommand_from list get config push code") {
+	if !strings.Contains(fish, "not __fish_seen_subcommand_from list get config push logs code") {
 		t.Fatal("fish apps completions should stop after an app subcommand is selected")
 	}
 }

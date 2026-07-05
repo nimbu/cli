@@ -369,6 +369,8 @@ var completionValueFlags = map[string]bool{
 	"include":             true,
 	"job":                 true,
 	"key":                 true,
+	"level":               true,
+	"limit":               true,
 	"locale":              true,
 	"max-body-mb":         true,
 	"menu":                true,
