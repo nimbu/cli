@@ -113,7 +113,7 @@ func TestAppsLogsSinceDurationConvertsToEpoch(t *testing.T) {
 	}
 }
 
-func TestAppsLogsTailPrintsInitialLogsOldestFirstThenPollsSinceNewest(t *testing.T) {
+func TestAppsLogsTailPrintsInitialLogsOldestFirstThenDedupesBoundaryLogs(t *testing.T) {
 	originalPollInterval := appsLogsPollInterval
 	appsLogsPollInterval = 10 * time.Millisecond
 	defer func() { appsLogsPollInterval = originalPollInterval }()
@@ -139,6 +139,15 @@ func TestAppsLogsTailPrintsInitialLogsOldestFirstThenPollsSinceNewest(t *testing
 				t.Fatalf("poll since = %q", got)
 			}
 			_, _ = w.Write([]byte(`[
+				{"id":"new","time":1751716801.456,"level":"ERROR","data":"new","created_at":"2026-07-05T12:00:01.456Z","context":null},
+				{"id":"same-time","time":1751716801.456,"level":"INFO","data":"same time","created_at":"2026-07-05T12:00:01.456Z","context":null},
+				{"id":"next","time":1751716802.789,"level":"WARN","data":"next","created_at":"2026-07-05T12:00:02.789Z","context":null}
+			]`))
+		case 3:
+			if got := r.URL.Query().Get("since"); got != "1751716802.789" {
+				t.Fatalf("second poll since = %q", got)
+			}
+			_, _ = w.Write([]byte(`[
 				{"id":"next","time":1751716802.789,"level":"WARN","data":"next","created_at":"2026-07-05T12:00:02.789Z","context":null}
 			]`))
 			go func() {
@@ -162,6 +171,7 @@ func TestAppsLogsTailPrintsInitialLogsOldestFirstThenPollsSinceNewest(t *testing
 	nextTime := localLogTime(t, "2026-07-05T12:00:02.789Z")
 	want := oldTime + " INFO  old\n" +
 		newTime + " ERROR new\n" +
+		newTime + " INFO  same time\n" +
 		nextTime + " WARN  next\n"
 	if stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)

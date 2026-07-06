@@ -95,8 +95,10 @@ func (c *AppsLogsCmd) tail(ctx context.Context, client *api.Client, appKey strin
 	}
 
 	since := opts.Since
-	if newest := newestAppLogTime(logs); newest > 0 {
-		since = formatAppLogSince(newest)
+	cursor := newestAppLogTime(logs)
+	seenAtCursor := appLogIDsAtTime(logs, cursor)
+	if cursor > 0 {
+		since = formatAppLogSince(cursor)
 	} else if since == "" {
 		since = formatAppLogEpoch(appsLogsNow())
 	}
@@ -118,11 +120,13 @@ func (c *AppsLogsCmd) tail(ctx context.Context, client *api.Client, appKey strin
 				}
 				return fmt.Errorf("tail app logs: %w", err)
 			}
-			if err := writeAppLogs(ctx, logs); err != nil {
+			var printable []api.AppLog
+			printable, cursor, seenAtCursor = appLogsAfterTailCursor(logs, cursor, seenAtCursor)
+			if err := writeAppLogs(ctx, printable); err != nil {
 				return err
 			}
-			if newest := newestAppLogTime(logs); newest > 0 {
-				since = formatAppLogSince(newest)
+			if cursor > 0 {
+				since = formatAppLogSince(cursor)
 			}
 		}
 	}
@@ -237,15 +241,67 @@ func appLogTimestamp(log api.AppLog) time.Time {
 func newestAppLogTime(logs []api.AppLog) float64 {
 	var newest float64
 	for _, log := range logs {
-		value := log.Time
-		if value == 0 && !log.CreatedAt.IsZero() {
-			value = float64(log.CreatedAt.UnixNano()) / 1e9
-		}
-		if value > newest {
-			newest = value
+		if logTime := appLogCursorTime(log); logTime > newest {
+			newest = logTime
 		}
 	}
 	return newest
+}
+
+func appLogsAfterTailCursor(logs []api.AppLog, cursor float64, seenAtCursor map[string]struct{}) ([]api.AppLog, float64, map[string]struct{}) {
+	newest := cursor
+	printable := make([]api.AppLog, 0, len(logs))
+	for _, log := range logs {
+		logTime := appLogCursorTime(log)
+		if logTime > newest {
+			newest = logTime
+		}
+		id := strings.TrimSpace(log.ID)
+		if cursor > 0 && logTime == cursor && id != "" {
+			if _, seen := seenAtCursor[id]; seen {
+				continue
+			}
+		}
+		printable = append(printable, log)
+	}
+
+	nextSeenAtCursor := make(map[string]struct{})
+	if newest == cursor {
+		for id := range seenAtCursor {
+			nextSeenAtCursor[id] = struct{}{}
+		}
+	}
+	for _, log := range logs {
+		id := strings.TrimSpace(log.ID)
+		if id != "" && newest > 0 && appLogCursorTime(log) == newest {
+			nextSeenAtCursor[id] = struct{}{}
+		}
+	}
+	return printable, newest, nextSeenAtCursor
+}
+
+func appLogIDsAtTime(logs []api.AppLog, target float64) map[string]struct{} {
+	ids := make(map[string]struct{})
+	if target <= 0 {
+		return ids
+	}
+	for _, log := range logs {
+		id := strings.TrimSpace(log.ID)
+		if id != "" && appLogCursorTime(log) == target {
+			ids[id] = struct{}{}
+		}
+	}
+	return ids
+}
+
+func appLogCursorTime(log api.AppLog) float64 {
+	if log.Time != 0 {
+		return log.Time
+	}
+	if !log.CreatedAt.IsZero() {
+		return float64(log.CreatedAt.UnixNano()) / 1e9
+	}
+	return 0
 }
 
 func reverseAppLogs(logs []api.AppLog) {
