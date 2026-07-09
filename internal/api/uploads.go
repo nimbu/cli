@@ -21,3 +21,13 @@ func NewUploadCreatePayload(filename string, content []byte, contentType string)
 	}
 	return map[string]any{"source": source}
 }
+
+// NewUploadCreateFileRefPayload builds the JSON upload body for copying an existing Nimbu file.
+func NewUploadCreateFileRefPayload(sourceURI string) map[string]any {
+	return map[string]any{
+		"source": map[string]any{
+			"__type": "FileRef",
+			"source": sourceURI,
+		},
+	}
+}

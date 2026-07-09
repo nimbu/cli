@@ -360,6 +360,7 @@ var completionValueFlags = map[string]bool{
 	"fields":              true,
 	"filters":             true,
 	"file":                true,
+	"file-ref":            true,
 	"function":            true,
 	"from":                true,
 	"from-host":           true,

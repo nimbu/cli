@@ -283,6 +283,9 @@ nimbu customers resend-confirmation --customer alice@example.com --site my-site
 
 # Empty a channel with strict confirmation
 nimbu channels empty --channel news --site my-site --confirm news --force
+
+# Copy an existing Nimbu upload through FileRef
+nimbu uploads create --site target-site --file-ref nimbu://archive-site/uploads/507f1f77bcf86cd799439014
 ```
 
 ## Advanced Admin Endpoints

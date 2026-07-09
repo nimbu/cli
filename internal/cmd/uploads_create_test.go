@@ -138,6 +138,86 @@ func TestUploadsCreateFileFlagPostsSourceAttachmentJSON(t *testing.T) {
 	}
 }
 
+func TestUploadsCreateFileRefPostsSourceFileRefJSON(t *testing.T) {
+	t.Setenv("NIMBU_TOKEN", "test-token")
+
+	fileRef := "nimbu://archive/uploads/507f1f77bcf86cd799439014"
+
+	var captured map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s", r.Method)
+		}
+		if r.URL.Path != "/uploads" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Content-Type"); got != "application/json" {
+			t.Fatalf("content type = %q", got)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"id":"copied","name":"manual.pdf","url":"https://cdn.target.test/manual.pdf","size":1234}`))
+	}))
+	defer srv.Close()
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	flags := &RootFlags{APIURL: srv.URL, Site: "demo", Timeout: 2 * time.Second}
+	cfg := config.Defaults()
+	cfg.DefaultSite = "demo"
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, rootFlagsKey{}, flags)
+	ctx = context.WithValue(ctx, configKey{}, &cfg)
+	ctx = output.WithMode(ctx, output.Mode{JSON: true})
+	ctx = output.WithWriter(ctx, &output.Writer{Out: &out, Err: &errOut, Mode: output.Mode{JSON: true}, NoTTY: true})
+	ctx = output.WithProgress(ctx, output.NewDisabledProgress())
+
+	cmd := &UploadsCreateCmd{FileRef: fileRef}
+	if err := cmd.Run(ctx, flags); err != nil {
+		t.Fatalf("run uploads create: %v", err)
+	}
+
+	source, ok := captured["source"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing source payload: %#v", captured)
+	}
+	if source["__type"] != "FileRef" {
+		t.Fatalf("source type = %#v", source["__type"])
+	}
+	if source["source"] != fileRef {
+		t.Fatalf("source ref = %#v", source["source"])
+	}
+	if _, ok := source["attachment"]; ok {
+		t.Fatalf("FileRef payload should not include attachment: %#v", source)
+	}
+}
+
+func TestUploadsCreateRejectsNameWithFileRef(t *testing.T) {
+	t.Setenv("NIMBU_TOKEN", "test-token")
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	flags := &RootFlags{APIURL: "http://127.0.0.1:0", Site: "demo", Timeout: 2 * time.Second}
+	cfg := config.Defaults()
+	cfg.DefaultSite = "demo"
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, rootFlagsKey{}, flags)
+	ctx = context.WithValue(ctx, configKey{}, &cfg)
+	ctx = output.WithMode(ctx, output.Mode{JSON: true})
+	ctx = output.WithWriter(ctx, &output.Writer{Out: &out, Err: &errOut, Mode: output.Mode{JSON: true}, NoTTY: true})
+	ctx = output.WithProgress(ctx, output.NewDisabledProgress())
+
+	cmd := &UploadsCreateCmd{FileRef: "nimbu://archive/uploads/507f1f77bcf86cd799439014", Name: "renamed.pdf"}
+	err := cmd.Run(ctx, flags)
+	if err == nil {
+		t.Fatalf("expected error when --name is used with --file-ref")
+	}
+	if !strings.Contains(err.Error(), "--name cannot be used with --file-ref") {
+		t.Fatalf("error = %v, want mention of --name/--file-ref incompatibility", err)
+	}
+}
+
 func TestUploadsCreateRequiresSourceOrFile(t *testing.T) {
 	t.Setenv("NIMBU_TOKEN", "test-token")
 
@@ -158,8 +238,8 @@ func TestUploadsCreateRequiresSourceOrFile(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error when neither --source nor --file is set")
 	}
-	if !strings.Contains(err.Error(), "--source or --file") {
-		t.Fatalf("error = %v, want mention of --source or --file", err)
+	if !strings.Contains(err.Error(), "--source, --file, or --file-ref") {
+		t.Fatalf("error = %v, want mention of --source/--file/--file-ref", err)
 	}
 }
 
@@ -193,7 +273,7 @@ func TestUploadsCreateRejectsSourceAndFile(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error when both --source and --file are set")
 	}
-	if !strings.Contains(err.Error(), "use either --source or --file") {
-		t.Fatalf("error = %v, want mention of --source/--file XOR", err)
+	if !strings.Contains(err.Error(), "use only one of --source, --file, or --file-ref") {
+		t.Fatalf("error = %v, want mention of source selector XOR", err)
 	}
 }
