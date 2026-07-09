@@ -547,6 +547,10 @@ app into its local `dir`. `--only` accepts either remote names (`main.js`) or
 project-relative paths (`code/main.js`). Pull overwrites selected local files but
 does not delete local-only files.
 
+`nimbu apps logs --app <app>` reads cloud code logs for a local app name or app key.
+Use `--tail` to print the last `--limit` entries oldest-first and keep polling
+for new log entries.
+
 `nimbu sites copy` copies cloud code by default after content, theme,
 notifications, redirects, and translations. Pass `--skip-cloud-code` to leave
 target app code untouched.
@@ -560,6 +564,9 @@ nimbu apps code pull --app storefront --only main.js,code/jobs/daily.js
 nimbu apps push --app storefront
 nimbu apps push --app storefront --only code/main.js,code/hooks.js --only code/jobs/*.js
 nimbu apps push --app storefront --sync --force
+nimbu apps logs --app storefront --level error --query checkout
+nimbu apps logs --app storefront --tail
+nimbu apps logs --app storefront --job sync_products --level error
 ```
 
 ## Development
