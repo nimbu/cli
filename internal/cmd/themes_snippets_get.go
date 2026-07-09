@@ -41,14 +41,14 @@ func (c *ThemeSnippetsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var created, updated string
-	if !snippet.CreatedAt.IsZero() {
+	if snippet.CreatedAt != nil && !snippet.CreatedAt.IsZero() {
 		created = snippet.CreatedAt.Format("2006-01-02 15:04:05")
 	}
-	if !snippet.UpdatedAt.IsZero() {
+	if snippet.UpdatedAt != nil && !snippet.UpdatedAt.IsZero() {
 		updated = snippet.UpdatedAt.Format("2006-01-02 15:04:05")
 	}
 
-	return output.Detail(ctx, snippet, []any{snippet.ID, snippet.Name, snippet.UpdatedAt}, []output.Field{
+	return output.Detail(ctx, snippet, []any{snippet.ID, snippet.Name, updated}, []output.Field{
 		output.FAlways("ID", snippet.ID),
 		output.FAlways("Name", snippet.Name),
 		output.FAlways("URL", snippet.URL),

@@ -41,10 +41,10 @@ func (c *ThemeAssetsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var created, updated string
-	if !asset.CreatedAt.IsZero() {
+	if asset.CreatedAt != nil && !asset.CreatedAt.IsZero() {
 		created = asset.CreatedAt.Format("2006-01-02 15:04:05")
 	}
-	if !asset.UpdatedAt.IsZero() {
+	if asset.UpdatedAt != nil && !asset.UpdatedAt.IsZero() {
 		updated = asset.UpdatedAt.Format("2006-01-02 15:04:05")
 	}
 

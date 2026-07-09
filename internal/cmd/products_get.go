@@ -52,10 +52,10 @@ func (c *ProductsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if p.OnSale {
 		fields = append(fields, output.FAlways("Sale Price", fmt.Sprintf("%.2f", p.OnSalePrice)))
 	}
-	if !p.CreatedAt.IsZero() {
+	if p.CreatedAt != nil && !p.CreatedAt.IsZero() {
 		fields = append(fields, output.FAlways("Created", p.CreatedAt.Format("2006-01-02 15:04:05")))
 	}
-	if !p.UpdatedAt.IsZero() {
+	if p.UpdatedAt != nil && !p.UpdatedAt.IsZero() {
 		fields = append(fields, output.FAlways("Updated", p.UpdatedAt.Format("2006-01-02 15:04:05")))
 	}
 

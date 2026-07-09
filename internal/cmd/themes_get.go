@@ -89,12 +89,12 @@ func (c *ThemesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 			return err
 		}
 	}
-	if !theme.CreatedAt.IsZero() {
+	if theme.CreatedAt != nil && !theme.CreatedAt.IsZero() {
 		if _, err := output.Fprintf(ctx, "Created: %s\n", theme.CreatedAt.Format("2006-01-02 15:04:05")); err != nil {
 			return err
 		}
 	}
-	if !theme.UpdatedAt.IsZero() {
+	if theme.UpdatedAt != nil && !theme.UpdatedAt.IsZero() {
 		if _, err := output.Fprintf(ctx, "Updated: %s\n", theme.UpdatedAt.Format("2006-01-02 15:04:05")); err != nil {
 			return err
 		}

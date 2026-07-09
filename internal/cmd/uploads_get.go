@@ -33,7 +33,7 @@ func (c *UploadsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var created string
-	if !upload.CreatedAt.IsZero() {
+	if upload.CreatedAt != nil && !upload.CreatedAt.IsZero() {
 		created = upload.CreatedAt.Format("2006-01-02 15:04:05")
 	}
 

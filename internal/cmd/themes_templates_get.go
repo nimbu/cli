@@ -41,14 +41,14 @@ func (c *ThemeTemplatesGetCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 
 	var created, updated string
-	if !tmpl.CreatedAt.IsZero() {
+	if tmpl.CreatedAt != nil && !tmpl.CreatedAt.IsZero() {
 		created = tmpl.CreatedAt.Format("2006-01-02 15:04:05")
 	}
-	if !tmpl.UpdatedAt.IsZero() {
+	if tmpl.UpdatedAt != nil && !tmpl.UpdatedAt.IsZero() {
 		updated = tmpl.UpdatedAt.Format("2006-01-02 15:04:05")
 	}
 
-	return output.Detail(ctx, tmpl, []any{tmpl.ID, tmpl.Name, tmpl.UpdatedAt}, []output.Field{
+	return output.Detail(ctx, tmpl, []any{tmpl.ID, tmpl.Name, updated}, []output.Field{
 		output.FAlways("ID", tmpl.ID),
 		output.FAlways("Name", tmpl.Name),
 		output.FAlways("URL", tmpl.URL),

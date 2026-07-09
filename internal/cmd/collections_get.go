@@ -33,10 +33,10 @@ func (c *CollectionsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var created, updated string
-	if !col.CreatedAt.IsZero() {
+	if col.CreatedAt != nil && !col.CreatedAt.IsZero() {
 		created = col.CreatedAt.Format("2006-01-02 15:04:05")
 	}
-	if !col.UpdatedAt.IsZero() {
+	if col.UpdatedAt != nil && !col.UpdatedAt.IsZero() {
 		updated = col.UpdatedAt.Format("2006-01-02 15:04:05")
 	}
 

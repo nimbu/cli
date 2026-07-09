@@ -17,39 +17,39 @@ type Pagination struct {
 
 // User represents the current user.
 type User struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Admin     bool      `json:"admin,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	ID        string     `json:"id"`
+	Email     string     `json:"email"`
+	Name      string     `json:"name"`
+	Admin     bool       `json:"admin,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 }
 
 // Site represents a Nimbu site.
 type Site struct {
-	ID          string    `json:"id"`
-	Subdomain   string    `json:"subdomain"`
-	Name        string    `json:"name"`
-	Domain      string    `json:"domain,omitempty"`
-	Description string    `json:"description,omitempty"`
-	Locales     []string  `json:"locales,omitempty"`
-	Timezone    string    `json:"timezone,omitempty"`
-	CreatedAt   time.Time `json:"created_at,omitempty"`
-	UpdatedAt   time.Time `json:"updated_at,omitempty"`
+	ID          string     `json:"id"`
+	Subdomain   string     `json:"subdomain"`
+	Name        string     `json:"name"`
+	Domain      string     `json:"domain,omitempty"`
+	Description string     `json:"description,omitempty"`
+	Locales     []string   `json:"locales,omitempty"`
+	Timezone    string     `json:"timezone,omitempty"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
 // Domain represents a custom site domain.
 type Domain struct {
-	ID             string    `json:"id"`
-	Domain         string    `json:"domain"`
-	DNSCheck       bool      `json:"dns_check,omitempty"`
-	Primary        bool      `json:"primary,omitempty"`
-	SSLEnabled     bool      `json:"ssl_enabled,omitempty"`
-	RedirectDomain string    `json:"redirect_domain,omitempty"`
-	DefaultLocale  string    `json:"default_locale,omitempty"`
-	DefaultCountry string    `json:"default_country,omitempty"`
-	CreatedAt      time.Time `json:"created_at,omitempty"`
-	UpdatedAt      time.Time `json:"updated_at,omitempty"`
+	ID             string     `json:"id"`
+	Domain         string     `json:"domain"`
+	DNSCheck       bool       `json:"dns_check,omitempty"`
+	Primary        bool       `json:"primary,omitempty"`
+	SSLEnabled     bool       `json:"ssl_enabled,omitempty"`
+	RedirectDomain string     `json:"redirect_domain,omitempty"`
+	DefaultLocale  string     `json:"default_locale,omitempty"`
+	DefaultCountry string     `json:"default_country,omitempty"`
+	CreatedAt      *time.Time `json:"created_at,omitempty"`
+	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
 }
 
 // SenderDNSRecord represents a DNS verification record for a sender domain.
@@ -77,8 +77,8 @@ type SenderDomain struct {
 	LastCheckError      string            `json:"last_check_error,omitempty"`
 	ExpectedTXTRecord   string            `json:"expected_txt_record,omitempty"`
 	DNSRecords          []SenderDNSRecord `json:"dns_records,omitempty"`
-	CreatedAt           time.Time         `json:"created_at,omitempty"`
-	UpdatedAt           time.Time         `json:"updated_at,omitempty"`
+	CreatedAt           *time.Time        `json:"created_at,omitempty"`
+	UpdatedAt           *time.Time        `json:"updated_at,omitempty"`
 }
 
 // ActionStatus represents small state-changing action responses.
@@ -105,13 +105,13 @@ type LoginRequest struct {
 
 // Channel represents a content channel summary.
 type Channel struct {
-	ID          string    `json:"id"`
-	Slug        string    `json:"slug"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	EntryCount  *int      `json:"entry_count,omitempty"`
-	CreatedAt   time.Time `json:"created_at,omitempty"`
-	UpdatedAt   time.Time `json:"updated_at,omitempty"`
+	ID          string     `json:"id"`
+	Slug        string     `json:"slug"`
+	Name        string     `json:"name"`
+	Description string     `json:"description,omitempty"`
+	EntryCount  *int       `json:"entry_count,omitempty"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
 // ChannelSummary is the lightweight list/get projection for channels.
@@ -127,8 +127,8 @@ type Entry struct {
 	Locale    string         `json:"locale,omitempty"`
 	Published bool           `json:"published,omitempty"`
 	Fields    map[string]any `json:"fields,omitempty"`
-	CreatedAt time.Time      `json:"created_at,omitempty"`
-	UpdatedAt time.Time      `json:"updated_at,omitempty"`
+	CreatedAt *time.Time     `json:"created_at,omitempty"`
+	UpdatedAt *time.Time     `json:"updated_at,omitempty"`
 	Extra     map[string]any `json:"-"`
 }
 
@@ -140,7 +140,7 @@ func (e Entry) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(e.Extra) == 0 && !e.CreatedAt.IsZero() && !e.UpdatedAt.IsZero() {
+	if len(e.Extra) == 0 {
 		return data, nil
 	}
 	var merged map[string]any
@@ -148,12 +148,6 @@ func (e Entry) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	delete(merged, "Extra")
-	if e.CreatedAt.IsZero() {
-		delete(merged, "created_at")
-	}
-	if e.UpdatedAt.IsZero() {
-		delete(merged, "updated_at")
-	}
 	for k, v := range e.Extra {
 		if _, exists := merged[k]; !exists {
 			merged[k] = v
@@ -208,8 +202,8 @@ type Page struct {
 	Published  bool           `json:"published,omitempty"`
 	Locale     string         `json:"locale,omitempty"`
 	Fields     map[string]any `json:"fields,omitempty"`
-	CreatedAt  time.Time      `json:"created_at,omitempty"`
-	UpdatedAt  time.Time      `json:"updated_at,omitempty"`
+	CreatedAt  *time.Time     `json:"created_at,omitempty"`
+	UpdatedAt  *time.Time     `json:"updated_at,omitempty"`
 }
 
 // PageSummary is the lightweight list projection for pages.
@@ -222,8 +216,8 @@ type Menu struct {
 	Handle    string     `json:"handle,omitempty"`
 	Slug      string     `json:"slug,omitempty"`
 	Items     []MenuItem `json:"items,omitempty"`
-	CreatedAt time.Time  `json:"created_at,omitempty"`
-	UpdatedAt time.Time  `json:"updated_at,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 }
 
 // MenuSummary is the lightweight list projection for menus.
@@ -241,49 +235,49 @@ type MenuItem struct {
 
 // Product represents a product.
 type Product struct {
-	ID               string    `json:"id"`
-	URL              string    `json:"url,omitempty"`
-	Slug             string    `json:"slug,omitempty"`
-	Name             string    `json:"name"`
-	Description      string    `json:"description,omitempty"`
-	Status           string    `json:"status,omitempty"`
-	Price            float64   `json:"price,omitempty"`
-	Currency         string    `json:"currency,omitempty"`
-	SKU              string    `json:"sku,omitempty"`
-	Inventory        int       `json:"inventory,omitempty"`
-	Published        bool      `json:"published,omitempty"`
-	CurrentStock     int       `json:"current_stock,omitempty"`
-	Digital          bool      `json:"digital,omitempty"`
-	RequiresShipping bool      `json:"requires_shipping,omitempty"`
-	OnSale           bool      `json:"on_sale,omitempty"`
-	OnSalePrice      float64   `json:"on_sale_price,omitempty"`
-	VariantsEnabled  bool      `json:"variants_enabled,omitempty"`
-	KeepStock        bool      `json:"keep_stock,omitempty"`
-	CreatedAt        time.Time `json:"created_at,omitempty"`
-	UpdatedAt        time.Time `json:"updated_at,omitempty"`
+	ID               string     `json:"id"`
+	URL              string     `json:"url,omitempty"`
+	Slug             string     `json:"slug,omitempty"`
+	Name             string     `json:"name"`
+	Description      string     `json:"description,omitempty"`
+	Status           string     `json:"status,omitempty"`
+	Price            float64    `json:"price,omitempty"`
+	Currency         string     `json:"currency,omitempty"`
+	SKU              string     `json:"sku,omitempty"`
+	Inventory        int        `json:"inventory,omitempty"`
+	Published        bool       `json:"published,omitempty"`
+	CurrentStock     int        `json:"current_stock,omitempty"`
+	Digital          bool       `json:"digital,omitempty"`
+	RequiresShipping bool       `json:"requires_shipping,omitempty"`
+	OnSale           bool       `json:"on_sale,omitempty"`
+	OnSalePrice      float64    `json:"on_sale_price,omitempty"`
+	VariantsEnabled  bool       `json:"variants_enabled,omitempty"`
+	KeepStock        bool       `json:"keep_stock,omitempty"`
+	CreatedAt        *time.Time `json:"created_at,omitempty"`
+	UpdatedAt        *time.Time `json:"updated_at,omitempty"`
 }
 
 // Order represents an order.
 type Order struct {
-	ID         string    `json:"id"`
-	Number     string    `json:"number,omitempty"`
-	Status     string    `json:"status,omitempty"`
-	Total      float64   `json:"total,omitempty"`
-	Currency   string    `json:"currency,omitempty"`
-	CustomerID string    `json:"customer_id,omitempty"`
-	CreatedAt  time.Time `json:"created_at,omitempty"`
-	UpdatedAt  time.Time `json:"updated_at,omitempty"`
+	ID         string     `json:"id"`
+	Number     string     `json:"number,omitempty"`
+	Status     string     `json:"status,omitempty"`
+	Total      float64    `json:"total,omitempty"`
+	Currency   string     `json:"currency,omitempty"`
+	CustomerID string     `json:"customer_id,omitempty"`
+	CreatedAt  *time.Time `json:"created_at,omitempty"`
+	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
 }
 
 // Customer represents a customer.
 type Customer struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	FirstName string    `json:"first_name,omitempty"`
-	LastName  string    `json:"last_name,omitempty"`
-	Phone     string    `json:"phone,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	ID        string     `json:"id"`
+	Email     string     `json:"email"`
+	FirstName string     `json:"first_name,omitempty"`
+	LastName  string     `json:"last_name,omitempty"`
+	Phone     string     `json:"phone,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 }
 
 // UnmarshalJSON accepts both modern and legacy customer field names.
@@ -374,85 +368,85 @@ func (c *Channel) UnmarshalJSON(data []byte) error {
 
 // Theme represents a theme.
 type Theme struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	Short        string    `json:"short,omitempty"`
-	CDNBasePath  string    `json:"cdn_base_path,omitempty"`
-	CDNHost      string    `json:"cdn_host,omitempty"`
-	CDNRoot      string    `json:"cdn_root,omitempty"`
-	SiteID       string    `json:"site_id,omitempty"`
-	SiteShortID  string    `json:"site_short_id,omitempty"`
-	ThemeShortID string    `json:"theme_short_id,omitempty"`
-	Active       bool      `json:"active,omitempty"`
-	CreatedAt    time.Time `json:"created_at,omitempty"`
-	UpdatedAt    time.Time `json:"updated_at,omitempty"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	Short        string     `json:"short,omitempty"`
+	CDNBasePath  string     `json:"cdn_base_path,omitempty"`
+	CDNHost      string     `json:"cdn_host,omitempty"`
+	CDNRoot      string     `json:"cdn_root,omitempty"`
+	SiteID       string     `json:"site_id,omitempty"`
+	SiteShortID  string     `json:"site_short_id,omitempty"`
+	ThemeShortID string     `json:"theme_short_id,omitempty"`
+	Active       bool       `json:"active,omitempty"`
+	CreatedAt    *time.Time `json:"created_at,omitempty"`
+	UpdatedAt    *time.Time `json:"updated_at,omitempty"`
 }
 
 // ThemeFile represents a theme file.
 type ThemeFile struct {
-	Path      string    `json:"path"`
-	Type      string    `json:"type,omitempty"`
-	Size      int64     `json:"size,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	Path      string     `json:"path"`
+	Type      string     `json:"type,omitempty"`
+	Size      int64      `json:"size,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 }
 
 // ThemeResource represents a theme layout/template/snippet/asset entry.
 type ThemeResource struct {
-	ID          string    `json:"id"`
-	URL         string    `json:"url"`
-	Permalink   string    `json:"permalink"`
-	Name        string    `json:"name"`
-	Path        string    `json:"path"`
-	Folder      string    `json:"folder"`
-	PublicURL   string    `json:"public_url"`
-	Code        string    `json:"code"`
-	CreatedAt   time.Time `json:"created_at,omitempty"`
-	UpdatedAt   time.Time `json:"updated_at,omitempty"`
-	ChangedLive bool      `json:"changed_live,omitempty"`
+	ID          string     `json:"id"`
+	URL         string     `json:"url"`
+	Permalink   string     `json:"permalink"`
+	Name        string     `json:"name"`
+	Path        string     `json:"path"`
+	Folder      string     `json:"folder"`
+	PublicURL   string     `json:"public_url"`
+	Code        string     `json:"code"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+	ChangedLive bool       `json:"changed_live,omitempty"`
 	// ChangedBy field is omitted intentionally, it is not needed for CLI output.
 }
 
 // Upload represents an uploaded file.
 type Upload struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	URL       string    `json:"url,omitempty"`
-	Size      int64     `json:"size,omitempty"`
-	MimeType  string    `json:"mime_type,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	URL       string     `json:"url,omitempty"`
+	Size      int64      `json:"size,omitempty"`
+	MimeType  string     `json:"mime_type,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 }
 
 // Webhook represents a webhook.
 type Webhook struct {
-	ID        string    `json:"id"`
-	URL       string    `json:"url"`
-	TargetURL string    `json:"target_url,omitempty"`
-	Events    []string  `json:"events,omitempty"`
-	Active    bool      `json:"active,omitempty"`
-	Secret    string    `json:"secret,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	ID        string     `json:"id"`
+	URL       string     `json:"url"`
+	TargetURL string     `json:"target_url,omitempty"`
+	Events    []string   `json:"events,omitempty"`
+	Active    bool       `json:"active,omitempty"`
+	Secret    string     `json:"secret,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 }
 
 // Token represents an API token.
 type Token struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name,omitempty"`
-	Token     string    `json:"token,omitempty"`
-	Scopes    []string  `json:"scopes,omitempty"`
-	ExpiresAt time.Time `json:"expires_at,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
+	ID        string     `json:"id"`
+	Name      string     `json:"name,omitempty"`
+	Token     string     `json:"token,omitempty"`
+	Scopes    []string   `json:"scopes,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
 }
 
 // Blog represents a blog.
 type Blog struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Handle    string    `json:"handle,omitempty"`
-	Slug      string    `json:"slug,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	Handle    string     `json:"handle,omitempty"`
+	Slug      string     `json:"slug,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 }
 
 // UnmarshalJSON maps blog slug to Handle fallback.
@@ -473,31 +467,31 @@ func (b *Blog) UnmarshalJSON(data []byte) error {
 
 // BlogPost represents a blog post.
 type BlogPost struct {
-	ID          string    `json:"id"`
-	Title       string    `json:"title"`
-	Slug        string    `json:"slug,omitempty"`
-	TextContent string    `json:"text_content,omitempty"`
-	Status      string    `json:"status,omitempty"`
-	Author      string    `json:"author,omitempty"`
-	CreatedAt   time.Time `json:"created_at,omitempty"`
-	UpdatedAt   time.Time `json:"updated_at,omitempty"`
+	ID          string     `json:"id"`
+	Title       string     `json:"title"`
+	Slug        string     `json:"slug,omitempty"`
+	TextContent string     `json:"text_content,omitempty"`
+	Status      string     `json:"status,omitempty"`
+	Author      string     `json:"author,omitempty"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
 // Account represents an account accessible for the current site context.
 type Account struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	URL          string    `json:"url,omitempty"`
-	Plan         string    `json:"plan,omitempty"`
-	SKUCount     int       `json:"sku_count,omitempty"`
-	SiteCount    int       `json:"site_count,omitempty"`
-	StorageCount int       `json:"storage_count,omitempty"`
-	UsersCount   int       `json:"users_count,omitempty"`
-	Locale       string    `json:"locale,omitempty"`
-	Owner        string    `json:"owner,omitempty"`
-	Sites        []string  `json:"sites,omitempty"`
-	CreatedAt    time.Time `json:"created_at,omitempty"`
-	UpdatedAt    time.Time `json:"updated_at,omitempty"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	URL          string     `json:"url,omitempty"`
+	Plan         string     `json:"plan,omitempty"`
+	SKUCount     int        `json:"sku_count,omitempty"`
+	SiteCount    int        `json:"site_count,omitempty"`
+	StorageCount int        `json:"storage_count,omitempty"`
+	UsersCount   int        `json:"users_count,omitempty"`
+	Locale       string     `json:"locale,omitempty"`
+	Owner        string     `json:"owner,omitempty"`
+	Sites        []string   `json:"sites,omitempty"`
+	CreatedAt    *time.Time `json:"created_at,omitempty"`
+	UpdatedAt    *time.Time `json:"updated_at,omitempty"`
 }
 
 // CollectionImage represents an image attached to a collection.
@@ -529,8 +523,8 @@ type Collection struct {
 	Images         []CollectionImage         `json:"images,omitempty"`
 	FeaturedImage  *CollectionImage          `json:"featured_image,omitempty"`
 	Translations   map[string]map[string]any `json:"translations,omitempty"`
-	CreatedAt      time.Time                 `json:"created_at,omitempty"`
-	UpdatedAt      time.Time                 `json:"updated_at,omitempty"`
+	CreatedAt      *time.Time                `json:"created_at,omitempty"`
+	UpdatedAt      *time.Time                `json:"updated_at,omitempty"`
 }
 
 // Coupon represents a coupon.
@@ -560,8 +554,8 @@ type Coupon struct {
 	Redemptions      []map[string]any `json:"redemptions,omitempty"`
 	Referral         map[string]any   `json:"referral,omitempty"`
 	Referrer         map[string]any   `json:"referrer,omitempty"`
-	CreatedAt        time.Time        `json:"created_at,omitempty"`
-	UpdatedAt        time.Time        `json:"updated_at,omitempty"`
+	CreatedAt        *time.Time       `json:"created_at,omitempty"`
+	UpdatedAt        *time.Time       `json:"updated_at,omitempty"`
 }
 
 // Notification represents a notification template.
@@ -576,8 +570,8 @@ type Notification struct {
 	HTML         string                    `json:"html,omitempty"`
 	HTMLEnabled  bool                      `json:"html_enabled,omitempty"`
 	Translations map[string]map[string]any `json:"translations,omitempty"`
-	CreatedAt    time.Time                 `json:"created_at,omitempty"`
-	UpdatedAt    time.Time                 `json:"updated_at,omitempty"`
+	CreatedAt    *time.Time                `json:"created_at,omitempty"`
+	UpdatedAt    *time.Time                `json:"updated_at,omitempty"`
 }
 
 // Role represents a customer role.
@@ -590,18 +584,18 @@ type Role struct {
 	Parents     []string       `json:"parents,omitempty"`
 	ACL         map[string]any `json:"_acl,omitempty"`
 	Owner       string         `json:"_owner,omitempty"`
-	CreatedAt   time.Time      `json:"created_at,omitempty"`
-	UpdatedAt   time.Time      `json:"updated_at,omitempty"`
+	CreatedAt   *time.Time     `json:"created_at,omitempty"`
+	UpdatedAt   *time.Time     `json:"updated_at,omitempty"`
 }
 
 // Redirect represents a redirect rule.
 type Redirect struct {
-	ID        string    `json:"id"`
-	URL       string    `json:"url,omitempty"`
-	Source    string    `json:"source,omitempty"`
-	Target    string    `json:"target,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	ID        string     `json:"id"`
+	URL       string     `json:"url,omitempty"`
+	Source    string     `json:"source,omitempty"`
+	Target    string     `json:"target,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 }
 
 // AppFunction represents a cloud function inside an app.
@@ -616,25 +610,25 @@ type AppRoute struct {
 	Verb        string         `json:"verb,omitempty"`
 	Path        string         `json:"path,omitempty"`
 	Constraints map[string]any `json:"constraints,omitempty"`
-	UpdatedAt   time.Time      `json:"updated_at,omitempty"`
+	UpdatedAt   *time.Time     `json:"updated_at,omitempty"`
 	SHA         string         `json:"sha,omitempty"`
 }
 
 // AppCallback represents a callback inside an app.
 type AppCallback struct {
-	Event     string    `json:"event,omitempty"`
-	Type      string    `json:"type,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
-	URL       string    `json:"url,omitempty"`
-	SHA       string    `json:"sha,omitempty"`
+	Event     string     `json:"event,omitempty"`
+	Type      string     `json:"type,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+	URL       string     `json:"url,omitempty"`
+	SHA       string     `json:"sha,omitempty"`
 }
 
 // AppJob represents a job inside an app.
 type AppJob struct {
-	Name      string    `json:"name"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
-	Every     string    `json:"every,omitempty"`
-	SHA       string    `json:"sha,omitempty"`
+	Name      string     `json:"name"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+	Every     string     `json:"every,omitempty"`
+	SHA       string     `json:"sha,omitempty"`
 }
 
 // AppSchedule represents a schedule inside an app.
@@ -642,7 +636,7 @@ type AppSchedule struct {
 	Name      string         `json:"name"`
 	Timing    string         `json:"timing,omitempty"`
 	Data      map[string]any `json:"data,omitempty"`
-	UpdatedAt time.Time      `json:"updated_at,omitempty"`
+	UpdatedAt *time.Time     `json:"updated_at,omitempty"`
 	Cron      string         `json:"cron,omitempty"`
 	SHA       string         `json:"sha,omitempty"`
 }
@@ -660,17 +654,17 @@ type App struct {
 	Callbacks   []AppCallback `json:"callbacks,omitempty"`
 	Jobs        []AppJob      `json:"jobs,omitempty"`
 	Schedules   []AppSchedule `json:"schedules,omitempty"`
-	CreatedAt   time.Time     `json:"created_at,omitempty"`
-	UpdatedAt   time.Time     `json:"updated_at,omitempty"`
+	CreatedAt   *time.Time    `json:"created_at,omitempty"`
+	UpdatedAt   *time.Time    `json:"updated_at,omitempty"`
 }
 
 // AppCodeFile represents an app cloud code file.
 type AppCodeFile struct {
-	Name      string    `json:"name"`
-	URL       string    `json:"url,omitempty"`
-	Code      string    `json:"code,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	Name      string     `json:"name"`
+	URL       string     `json:"url,omitempty"`
+	Code      string     `json:"code,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 }
 
 // UnmarshalJSON normalizes product fields from current and legacy API responses.

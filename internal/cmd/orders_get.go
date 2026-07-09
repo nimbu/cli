@@ -39,10 +39,10 @@ func (c *OrdersGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		output.FAlways("Total", fmt.Sprintf("%.2f %s", o.Total, o.Currency)),
 		output.F("Customer", o.CustomerID),
 	}
-	if !o.CreatedAt.IsZero() {
+	if o.CreatedAt != nil && !o.CreatedAt.IsZero() {
 		fields = append(fields, output.FAlways("Created", o.CreatedAt.Format("2006-01-02 15:04:05")))
 	}
-	if !o.UpdatedAt.IsZero() {
+	if o.UpdatedAt != nil && !o.UpdatedAt.IsZero() {
 		fields = append(fields, output.FAlways("Updated", o.UpdatedAt.Format("2006-01-02 15:04:05")))
 	}
 

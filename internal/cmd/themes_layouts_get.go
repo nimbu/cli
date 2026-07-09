@@ -41,14 +41,14 @@ func (c *ThemeLayoutsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var created, updated string
-	if !layout.CreatedAt.IsZero() {
+	if layout.CreatedAt != nil && !layout.CreatedAt.IsZero() {
 		created = layout.CreatedAt.Format("2006-01-02 15:04:05")
 	}
-	if !layout.UpdatedAt.IsZero() {
+	if layout.UpdatedAt != nil && !layout.UpdatedAt.IsZero() {
 		updated = layout.UpdatedAt.Format("2006-01-02 15:04:05")
 	}
 
-	return output.Detail(ctx, layout, []any{layout.ID, layout.Name, layout.UpdatedAt}, []output.Field{
+	return output.Detail(ctx, layout, []any{layout.ID, layout.Name, updated}, []output.Field{
 		output.FAlways("ID", layout.ID),
 		output.FAlways("Name", layout.Name),
 		output.FAlways("URL", layout.URL),

@@ -39,10 +39,10 @@ func (c *CustomersGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		output.F("Last Name", cust.LastName),
 		output.F("Phone", cust.Phone),
 	}
-	if !cust.CreatedAt.IsZero() {
+	if cust.CreatedAt != nil && !cust.CreatedAt.IsZero() {
 		fields = append(fields, output.FAlways("Created", cust.CreatedAt.Format("2006-01-02 15:04:05")))
 	}
-	if !cust.UpdatedAt.IsZero() {
+	if cust.UpdatedAt != nil && !cust.UpdatedAt.IsZero() {
 		fields = append(fields, output.FAlways("Updated", cust.UpdatedAt.Format("2006-01-02 15:04:05")))
 	}
 

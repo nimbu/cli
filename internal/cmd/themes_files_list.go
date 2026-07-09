@@ -24,9 +24,9 @@ type ThemeFilesListCmd struct {
 }
 
 type themeFileListItem struct {
-	Path      string    `json:"path"`
-	Type      string    `json:"type"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	Path      string     `json:"path"`
+	Type      string     `json:"type"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 }
 
 // Run executes the list command.
