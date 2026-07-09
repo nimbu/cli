@@ -6,5 +6,6 @@ type AppsCmd struct {
 	Get    AppsGetCmd    `cmd:"" help:"Get app details"`
 	Config AppsConfigCmd `cmd:"" help:"Add an app to local project config"`
 	Push   AppsPushCmd   `cmd:"" help:"Push configured local cloud-code files"`
+	Logs   AppsLogsCmd   `cmd:"" help:"Read app cloud-code logs"`
 	Code   AppsCodeCmd   `cmd:"" help:"Manage app cloud code files"`
 }

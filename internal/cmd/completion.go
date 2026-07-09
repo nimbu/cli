@@ -141,7 +141,7 @@ _nimbu_completions() {
                 COMPREPLY=($(compgen -W "run" -- "${cur}"))
                 ;;
             apps)
-                COMPREPLY=($(compgen -W "list get config push code" -- "${cur}"))
+                COMPREPLY=($(compgen -W "list get config push logs code" -- "${cur}"))
                 ;;
             senders)
                 COMPREPLY=($(compgen -W "list get create verify-ownership verify" -- "${cur}"))
@@ -193,6 +193,9 @@ _nimbu_completions() {
         case "${COMP_WORDS[2]}" in
             push)
                 COMPREPLY=($(compgen -W "--app --only --sync" -- "${cur}"))
+                ;;
+            logs)
+                COMPREPLY=($(compgen -W "--app --tail --level --query --job --since --limit" -- "${cur}"))
                 ;;
             code)
                 COMPREPLY=($(compgen -W "list create pull" -- "${cur}"))
@@ -582,6 +585,7 @@ _nimbu() {
                 'get:Get app details'
                 'config:Configure local cloud code app mapping'
                 'push:Push local cloud code files'
+                'logs:Read app cloud-code logs'
                 'code:Manage app code files'
             )
             _describe -t apps-commands 'apps command' apps_commands
@@ -722,7 +726,7 @@ complete -c nimbu -n "__fish_seen_subcommand_from products config" -a "copy diff
 complete -c nimbu -n "__fish_seen_subcommand_from pages" -a "list get create update delete count copy" -d "Page commands"
 complete -c nimbu -n "__fish_seen_subcommand_from menus" -a "list get create update delete count copy" -d "Menu commands"
 complete -c nimbu -n "__fish_seen_subcommand_from blogs" -a "list get create update delete count posts articles copy" -d "Blog commands"
-complete -c nimbu -n "__fish_seen_subcommand_from apps; and not __fish_seen_subcommand_from list get config push code" -a "list get config push code" -d "App commands"
+complete -c nimbu -n "__fish_seen_subcommand_from apps; and not __fish_seen_subcommand_from list get config push logs code" -a "list get config push logs code" -d "App commands"
 complete -c nimbu -n "__fish_seen_subcommand_from mails" -a "pull push" -d "Mail commands"
 complete -c nimbu -n "__fish_seen_subcommand_from notifications" -a "list get pull push create update delete count copy" -d "Notification commands"
 complete -c nimbu -n "__fish_seen_subcommand_from translations" -a "list get create update delete count copy" -d "Translation commands"
