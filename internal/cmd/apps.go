@@ -4,6 +4,8 @@ package cmd
 type AppsCmd struct {
 	List   AppsListCmd   `cmd:"" help:"List apps"`
 	Get    AppsGetCmd    `cmd:"" help:"Get app details"`
+	Create AppsCreateCmd `cmd:"" help:"Create an app"`
+	Update AppsUpdateCmd `cmd:"" help:"Update an app"`
 	Config AppsConfigCmd `cmd:"" help:"Add an app to local project config"`
 	Push   AppsPushCmd   `cmd:"" help:"Push configured local cloud-code files"`
 	Logs   AppsLogsCmd   `cmd:"" help:"Read app cloud-code logs"`

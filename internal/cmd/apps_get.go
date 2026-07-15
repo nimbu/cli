@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -35,6 +36,8 @@ func (c *AppsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	return output.Detail(ctx, app, []any{app.Key, app.Name, app.Domain, app.CallbackURL}, []output.Field{
 		output.FAlways("Key", app.Key),
 		output.FAlways("Name", app.Name),
+		output.FAlways("Internal", app.Internal),
+		output.F("Scopes", strings.Join(app.InstallScopes, ", ")),
 		output.FAlways("Domain", app.Domain),
 		output.FAlways("Callback", app.CallbackURL),
 		output.F("SDK", app.SDKVersion),
