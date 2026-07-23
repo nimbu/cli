@@ -643,19 +643,21 @@ type AppSchedule struct {
 
 // App represents an OAuth app.
 type App struct {
-	Name        string        `json:"name"`
-	URL         string        `json:"url,omitempty"`
-	Key         string        `json:"key,omitempty"`
-	Domain      string        `json:"domain,omitempty"`
-	CallbackURL string        `json:"callback_url,omitempty"`
-	SDKVersion  string        `json:"sdk_version,omitempty"`
-	Functions   []AppFunction `json:"functions,omitempty"`
-	Routes      []AppRoute    `json:"routes,omitempty"`
-	Callbacks   []AppCallback `json:"callbacks,omitempty"`
-	Jobs        []AppJob      `json:"jobs,omitempty"`
-	Schedules   []AppSchedule `json:"schedules,omitempty"`
-	CreatedAt   *time.Time    `json:"created_at,omitempty"`
-	UpdatedAt   *time.Time    `json:"updated_at,omitempty"`
+	Name          string        `json:"name"`
+	URL           string        `json:"url,omitempty"`
+	Key           string        `json:"key,omitempty"`
+	Domain        string        `json:"domain,omitempty"`
+	CallbackURL   string        `json:"callback_url,omitempty"`
+	SDKVersion    string        `json:"sdk_version,omitempty"`
+	Internal      bool          `json:"internal,omitempty"`
+	InstallScopes []string      `json:"install_scopes,omitempty"`
+	Functions     []AppFunction `json:"functions,omitempty"`
+	Routes        []AppRoute    `json:"routes,omitempty"`
+	Callbacks     []AppCallback `json:"callbacks,omitempty"`
+	Jobs          []AppJob      `json:"jobs,omitempty"`
+	Schedules     []AppSchedule `json:"schedules,omitempty"`
+	CreatedAt     *time.Time    `json:"created_at,omitempty"`
+	UpdatedAt     *time.Time    `json:"updated_at,omitempty"`
 }
 
 // AppCodeFile represents an app cloud code file.
