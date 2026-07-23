@@ -155,7 +155,9 @@ func TestAppsLogsTailPrintsInitialLogsOldestFirstThenDedupesBoundaryLogs(t *test
 				cancel()
 			}()
 		default:
-			t.Fatalf("unexpected poll call %d", call)
+			// The cancel above lands asynchronously; on coarse timers (Windows)
+			// the poll loop can fire a few more times before it does.
+			_, _ = w.Write([]byte(`[]`))
 		}
 	}))
 	defer server.Close()
