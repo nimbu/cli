@@ -3,7 +3,6 @@ package cmd
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -110,21 +109,5 @@ func TestReadJSONInputRejectsEmptyInput(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no JSON input") {
 		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestWrapParamsBodyWrapsRawBody(t *testing.T) {
-	got := wrapParamsBody(map[string]any{"foo": "bar"})
-	want := map[string]any{"params": map[string]any{"foo": "bar"}}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("unexpected body: %#v", got)
-	}
-}
-
-func TestWrapParamsBodyKeepsExplicitParams(t *testing.T) {
-	got := wrapParamsBody(map[string]any{"params": map[string]any{"foo": "bar"}})
-	want := map[string]any{"params": map[string]any{"foo": "bar"}}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("unexpected body: %#v", got)
 	}
 }

@@ -69,13 +69,50 @@ func ExplicitFiles(discovered []string, explicit []string) ([]string, error) {
 		if item == "" || item == "." {
 			continue
 		}
-		if _, ok := allowed[item]; !ok {
-			return nil, fmt.Errorf("file %q is not part of configured app selection", raw)
+		if _, ok := allowed[item]; ok {
+			selected = append(selected, item)
+			continue
 		}
-		selected = append(selected, item)
+		// Not an exact project-relative path; accept a unique suffix match so
+		// paths relative to the app dir (or a bare filename) also work.
+		var matches []string
+		for _, file := range discovered {
+			if normalized := normalizePath(file); strings.HasSuffix(normalized, "/"+item) {
+				matches = append(matches, normalized)
+			}
+		}
+		switch len(matches) {
+		case 1:
+			selected = append(selected, matches[0])
+		case 0:
+			return nil, fmt.Errorf("file %q is not part of configured app selection; use the project-relative path%s", raw, explicitFilesHint(discovered))
+		default:
+			sort.Strings(matches)
+			return nil, fmt.Errorf("file %q matches multiple configured files (%s); use the project-relative path", raw, strings.Join(matches, ", "))
+		}
 	}
 	sort.Strings(selected)
-	return selected, nil
+	// A file can be named more than once (e.g. exact path plus bare filename).
+	deduped := selected[:0]
+	for i, item := range selected {
+		if i == 0 || item != selected[i-1] {
+			deduped = append(deduped, item)
+		}
+	}
+	return deduped, nil
+}
+
+func explicitFilesHint(discovered []string) string {
+	if len(discovered) == 0 {
+		return ""
+	}
+	example := normalizePath(discovered[0])
+	for _, file := range discovered[1:] {
+		if normalized := normalizePath(file); normalized < example {
+			example = normalized
+		}
+	}
+	return fmt.Sprintf(" (e.g. %s)", example)
 }
 
 // BuildPushPlan computes upload/delete actions.

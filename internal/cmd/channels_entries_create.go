@@ -40,7 +40,7 @@ func (c *ChannelEntriesCreateCmd) Run(ctx context.Context, flags *RootFlags) err
 	path := "/channels/" + url.PathEscape(c.Channel) + "/entries"
 	var entry api.Entry
 	if err := client.Post(ctx, path, body, &entry); err != nil {
-		return fmt.Errorf("create entry: %w", err)
+		return hintJSONAssignments(fmt.Errorf("create entry: %w", err), c.Assignments)
 	}
 
 	return output.Print(ctx, entry, []any{entry.ID}, func() error {

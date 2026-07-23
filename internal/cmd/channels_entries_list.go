@@ -61,6 +61,9 @@ func (c *ChannelEntriesListCmd) Run(ctx context.Context, flags *RootFlags) error
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
+		if entries == nil {
+			entries = []api.Entry{}
+		}
 		return output.JSON(ctx, entries)
 	}
 

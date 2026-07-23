@@ -73,10 +73,3 @@ func stdinIsTerminal() bool {
 	}
 	return (info.Mode() & os.ModeCharDevice) != 0
 }
-
-func wrapParamsBody(body map[string]any) map[string]any {
-	if params, ok := body["params"]; ok && len(body) == 1 {
-		return map[string]any{"params": params}
-	}
-	return map[string]any{"params": body}
-}

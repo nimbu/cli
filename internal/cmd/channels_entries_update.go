@@ -47,7 +47,7 @@ func (c *ChannelEntriesUpdateCmd) Run(ctx context.Context, flags *RootFlags) err
 	var entry api.Entry
 	if err := client.Put(ctx, path, body, &entry, opts...); err != nil {
 		if !api.IsNotFound(err) {
-			return fmt.Errorf("update entry: %w", err)
+			return hintJSONAssignments(fmt.Errorf("update entry: %w", err), c.Assignments)
 		}
 		found, findErr := findChannelEntryBySlug(ctx, client, c.Channel, c.Entry, opts...)
 		if findErr != nil {
@@ -58,7 +58,7 @@ func (c *ChannelEntriesUpdateCmd) Run(ctx context.Context, flags *RootFlags) err
 		}
 		path = "/channels/" + url.PathEscape(c.Channel) + "/entries/" + url.PathEscape(found.ID)
 		if err := client.Put(ctx, path, body, &entry, opts...); err != nil {
-			return fmt.Errorf("update entry: %w", err)
+			return hintJSONAssignments(fmt.Errorf("update entry: %w", err), c.Assignments)
 		}
 	}
 

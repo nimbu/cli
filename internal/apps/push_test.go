@@ -159,3 +159,50 @@ func TestExecutePushPreservesTopologicalUploadOrderAcrossCreateAndUpdate(t *test
 		t.Fatalf("unexpected ops: %s", got)
 	}
 }
+
+func TestExplicitFilesAcceptsSuffixMatches(t *testing.T) {
+	discovered := []string{"code/activity_billing.js", "code/lib/util.js"}
+
+	got, err := ExplicitFiles(discovered, []string{"activity_billing.js"})
+	if err != nil {
+		t.Fatalf("bare filename: %v", err)
+	}
+	if len(got) != 1 || got[0] != "code/activity_billing.js" {
+		t.Fatalf("bare filename selection = %#v", got)
+	}
+
+	got, err = ExplicitFiles(discovered, []string{"lib/util.js"})
+	if err != nil {
+		t.Fatalf("app-relative path: %v", err)
+	}
+	if len(got) != 1 || got[0] != "code/lib/util.js" {
+		t.Fatalf("app-relative selection = %#v", got)
+	}
+}
+
+func TestExplicitFilesDeduplicatesSelections(t *testing.T) {
+	discovered := []string{"code/main.js"}
+	got, err := ExplicitFiles(discovered, []string{"code/main.js", "main.js"})
+	if err != nil {
+		t.Fatalf("duplicate selection: %v", err)
+	}
+	if len(got) != 1 || got[0] != "code/main.js" {
+		t.Fatalf("selection = %#v, want single code/main.js", got)
+	}
+}
+
+func TestExplicitFilesAmbiguousSuffixErrors(t *testing.T) {
+	discovered := []string{"code/a/util.js", "code/b/util.js"}
+	_, err := ExplicitFiles(discovered, []string{"util.js"})
+	if err == nil || !strings.Contains(err.Error(), "matches multiple") {
+		t.Fatalf("expected ambiguity error, got %v", err)
+	}
+}
+
+func TestExplicitFilesUnknownFileHintsExample(t *testing.T) {
+	discovered := []string{"code/main.js"}
+	_, err := ExplicitFiles(discovered, []string{"nope.js"})
+	if err == nil || !strings.Contains(err.Error(), "e.g. code/main.js") {
+		t.Fatalf("expected hint with example path, got %v", err)
+	}
+}

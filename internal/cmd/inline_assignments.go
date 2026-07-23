@@ -2,10 +2,13 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/nimbu/cli/internal/api"
 )
 
 var localeKeyRE = regexp.MustCompile(`(?i)^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$`)
@@ -72,6 +75,34 @@ func parseInlineAssignment(token string) (string, any, error) {
 	default:
 		return "", nil, fmt.Errorf("invalid assignment %q, expected key=value or key:=json", token)
 	}
+}
+
+// hintJSONAssignments augments a 422 validation error when a plain string
+// assignment (=) carries a value that parses as a JSON array or object; the
+// user most likely meant the := JSON operator.
+func hintJSONAssignments(err error, assignments []string) error {
+	if err == nil {
+		return err
+	}
+	var apiErr *api.Error
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != 422 {
+		return err
+	}
+	for _, token := range assignments {
+		path, op, rhs, splitErr := splitInlineAssignment(token)
+		if splitErr != nil || op != `=` {
+			continue
+		}
+		raw := strings.TrimSpace(rhs)
+		if raw == "" || (raw[0] != '[' && raw[0] != '{') {
+			continue
+		}
+		if !json.Valid([]byte(raw)) {
+			continue
+		}
+		return fmt.Errorf("%w (hint: the value of %q looks like JSON but was sent as a string; use %s:=... to send it as JSON)", err, path, path)
+	}
+	return err
 }
 
 func setJSONPathValue(body map[string]any, path string, value any) error {
