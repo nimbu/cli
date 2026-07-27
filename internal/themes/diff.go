@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aymanbagabas/go-udiff"
+
 	"github.com/nimbu/cli/internal/api"
 )
 
@@ -15,6 +17,13 @@ import (
 type DiffEntry struct {
 	Path   string `json:"path"`
 	Status string `json:"status"`
+	Diff   string `json:"diff,omitempty"`
+}
+
+// DiffOptions controls how much detail RunDiff collects.
+type DiffOptions struct {
+	// Content renders a unified diff (remote vs local) for each entry.
+	Content bool
 }
 
 // DiffResult reports all detected liquid mismatches.
@@ -26,6 +35,11 @@ type DiffResult struct {
 
 // RunDiff compares managed local liquid files with the remote theme.
 func RunDiff(ctx context.Context, client *api.Client, cfg Config) (DiffResult, error) {
+	return RunDiffWithOptions(ctx, client, cfg, DiffOptions{})
+}
+
+// RunDiffWithOptions compares managed local liquid files with the remote theme.
+func RunDiffWithOptions(ctx context.Context, client *api.Client, cfg Config, opts DiffOptions) (DiffResult, error) {
 	remoteResources, err := FetchRemoteResources(ctx, client, cfg.Theme)
 	if err != nil {
 		return DiffResult{Theme: cfg.Theme}, err
@@ -56,7 +70,15 @@ func RunDiff(ctx context.Context, client *api.Client, cfg Config) (DiffResult, e
 		localData, err := os.ReadFile(localPath)
 		if err != nil {
 			if os.IsNotExist(err) {
-				result.Changes = append(result.Changes, DiffEntry{Path: projectPath, Status: "missing"})
+				entry := DiffEntry{Path: projectPath, Status: "missing"}
+				if opts.Content {
+					remoteData, readErr := ReadContent(ctx, client, cfg.Theme, resource.Kind, resource.RemoteName)
+					if readErr != nil {
+						return result, fmt.Errorf("read %s: %w", resource.DisplayPath, readErr)
+					}
+					entry.Diff = unifiedDiff(projectPath, string(remoteData), "")
+				}
+				result.Changes = append(result.Changes, entry)
 				continue
 			}
 			return result, err
@@ -66,7 +88,11 @@ func RunDiff(ctx context.Context, client *api.Client, cfg Config) (DiffResult, e
 			return result, fmt.Errorf("read %s: %w", resource.DisplayPath, err)
 		}
 		if normalizeDiffText(string(localData)) != normalizeDiffText(string(remoteData)) {
-			result.Changes = append(result.Changes, DiffEntry{Path: projectPath, Status: "changed"})
+			entry := DiffEntry{Path: projectPath, Status: "changed"}
+			if opts.Content {
+				entry.Diff = unifiedDiff(projectPath, string(remoteData), string(localData))
+			}
+			result.Changes = append(result.Changes, entry)
 		}
 	}
 
@@ -81,4 +107,20 @@ func normalizeDiffText(value string) string {
 	value = strings.ReplaceAll(value, "\r\n", "\n")
 	value = strings.ReplaceAll(value, "\r", "\n")
 	return strings.TrimSpace(value)
+}
+
+// unifiedDiff renders a git-style unified diff between the remote and local
+// version of a theme file. Line endings are normalized and a trailing newline
+// is enforced so the diff matches the CLI's lenient change detection.
+func unifiedDiff(path, remote, local string) string {
+	return udiff.Unified("remote/"+path, "local/"+path, diffContent(remote), diffContent(local))
+}
+
+func diffContent(value string) string {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	value = strings.ReplaceAll(value, "\r", "\n")
+	if value != "" && !strings.HasSuffix(value, "\n") {
+		value += "\n"
+	}
+	return value
 }

@@ -497,6 +497,7 @@ nimbu themes push --all --theme storefront
 nimbu themes push --all --no-images
 nimbu themes pull --theme storefront
 nimbu themes diff --theme storefront
+nimbu themes diff --content
 nimbu themes cdn-root
 nimbu themes copy --from source-site/storefront --to target-site/storefront
 nimbu themes sync --build
