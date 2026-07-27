@@ -174,7 +174,7 @@ _nimbu_completions() {
                 COMPREPLY=($(compgen -W "--theme --liquid-only" -- "${cur}"))
                 ;;
             diff)
-                COMPREPLY=($(compgen -W "--theme" -- "${cur}"))
+                COMPREPLY=($(compgen -W "--theme --content" -- "${cur}"))
                 ;;
             copy)
                 COMPREPLY=($(compgen -W "--from --to --from-host --to-host --liquid-only" -- "${cur}"))
