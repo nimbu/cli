@@ -286,6 +286,10 @@ func writeEmptySiteCopyResponse(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"assets":[],"layouts":[],"snippets":[],"templates":[]}`))
 	case r.Method == http.MethodGet && r.URL.Path == "/pages":
 		_, _ = w.Write([]byte(`[]`))
+	case r.Method == http.MethodGet && r.URL.Path == "/settings/consent" && site == "source":
+		_, _ = w.Write([]byte(`{}`))
+	case r.Method == http.MethodPut && r.URL.Path == "/settings/consent" && site == "target":
+		_, _ = w.Write([]byte(`{}`))
 	case r.Method == http.MethodGet && r.URL.Path == "/menus":
 		_, _ = w.Write([]byte(`[]`))
 	case r.Method == http.MethodGet && r.URL.Path == "/blogs":

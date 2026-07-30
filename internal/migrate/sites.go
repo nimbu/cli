@@ -37,6 +37,7 @@ type SiteCopyResult struct {
 	Collections    CollectionCopyResult    `json:"collections"`
 	Theme          themes.CopyResult       `json:"theme"`
 	Pages          PageCopyResult          `json:"pages"`
+	Consent        ConsentCopyResult       `json:"consent"`
 	Menus          MenuCopyResult          `json:"menus"`
 	Blogs          BlogCopyResult          `json:"blogs"`
 	Notifications  NotificationCopyResult  `json:"notifications"`
@@ -216,6 +217,29 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 		emitStageWarning(ctx, "Pages", w)
 	}
 	result.Warnings = append(result.Warnings, pagesResult.Warnings...)
+
+	emitStageStart(ctx, "Consent")
+	plannedConsentPages := map[string]struct{}{}
+	if opts.DryRun {
+		for _, item := range pagesResult.Items {
+			if item.Action == "dry-run:create" || item.Action == "dry-run:update" {
+				plannedConsentPages[api.NormalizePageFullpath(item.Fullpath)] = struct{}{}
+			}
+		}
+	}
+	consentResult, err := CopyConsentConfig(ctx, fromClient, toClient, fromRef, toRef, ConsentCopyOptions{
+		DryRun:                     opts.DryRun,
+		PlannedTargetPageFullpaths: plannedConsentPages,
+	})
+	if err != nil {
+		return result, err
+	}
+	result.Consent = consentResult
+	result.Warnings = append(result.Warnings, consentResult.Warnings...)
+	emitStageDone(ctx, "Consent", consentResult.Action)
+	for _, w := range consentResult.Warnings {
+		emitStageWarning(ctx, "Consent", w)
+	}
 
 	emitStageStart(ctx, "Menus")
 	menuExistingAction := ExistingContentUpdate

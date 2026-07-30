@@ -16,6 +16,11 @@ func TestCopySiteConflictResolverCanSkipAllExistingTypes(t *testing.T) {
 	var writes []string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && r.URL.Path == "/settings/consent" {
+			writes = append(writes, r.Method+" "+r.URL.Path)
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
 		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
 			writes = append(writes, r.Method+" "+r.URL.Path)
 			http.Error(w, "unexpected write", http.StatusInternalServerError)
@@ -56,6 +61,8 @@ func TestCopySiteConflictResolverCanSkipAllExistingTypes(t *testing.T) {
 			_, _ = w.Write([]byte(`{"assets":[],"layouts":[],"snippets":[],"templates":[]}`))
 		case r.URL.Path == "/pages":
 			_, _ = w.Write([]byte(`[]`))
+		case r.URL.Path == "/settings/consent" && site == "source":
+			_, _ = w.Write([]byte(`{}`))
 		case r.URL.Path == "/menus" && site == "source":
 			_, _ = w.Write([]byte(`[{"slug":"main","items":[{"title":"Home","url":"/"}]}]`))
 		case r.URL.Path == "/menus" && site == "target":
@@ -97,8 +104,8 @@ func TestCopySiteConflictResolverCanSkipAllExistingTypes(t *testing.T) {
 	if resolverCalls != 1 {
 		t.Fatalf("expected one resolver call, got %d", resolverCalls)
 	}
-	if len(writes) != 0 {
-		t.Fatalf("expected no writes after skip-all decision, got %#v", writes)
+	if got := strings.Join(writes, ","); got != "PUT /settings/consent" {
+		t.Fatalf("writes after skip-all decision = %#v, want only consent configuration", writes)
 	}
 	if got := result.Channels.Items[0].Action; got != "skip" {
 		t.Fatalf("channel action = %q, want skip", got)
@@ -126,6 +133,10 @@ func TestCopySiteConflictResolverCanReviewExistingChannels(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		site := r.Header.Get("X-Nimbu-Site")
+		if r.Method == http.MethodPut && r.URL.Path == "/settings/consent" {
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
 		if r.Method == http.MethodPatch {
 			patched = append(patched, r.URL.Path)
 			_, _ = w.Write([]byte(`{"id":"target-channel","slug":"articles"}`))
@@ -176,6 +187,8 @@ func TestCopySiteConflictResolverCanReviewExistingChannels(t *testing.T) {
 			_, _ = w.Write([]byte(`{"assets":[],"layouts":[],"snippets":[],"templates":[]}`))
 		case r.URL.Path == "/pages":
 			_, _ = w.Write([]byte(`[]`))
+		case r.URL.Path == "/settings/consent" && site == "source":
+			_, _ = w.Write([]byte(`{}`))
 		case r.URL.Path == "/menus":
 			_, _ = w.Write([]byte(`[]`))
 		case r.URL.Path == "/blogs":

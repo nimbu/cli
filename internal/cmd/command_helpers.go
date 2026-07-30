@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,6 +40,42 @@ func readJSONInput(file string) (map[string]any, error) {
 }
 
 func readJSONAnyInput(file string) (any, error) {
+	data, err := readJSONInputBytes(file)
+	if err != nil {
+		return nil, err
+	}
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return nil, fmt.Errorf("parse JSON: %w", err)
+	}
+	return value, nil
+}
+
+func readJSONInputUseNumber(file string) (map[string]any, error) {
+	data, err := readJSONInputBytes(file)
+	if err != nil {
+		return nil, err
+	}
+	var value map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return nil, fmt.Errorf("parse JSON: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("parse JSON: trailing JSON value")
+		}
+		return nil, fmt.Errorf("parse JSON: trailing JSON data: %w", err)
+	}
+	if value == nil {
+		return nil, fmt.Errorf("parse JSON: expected an object")
+	}
+	return value, nil
+}
+
+func readJSONInputBytes(file string) ([]byte, error) {
 	var input io.Reader
 
 	switch file {
@@ -69,13 +106,7 @@ func readJSONAnyInput(file string) (any, error) {
 	if len(data) == 0 {
 		return nil, errNoJSONInput
 	}
-
-	var value any
-	if err := json.Unmarshal(data, &value); err != nil {
-		return nil, fmt.Errorf("parse JSON: %w", err)
-	}
-
-	return value, nil
+	return data, nil
 }
 
 func stdinIsTerminal() bool {

@@ -34,6 +34,7 @@ func (c *SettingsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 type SettingsConsentCmd struct {
+	Config SettingsConsentConfigCmd `cmd:"" help:"Manage the complete consent configuration"`
 	List   SettingsConsentListCmd   `cmd:"" help:"List consent resources"`
 	Get    SettingsConsentGetCmd    `cmd:"" help:"Get a consent resource"`
 	Create SettingsConsentCreateCmd `cmd:"" help:"Create a consent resource"`
