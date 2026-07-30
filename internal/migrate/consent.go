@@ -15,6 +15,17 @@ type ConsentCopyOptions struct {
 	PlannedTargetPageFullpaths map[string]struct{}
 }
 
+type consentPrivacyPageUnavailableError struct {
+	fullpath string
+}
+
+func (e *consentPrivacyPageUnavailableError) Error() string {
+	return fmt.Sprintf(
+		"target privacy policy page %q was not found after page copy; cannot safely copy consent configuration",
+		e.fullpath,
+	)
+}
+
 // ConsentCopyResult reports one whole consent configuration copy.
 type ConsentCopyResult struct {
 	From     SiteRef        `json:"from"`
@@ -100,5 +111,5 @@ func remapConsentPrivacyPage(ctx context.Context, fromClient, toClient *api.Clie
 			return nil
 		}
 	}
-	return fmt.Errorf("target privacy policy page %q was not found after page copy; cannot safely copy consent configuration", fullpath)
+	return &consentPrivacyPageUnavailableError{fullpath: fullpath}
 }

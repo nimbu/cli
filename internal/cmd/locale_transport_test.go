@@ -365,7 +365,7 @@ func TestProductAttachmentsListKeepsLegacyLocaleParameter(t *testing.T) {
 	}
 }
 
-func TestAccountAndSiteListsKeepLegacyLocaleParameter(t *testing.T) {
+func TestSiteListKeepsLegacyLocaleParameter(t *testing.T) {
 	const locale = "nl"
 	flags := &RootFlags{Site: "demo"}
 	cases := []struct {
@@ -373,13 +373,6 @@ func TestAccountAndSiteListsKeepLegacyLocaleParameter(t *testing.T) {
 		path string
 		run  func(context.Context) error
 	}{
-		{
-			name: "accounts",
-			path: "/accounts",
-			run: func(ctx context.Context) error {
-				return (&AccountsListCmd{QueryFlags: QueryFlags{Locale: locale}, All: true}).Run(ctx, flags)
-			},
-		},
 		{
 			name: "sites",
 			path: "/sites",

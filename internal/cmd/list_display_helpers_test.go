@@ -7,52 +7,6 @@ import (
 	"github.com/nimbu/cli/internal/themes"
 )
 
-func TestEntryDisplayTitle(t *testing.T) {
-	t.Run("title preferred", func(t *testing.T) {
-		got := entryDisplayTitle(api.Entry{ID: "1", Slug: "entry-1", Title: "Hello"})
-		if got != "Hello" {
-			t.Fatalf("expected title, got %q", got)
-		}
-	})
-
-	t.Run("fields title fallback", func(t *testing.T) {
-		got := entryDisplayTitle(api.Entry{ID: "1", Slug: "entry-1", Fields: map[string]any{"title": "From Fields"}})
-		if got != "From Fields" {
-			t.Fatalf("expected fields title, got %q", got)
-		}
-	})
-
-	t.Run("title field value fallback", func(t *testing.T) {
-		got := entryDisplayTitle(api.Entry{ID: "1", Slug: "entry-1", Extra: map[string]any{"title_field_value": "Project Naam"}})
-		if got != "Project Naam" {
-			t.Fatalf("expected title_field_value, got %q", got)
-		}
-	})
-
-	t.Run("slug fallback", func(t *testing.T) {
-		got := entryDisplayTitle(api.Entry{ID: "1", Slug: "entry-1", Fields: map[string]any{"title": 123}})
-		if got != "entry-1" {
-			t.Fatalf("expected slug fallback, got %q", got)
-		}
-	})
-
-	t.Run("id fallback", func(t *testing.T) {
-		got := entryDisplayTitle(api.Entry{ID: "id-only"})
-		if got != "id-only" {
-			t.Fatalf("expected id fallback, got %q", got)
-		}
-	})
-}
-
-func TestBlogDisplayHandle(t *testing.T) {
-	if got := blogDisplayHandle(api.Blog{ID: "blog-id", Handle: "news"}); got != "news" {
-		t.Fatalf("expected handle, got %q", got)
-	}
-	if got := blogDisplayHandle(api.Blog{ID: "blog-id"}); got != "blog-id" {
-		t.Fatalf("expected id fallback, got %q", got)
-	}
-}
-
 func TestOrderDisplayNumber(t *testing.T) {
 	if got := orderDisplayNumber(api.Order{ID: "1234567890", Number: "A-42"}); got != "A-42" {
 		t.Fatalf("expected number, got %q", got)

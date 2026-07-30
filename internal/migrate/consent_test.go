@@ -263,3 +263,83 @@ func TestCopySiteDryRunAllowsConsentPagePlannedByPagesStage(t *testing.T) {
 		t.Fatalf("PUT calls = %d, want 0", puts)
 	}
 }
+
+func TestCopySiteAllowErrorsSkipsConsentWhenPrivacyPageWasSkipped(t *testing.T) {
+	menusReached := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		site := r.Header.Get("X-Nimbu-Site")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/pages" && site == "source":
+			_, _ = w.Write([]byte(`[{"id":"source-page","fullpath":"legal/privacy"}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/pages" && site == "target":
+			_, _ = w.Write([]byte(`[]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/pages/legal/privacy" && site == "source":
+			http.Error(w, "unreadable attachment", http.StatusBadGateway)
+		case r.Method == http.MethodGet && r.URL.Path == "/settings/consent" && site == "source":
+			_, _ = w.Write([]byte(`{"privacy_policy_kind":"page","privacy_policy_page_id":"source-page"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/menus" && site == "source":
+			menusReached = true
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			writeEmptySiteCopyResponse(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	result, err := CopySite(
+		context.Background(),
+		api.New(srv.URL, "").WithSite("source"),
+		api.New(srv.URL, "").WithSite("target"),
+		SiteRef{Site: "source"},
+		SiteRef{Site: "target"},
+		SiteCopyOptions{AllowErrors: true, SkipCloudCode: true},
+	)
+	if err != nil {
+		t.Fatalf("copy site with allow-errors: %v", err)
+	}
+	if result.Consent.Action != "skip" {
+		t.Fatalf("consent result = %#v, want skipped", result.Consent)
+	}
+	if !menusReached {
+		t.Fatal("site copy stopped before menus after recoverable consent dependency failure")
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "privacy policy page") {
+		t.Fatalf("warnings = %#v, want privacy page warning", result.Warnings)
+	}
+}
+
+func TestCopySiteAllowErrorsStillFailsOnConsentWriteError(t *testing.T) {
+	menusReached := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		site := r.Header.Get("X-Nimbu-Site")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/pages" && site == "source":
+			_, _ = w.Write([]byte(`[]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/settings/consent" && site == "source":
+			_, _ = w.Write([]byte(`{"privacy_policy_kind":"url","privacy_policy_url":"/privacy"}`))
+		case r.Method == http.MethodPut && r.URL.Path == "/settings/consent" && site == "target":
+			http.Error(w, "write failed", http.StatusInternalServerError)
+		case r.Method == http.MethodGet && r.URL.Path == "/menus" && site == "source":
+			menusReached = true
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			writeEmptySiteCopyResponse(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	_, err := CopySite(
+		context.Background(),
+		api.New(srv.URL, "").WithSite("source"),
+		api.New(srv.URL, "").WithSite("target"),
+		SiteRef{Site: "source"},
+		SiteRef{Site: "target"},
+		SiteCopyOptions{AllowErrors: true, SkipCloudCode: true},
+	)
+	if err == nil || !strings.Contains(err.Error(), "replace target consent configuration") {
+		t.Fatalf("error = %v, want consent write failure", err)
+	}
+	if menusReached {
+		t.Fatal("site copy continued after non-recoverable consent write failure")
+	}
+}

@@ -36,16 +36,12 @@ func (c *SettingsConsentConfigUpdateCmd) Run(ctx context.Context, flags *RootFla
 }
 
 type SettingsConsentConfigReplaceCmd struct {
-	File        string   `help:"Read complete JSON configuration from file (use - for stdin)"`
-	Assignments []string `arg:"" optional:"" help:"Inline assignments are not supported for replacement"`
+	File string `help:"Read complete JSON configuration from file (use - for stdin)" required:""`
 }
 
 func (c *SettingsConsentConfigReplaceCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if c.File == "" {
 		return fmt.Errorf("--file is required for whole consent configuration replacement (use --file - for stdin)")
-	}
-	if len(c.Assignments) > 0 {
-		return fmt.Errorf("inline assignments are not supported for whole consent configuration replacement; use --file")
 	}
 	if err := requireWrite(flags, "replace consent configuration"); err != nil {
 		return err

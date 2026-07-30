@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/nimbu/cli/internal/api"
@@ -32,6 +33,7 @@ type SiteCopyResult struct {
 	ChannelEntries []RecordCopyResult      `json:"channel_entries,omitempty"`
 	CustomerConfig CustomizationCopyResult `json:"customer_config"`
 	ProductConfig  CustomizationCopyResult `json:"product_config"`
+	ShippingRates  ShippingRateSkipResult  `json:"shipping_rates"`
 	Roles          RoleCopyResult          `json:"roles"`
 	Products       ProductCopyResult       `json:"products"`
 	Collections    CollectionCopyResult    `json:"collections"`
@@ -45,6 +47,13 @@ type SiteCopyResult struct {
 	Translations   TranslationCopyResult   `json:"translations"`
 	CloudCode      AppCodeCopyResult       `json:"cloud_code"`
 	Warnings       []string                `json:"warnings,omitempty"`
+}
+
+// ShippingRateSkipResult records why site copy did not copy shipping rates.
+type ShippingRateSkipResult struct {
+	Skipped         int    `json:"skipped"`
+	Reason          string `json:"reason"`
+	InspectionError string `json:"inspection_error,omitempty"`
 }
 
 // CopySite orchestrates a broad site migration.
@@ -144,6 +153,8 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 	result.ProductConfig = productConfig
 	emitStageDone(ctx, "Product Config", customizationCopySummary(productConfig))
 
+	inspectShippingRatesForSiteCopy(ctx, fromClient, &result)
+
 	emitStageStart(ctx, "Roles")
 	rolesResult, err := CopyRoles(ctx, fromClient, toClient, fromRef, toRef, opts.DryRun)
 	if err != nil {
@@ -232,13 +243,29 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 		PlannedTargetPageFullpaths: plannedConsentPages,
 	})
 	if err != nil {
-		return result, err
-	}
-	result.Consent = consentResult
-	result.Warnings = append(result.Warnings, consentResult.Warnings...)
-	emitStageDone(ctx, "Consent", consentResult.Action)
-	for _, w := range consentResult.Warnings {
-		emitStageWarning(ctx, "Consent", w)
+		var privacyPageErr *consentPrivacyPageUnavailableError
+		recoverableDependency := errors.As(err, &privacyPageErr) &&
+			pageCopyResultSkipped(pagesResult, privacyPageErr.fullpath)
+		if !opts.AllowErrors || !recoverableDependency {
+			return result, err
+		}
+		warning := fmt.Sprintf("consent configuration: %v — skipped", err)
+		result.Consent = ConsentCopyResult{
+			From:     fromRef,
+			To:       toRef,
+			Action:   "skip",
+			Warnings: []string{warning},
+		}
+		result.Warnings = append(result.Warnings, warning)
+		emitStageWarning(ctx, "Consent", warning)
+		emitStageSkip(ctx, "Consent", warning)
+	} else {
+		result.Consent = consentResult
+		result.Warnings = append(result.Warnings, consentResult.Warnings...)
+		emitStageDone(ctx, "Consent", consentResult.Action)
+		for _, w := range consentResult.Warnings {
+			emitStageWarning(ctx, "Consent", w)
+		}
 	}
 
 	emitStageStart(ctx, "Menus")
@@ -315,6 +342,53 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 	}
 
 	return result, nil
+}
+
+func pageCopyResultSkipped(result PageCopyResult, fullpath string) bool {
+	fullpath = api.NormalizePageFullpath(fullpath)
+	for _, item := range result.Items {
+		if item.Action == "skip" && api.NormalizePageFullpath(item.Fullpath) == fullpath {
+			return true
+		}
+	}
+	return false
+}
+
+func inspectShippingRatesForSiteCopy(
+	ctx context.Context,
+	fromClient *api.Client,
+	result *SiteCopyResult,
+) {
+	emitStageStart(ctx, "Shipping Rates")
+
+	var rates []api.Document[api.ShippingRate]
+	if err := fromClient.Get(ctx, "/shipping_rates", &rates); err != nil {
+		warning := fmt.Sprintf("inspect source shipping rates: %v", err)
+		result.ShippingRates = ShippingRateSkipResult{
+			Reason:          "inspection failed; shipping rates were not copied",
+			InspectionError: err.Error(),
+		}
+		result.Warnings = append(result.Warnings, warning)
+		emitStageWarning(ctx, "Shipping Rates", warning)
+		emitStageSkip(ctx, "Shipping Rates", result.ShippingRates.Reason)
+		return
+	}
+
+	result.ShippingRates.Skipped = len(rates)
+	if len(rates) == 0 {
+		result.ShippingRates.Reason = "none found"
+		emitStageSkip(ctx, "Shipping Rates", result.ShippingRates.Reason)
+		return
+	}
+
+	result.ShippingRates.Reason = "not copied because region mappings are site-specific"
+	warning := fmt.Sprintf(
+		"%d shipping rates were not copied because region mappings are site-specific",
+		len(rates),
+	)
+	result.Warnings = append(result.Warnings, warning)
+	emitStageWarning(ctx, "Shipping Rates", warning)
+	emitStageSkip(ctx, "Shipping Rates", fmt.Sprintf("%d skipped; %s", len(rates), result.ShippingRates.Reason))
 }
 
 func activeThemeID(ctx context.Context, client *api.Client) (string, error) {

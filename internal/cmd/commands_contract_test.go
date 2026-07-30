@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"slices"
 	"strings"
 	"testing"
 )
@@ -60,16 +59,33 @@ func TestCommandContractDoesNotExposeInternalAccountWorkflows(t *testing.T) {
 	}
 
 	contract := buildCommandContract(parser.Model)
-	var accountPaths []string
 	for _, command := range contract.Commands {
 		if strings.HasPrefix(command.Path, "nimbu accounts") {
-			accountPaths = append(accountPaths, command.Path)
+			t.Fatalf("command contract exposes internal account workflow %q", command.Path)
 		}
 	}
-	want := []string{"nimbu accounts", "nimbu accounts list", "nimbu accounts count"}
-	if !slices.Equal(accountPaths, want) {
-		t.Fatalf("accounts command paths = %#v, want %#v", accountPaths, want)
+}
+
+func TestLocalizedListContractExplainsContentLocale(t *testing.T) {
+	parser, _, err := newParser()
+	if err != nil {
+		t.Fatalf("new parser: %v", err)
 	}
+	for _, command := range buildCommandContract(parser.Model).Commands {
+		if command.Path != "nimbu pages list" {
+			continue
+		}
+		for _, flag := range command.Flags {
+			if flag.Name == "locale" {
+				if !strings.Contains(strings.ToLower(flag.Help), "content locale") {
+					t.Fatalf("pages list --locale help = %q, want content locale semantics", flag.Help)
+				}
+				return
+			}
+		}
+		t.Fatal("pages list --locale missing")
+	}
+	t.Fatal("pages list missing from command contract")
 }
 
 func TestJobsRunContractDoesNotExposeAppFlag(t *testing.T) {

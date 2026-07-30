@@ -42,7 +42,6 @@ func captureStdout(t *testing.T, fn func() error) string {
 
 func TestCompletionsIncludeNewTopLevelCommands(t *testing.T) {
 	required := []string{
-		"accounts",
 		"collections",
 		"coupons",
 		"mails",
@@ -75,6 +74,57 @@ func TestCompletionsIncludeNewTopLevelCommands(t *testing.T) {
 		}
 		if !strings.Contains(fish, cmd) {
 			t.Fatalf("fish completion missing %q", cmd)
+		}
+	}
+}
+
+func TestCompletionsIncludeShippingRatesAndConsentConfig(t *testing.T) {
+	shells := map[string]string{
+		"bash": captureStdout(t, func() error { return writeBashCompletion(nil) }),
+		"zsh":  captureStdout(t, func() error { return writeZshCompletion(nil) }),
+		"fish": captureStdout(t, func() error { return writeFishCompletion(nil) }),
+	}
+
+	for name, completion := range shells {
+		for _, required := range []string{
+			"shipping-rates",
+			"settings",
+			"consent",
+			"config",
+			"replace",
+		} {
+			if !strings.Contains(completion, required) {
+				t.Errorf("%s completion missing %q", name, required)
+			}
+		}
+		if strings.Contains(completion, "accounts") {
+			t.Errorf("%s completion exposes internal accounts command", name)
+		}
+	}
+}
+
+func TestFishConsentCompletionsRequireTheWholeCommandPath(t *testing.T) {
+	fish := captureStdout(t, func() error { return writeFishCompletion(nil) })
+	for _, predicate := range []string{
+		`__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get update consent`,
+		`__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from consent; and not __fish_seen_subcommand_from config list get create update delete`,
+		`__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from consent; and __fish_seen_subcommand_from config; and not __fish_seen_subcommand_from get update replace copy`,
+	} {
+		if !strings.Contains(fish, predicate) {
+			t.Errorf("fish completion missing path-safe predicate %q", predicate)
+		}
+	}
+}
+
+func TestFishConfigCompletionsStayWithinTheirResourcePath(t *testing.T) {
+	fish := captureStdout(t, func() error { return writeFishCompletion(nil) })
+	for _, predicate := range []string{
+		`__fish_seen_subcommand_from customers; and __fish_seen_subcommand_from config; and not __fish_seen_subcommand_from copy diff`,
+		`__fish_seen_subcommand_from products; and __fish_seen_subcommand_from config; and not __fish_seen_subcommand_from copy diff`,
+		`__fish_seen_subcommand_from config; and not __fish_seen_subcommand_from customers products settings apps; and not __fish_seen_subcommand_from list get set unset path banner`,
+	} {
+		if !strings.Contains(fish, predicate) {
+			t.Errorf("fish completion missing resource-safe config predicate %q", predicate)
 		}
 	}
 }

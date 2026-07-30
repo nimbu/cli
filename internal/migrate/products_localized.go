@@ -12,7 +12,7 @@ func productLocalePlan(
 	ctx context.Context,
 	fromClient, toClient *api.Client,
 	fromRef, toRef SiteRef,
-) (siteLocaleInfo, siteLocaleInfo, []string, []string, bool, error) {
+) (siteLocaleInfo, siteLocaleInfo, []string, []string, error) {
 	source, sourceErr := fetchSiteLocaleInfo(ctx, fromClient, fromRef.Site)
 	target, targetErr := fetchSiteLocaleInfo(ctx, toClient, toRef.Site)
 	var warnings []string
@@ -23,24 +23,24 @@ func productLocalePlan(
 		warnings = append(warnings, fmt.Sprintf("target site locales fetch failed: %v", targetErr))
 	}
 	if sourceErr != nil {
-		return source, target, nil, warnings, false, fmt.Errorf("source site locales fetch failed: %w", sourceErr)
+		return source, target, nil, warnings, fmt.Errorf("source site locales fetch failed: %w", sourceErr)
 	}
 	if targetErr != nil {
-		return source, target, nil, warnings, false, fmt.Errorf("target site locales fetch failed: %w", targetErr)
+		return source, target, nil, warnings, fmt.Errorf("target site locales fetch failed: %w", targetErr)
 	}
 	if !source.ExplicitDefault {
-		return source, target, nil, warnings, false, fmt.Errorf("source site explicit default_locale is required for product copy")
+		return source, target, nil, warnings, fmt.Errorf("source site explicit default_locale is required for product copy")
 	}
 	if !target.ExplicitDefault {
-		return source, target, nil, warnings, false, fmt.Errorf("target site explicit default_locale is required for product copy")
+		return source, target, nil, warnings, fmt.Errorf("target site explicit default_locale is required for product copy")
 	}
 	if !containsLocale(source.Locales, target.DefaultLocale) {
-		return source, target, nil, warnings, true, fmt.Errorf(
+		return source, target, nil, warnings, fmt.Errorf(
 			"target default locale %q is not available on source site; add it to the source site or align the default locales",
 			target.DefaultLocale,
 		)
 	}
-	return source, target, sharedLocalesExceptTargetDefault(source.Locales, target.Locales, target.DefaultLocale), warnings, true, nil
+	return source, target, sharedLocalesExceptTargetDefault(source.Locales, target.Locales, target.DefaultLocale), warnings, nil
 }
 
 func sharedLocalesExceptTargetDefault(source, target []string, targetDefault string) []string {

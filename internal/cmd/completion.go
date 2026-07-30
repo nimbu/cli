@@ -89,7 +89,7 @@ _nimbu_completions() {
             return
         fi
     fi
-    local commands="auth init sites channels pages menus products collections coupons domains orders customers mails accounts notifications roles redirects functions jobs apps senders themes uploads blogs webhooks translations server config api completion"
+    local commands="auth init sites channels pages menus products shipping-rates collections coupons domains orders customers mails settings notifications roles redirects functions jobs apps senders themes uploads blogs webhooks translations server config api completion"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=($(compgen -W "${commands}" -- "${cur}"))
@@ -119,6 +119,12 @@ _nimbu_completions() {
             products)
                 COMPREPLY=($(compgen -W "list get create update delete count fields config copy" -- "${cur}"))
                 ;;
+            shipping-rates)
+                COMPREPLY=($(compgen -W "list get create update delete" -- "${cur}"))
+                ;;
+            settings)
+                COMPREPLY=($(compgen -W "get update consent" -- "${cur}"))
+                ;;
             mails)
                 COMPREPLY=($(compgen -W "pull push" -- "${cur}"))
                 ;;
@@ -127,9 +133,6 @@ _nimbu_completions() {
                 ;;
             orders)
                 COMPREPLY=($(compgen -W "list get update count pay finish cancel reopen archive" -- "${cur}"))
-                ;;
-            accounts)
-                COMPREPLY=($(compgen -W "list count" -- "${cur}"))
                 ;;
             roles|redirects)
                 COMPREPLY=($(compgen -W "list get create update delete copy" -- "${cur}"))
@@ -211,6 +214,10 @@ _nimbu_completions() {
         COMPREPLY=($(compgen -W "copy diff" -- "${cur}"))
     elif [[ ${COMP_WORDS[1]} == "products" && ${COMP_WORDS[2]} == "config" ]]; then
         COMPREPLY=($(compgen -W "copy diff" -- "${cur}"))
+    elif [[ ${COMP_WORDS[1]} == "settings" && ${COMP_WORDS[2]} == "consent" && ${COMP_WORDS[3]} == "config" ]]; then
+        COMPREPLY=($(compgen -W "get update replace copy" -- "${cur}"))
+    elif [[ ${COMP_WORDS[1]} == "settings" && ${COMP_WORDS[2]} == "consent" ]]; then
+        COMPREPLY=($(compgen -W "config list get create update delete" -- "${cur}"))
     fi
 }
 
@@ -236,13 +243,14 @@ _nimbu() {
         'pages:Manage pages'
         'menus:Manage navigation menus'
         'products:Manage products'
+        'shipping-rates:Manage shipping rates'
         'collections:Manage collections'
         'coupons:Manage coupons'
         'domains:Manage custom domains'
         'orders:Manage orders'
         'customers:Manage customers'
         'mails:Sync notification templates to local files'
-        'accounts:Manage accounts'
+        'settings:Manage site settings'
         'notifications:Manage notifications'
         'roles:Manage roles'
         'redirects:Manage redirects'
@@ -394,6 +402,18 @@ _nimbu() {
                 )
                 _describe -t config-copy-commands 'config command' config_copy_commands
                 ;;
+            "settings consent")
+                local -a consent_commands
+                consent_commands=(
+                    'config:Manage the complete consent configuration'
+                    'list:List consent resources'
+                    'get:Get a consent resource'
+                    'create:Create a consent resource'
+                    'update:Update a consent resource'
+                    'delete:Delete a consent resource'
+                )
+                _describe -t consent-commands 'consent command' consent_commands
+                ;;
             "themes layouts"|"themes templates"|"themes snippets"|"themes assets")
                 local -a theme_section_commands
                 theme_section_commands=(
@@ -436,6 +456,18 @@ _nimbu() {
                 _describe -t app-code-commands 'app code command' app_code_commands
                 ;;
         esac
+        return
+    fi
+
+    if (( CURRENT == 5 )) && [[ "${words[2]} ${words[3]} ${words[4]}" == "settings consent config" ]]; then
+        local -a consent_config_commands
+        consent_config_commands=(
+            'get:Get the complete consent configuration'
+            'update:Update consent configuration fields'
+            'replace:Replace the complete consent configuration'
+            'copy:Copy the complete consent configuration between sites'
+        )
+        _describe -t consent-config-commands 'consent config command' consent_config_commands
         return
     fi
 
@@ -536,6 +568,26 @@ _nimbu() {
                 'copy:Copy products between sites'
             )
             _describe -t products-commands 'products command' products_commands
+            ;;
+        shipping-rates)
+            local -a shipping_rate_commands
+            shipping_rate_commands=(
+                'list:List shipping rates'
+                'get:Get shipping rate details'
+                'create:Create a shipping rate'
+                'update:Update a shipping rate'
+                'delete:Delete a shipping rate'
+            )
+            _describe -t shipping-rate-commands 'shipping rate command' shipping_rate_commands
+            ;;
+        settings)
+            local -a settings_commands
+            settings_commands=(
+                'get:Get a settings section'
+                'update:Update a settings section'
+                'consent:Manage consent resources'
+            )
+            _describe -t settings-commands 'settings command' settings_commands
             ;;
         themes)
             local -a themes_commands
@@ -679,13 +731,14 @@ complete -c nimbu -n "__fish_use_subcommand" -a "channels" -d "Manage channels a
 complete -c nimbu -n "__fish_use_subcommand" -a "pages" -d "Manage pages"
 complete -c nimbu -n "__fish_use_subcommand" -a "menus" -d "Manage navigation menus"
 complete -c nimbu -n "__fish_use_subcommand" -a "products" -d "Manage products"
+complete -c nimbu -n "__fish_use_subcommand" -a "shipping-rates" -d "Manage shipping rates"
 complete -c nimbu -n "__fish_use_subcommand" -a "collections" -d "Manage collections"
 complete -c nimbu -n "__fish_use_subcommand" -a "coupons" -d "Manage coupons"
 complete -c nimbu -n "__fish_use_subcommand" -a "domains" -d "Manage custom domains"
 complete -c nimbu -n "__fish_use_subcommand" -a "orders" -d "Manage orders"
 complete -c nimbu -n "__fish_use_subcommand" -a "customers" -d "Manage customers"
 complete -c nimbu -n "__fish_use_subcommand" -a "mails" -d "Sync notification templates to local files"
-complete -c nimbu -n "__fish_use_subcommand" -a "accounts" -d "Manage accounts"
+complete -c nimbu -n "__fish_use_subcommand" -a "settings" -d "Manage site settings"
 complete -c nimbu -n "__fish_use_subcommand" -a "notifications" -d "Manage notifications"
 complete -c nimbu -n "__fish_use_subcommand" -a "roles" -d "Manage roles"
 complete -c nimbu -n "__fish_use_subcommand" -a "redirects" -d "Manage redirects"
@@ -719,10 +772,14 @@ complete -c nimbu -n "__fish_seen_subcommand_from sites" -a "list get current co
 complete -c nimbu -n "__fish_seen_subcommand_from channels" -a "list get info copy diff empty fields entries" -d "Channel commands"
 complete -c nimbu -n "__fish_seen_subcommand_from channels entries" -a "list get create update delete count copy gallery" -d "Channel entry commands"
 complete -c nimbu -n "__fish_seen_subcommand_from channels fields" -a "list add update delete apply replace diff" -d "Channel field commands"
-complete -c nimbu -n "__fish_seen_subcommand_from customers" -a "list get create update delete count copy fields config reset-password resend-confirmation" -d "Customer commands"
-complete -c nimbu -n "__fish_seen_subcommand_from customers config" -a "copy diff" -d "Customer config commands"
-complete -c nimbu -n "__fish_seen_subcommand_from products" -a "list get create update delete count fields config copy" -d "Product commands"
-complete -c nimbu -n "__fish_seen_subcommand_from products config" -a "copy diff" -d "Product config commands"
+complete -c nimbu -n "__fish_seen_subcommand_from customers; and not __fish_seen_subcommand_from list get create update delete count copy fields config reset-password resend-confirmation" -a "list get create update delete count copy fields config reset-password resend-confirmation" -d "Customer commands"
+complete -c nimbu -n "__fish_seen_subcommand_from customers; and __fish_seen_subcommand_from config; and not __fish_seen_subcommand_from copy diff" -a "copy diff" -d "Customer config commands"
+complete -c nimbu -n "__fish_seen_subcommand_from products; and not __fish_seen_subcommand_from list get create update delete count fields config copy" -a "list get create update delete count fields config copy" -d "Product commands"
+complete -c nimbu -n "__fish_seen_subcommand_from products; and __fish_seen_subcommand_from config; and not __fish_seen_subcommand_from copy diff" -a "copy diff" -d "Product config commands"
+complete -c nimbu -n "__fish_seen_subcommand_from shipping-rates" -a "list get create update delete" -d "Shipping rate commands"
+complete -c nimbu -n "__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from get update consent" -a "get update consent" -d "Settings commands"
+complete -c nimbu -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from consent; and not __fish_seen_subcommand_from config list get create update delete" -a "config list get create update delete" -d "Consent commands"
+complete -c nimbu -n "__fish_seen_subcommand_from settings; and __fish_seen_subcommand_from consent; and __fish_seen_subcommand_from config; and not __fish_seen_subcommand_from get update replace copy" -a "get update replace copy" -d "Consent config commands"
 complete -c nimbu -n "__fish_seen_subcommand_from pages" -a "list get create update delete count copy" -d "Page commands"
 complete -c nimbu -n "__fish_seen_subcommand_from menus" -a "list get create update delete count copy" -d "Menu commands"
 complete -c nimbu -n "__fish_seen_subcommand_from blogs" -a "list get create update delete count posts articles copy" -d "Blog commands"
@@ -734,7 +791,6 @@ complete -c nimbu -n "__fish_seen_subcommand_from collections" -a "list get crea
 complete -c nimbu -n "__fish_seen_subcommand_from coupons" -a "list get create update delete count" -d "Coupon commands"
 complete -c nimbu -n "__fish_seen_subcommand_from domains" -a "list get create update delete make-primary" -d "Domain commands"
 complete -c nimbu -n "__fish_seen_subcommand_from orders" -a "list get update count pay finish cancel reopen archive" -d "Order commands"
-complete -c nimbu -n "__fish_seen_subcommand_from accounts" -a "list count" -d "Account commands"
 complete -c nimbu -n "__fish_seen_subcommand_from roles" -a "list get create update delete copy" -d "Role commands"
 complete -c nimbu -n "__fish_seen_subcommand_from redirects" -a "list get create update delete copy" -d "Redirect commands"
 complete -c nimbu -n "__fish_seen_subcommand_from functions" -a "run" -d "Run function"
@@ -751,12 +807,12 @@ complete -c nimbu -n "__fish_seen_subcommand_from files" -a "list get put delete
 complete -c nimbu -n "__fish_seen_subcommand_from apps; and __fish_seen_subcommand_from code; and not __fish_seen_subcommand_from list create pull" -a "list create pull" -d "Manage app code files"
 
 # Config subcommands
-complete -c nimbu -n "__fish_seen_subcommand_from config" -a "list" -d "List all config values"
-complete -c nimbu -n "__fish_seen_subcommand_from config" -a "get" -d "Get a config value"
-complete -c nimbu -n "__fish_seen_subcommand_from config" -a "set" -d "Set a config value"
-complete -c nimbu -n "__fish_seen_subcommand_from config" -a "unset" -d "Unset a config value"
-complete -c nimbu -n "__fish_seen_subcommand_from config" -a "path" -d "Print config file path"
-complete -c nimbu -n "__fish_seen_subcommand_from config" -a "banner" -d "Pick a banner theme interactively"
+complete -c nimbu -n "__fish_seen_subcommand_from config; and not __fish_seen_subcommand_from customers products settings apps; and not __fish_seen_subcommand_from list get set unset path banner" -a "list" -d "List all config values"
+complete -c nimbu -n "__fish_seen_subcommand_from config; and not __fish_seen_subcommand_from customers products settings apps; and not __fish_seen_subcommand_from list get set unset path banner" -a "get" -d "Get a config value"
+complete -c nimbu -n "__fish_seen_subcommand_from config; and not __fish_seen_subcommand_from customers products settings apps; and not __fish_seen_subcommand_from list get set unset path banner" -a "set" -d "Set a config value"
+complete -c nimbu -n "__fish_seen_subcommand_from config; and not __fish_seen_subcommand_from customers products settings apps; and not __fish_seen_subcommand_from list get set unset path banner" -a "unset" -d "Unset a config value"
+complete -c nimbu -n "__fish_seen_subcommand_from config; and not __fish_seen_subcommand_from customers products settings apps; and not __fish_seen_subcommand_from list get set unset path banner" -a "path" -d "Print config file path"
+complete -c nimbu -n "__fish_seen_subcommand_from config; and not __fish_seen_subcommand_from customers products settings apps; and not __fish_seen_subcommand_from list get set unset path banner" -a "banner" -d "Pick a banner theme interactively"
 
 # Completion shells
 complete -c nimbu -n "__fish_seen_subcommand_from completion" -l shell -d "Shell to generate completions for"

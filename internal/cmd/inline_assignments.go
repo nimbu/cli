@@ -59,8 +59,8 @@ func parseInlineAssignment(token string) (string, any, error) {
 		if raw == "" {
 			return "", nil, fmt.Errorf("invalid assignment %q", token)
 		}
-		var value any
-		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		value, err := decodeJSONAnyUseNumber([]byte(raw))
+		if err != nil {
 			return "", nil, fmt.Errorf("parse JSON value for %q: %w", path, err)
 		}
 		return path, value, nil
@@ -413,8 +413,8 @@ func readJSONValueFromFile(path string) (any, error) {
 	if int64(len(data)) > maxJSONInputBytes {
 		return nil, fmt.Errorf("file %q exceeds %d bytes", path, maxJSONInputBytes)
 	}
-	var value any
-	if err := json.Unmarshal(data, &value); err != nil {
+	value, err := decodeJSONAnyUseNumber(data)
+	if err != nil {
 		return nil, fmt.Errorf("parse JSON file %q: %w", path, err)
 	}
 	return value, nil

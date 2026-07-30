@@ -403,6 +403,7 @@ var completionValueFlags = map[string]bool{
 	"proxy-host":          true,
 	"proxy-port":          true,
 	"query":               true,
+	"rate":                true,
 	"ready-timeout":       true,
 	"ready-url":           true,
 	"reason":              true,

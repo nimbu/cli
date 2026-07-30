@@ -15,6 +15,10 @@ func TestCopyBlogsPreservesWritableBlogAndPostFields(t *testing.T) {
 	var blogPayload, postPayload map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/sites/source/settings":
+			_, _ = w.Write([]byte(`{"default_locale":"en","locales":["en","nl"]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/sites/target/settings":
+			_, _ = w.Write([]byte(`{"default_locale":"en","locales":["en","nl"]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/blogs" && r.Header.Get("X-Nimbu-Site") == "source":
 			_, _ = w.Write([]byte(`[{
 				"id":"source-blog","handle":"news","name":"News","description":"Long description",
@@ -92,6 +96,79 @@ func TestCopyBlogsPreservesWritableBlogAndPostFields(t *testing.T) {
 		t.Fatalf("post custom field lost: %#v", postPayload)
 	}
 	assertPayloadOmits(t, postPayload, "id", "created_at", "updated_at", "url", "public_url", "next_article")
+}
+
+func TestCopyBlogsPromotesTargetDefaultLocaleForMatchingAndWrites(t *testing.T) {
+	var blogPayload, postPayload map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		site := r.Header.Get("X-Nimbu-Site")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/sites/source/settings":
+			_, _ = w.Write([]byte(`{"default_locale":"en","locales":["en","nl"]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/sites/target/settings":
+			_, _ = w.Write([]byte(`{"default_locale":"nl","locales":["nl","en"]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/blogs" && site == "source":
+			_, _ = w.Write([]byte(`[{
+				"id":"source-blog","slug":"news","name":"News",
+				"translations":{
+					"nl":{"slug":"nieuws","name":"Nieuws"}
+				}
+			}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/blogs/nieuws" && site == "target":
+			_, _ = w.Write([]byte(`{"id":"target-blog","slug":"nieuws","name":"Oud nieuws"}`))
+		case r.Method == http.MethodPut && r.URL.Path == "/blogs/nieuws" && site == "target":
+			if err := json.NewDecoder(r.Body).Decode(&blogPayload); err != nil {
+				t.Fatalf("decode blog payload: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"id":"target-blog","slug":"nieuws"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/blogs/news/articles" && site == "source":
+			_, _ = w.Write([]byte(`[{
+				"id":"source-post","slug":"launch","title":"Launch",
+				"translations":{
+					"nl":{"slug":"lancering","title":"Lancering"}
+				}
+			}]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/blogs/nieuws/articles" && site == "target":
+			_, _ = w.Write([]byte(`[{"id":"target-post","slug":"lancering","title":"Oude lancering"}]`))
+		case r.Method == http.MethodPut && r.URL.Path == "/blogs/nieuws/articles/target-post" && site == "target":
+			if err := json.NewDecoder(r.Body).Decode(&postPayload); err != nil {
+				t.Fatalf("decode post payload: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"id":"target-post","slug":"lancering"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	result, err := CopyBlogs(
+		context.Background(),
+		api.New(srv.URL, "").WithSite("source"),
+		api.New(srv.URL, "").WithSite("target"),
+		SiteRef{Site: "source"},
+		SiteRef{Site: "target"},
+		"*",
+		nil,
+		false,
+	)
+	if err != nil {
+		t.Fatalf("CopyBlogs error = %v", err)
+	}
+	if blogPayload["slug"] != "nieuws" || blogPayload["name"] != "Nieuws" {
+		t.Fatalf("blog target-default payload = %#v", blogPayload)
+	}
+	if postPayload["slug"] != "lancering" || postPayload["title"] != "Lancering" {
+		t.Fatalf("post target-default payload = %#v", postPayload)
+	}
+	if blogPayload["translations"].(map[string]any)["en"].(map[string]any)["name"] != "News" {
+		t.Fatalf("source-default blog translation lost: %#v", blogPayload)
+	}
+	if postPayload["translations"].(map[string]any)["en"].(map[string]any)["title"] != "Launch" {
+		t.Fatalf("source-default post translation lost: %#v", postPayload)
+	}
+	if len(result.Items) != 2 || result.Items[0].Action != "update" || result.Items[1].Action != "update" {
+		t.Fatalf("copy result = %#v, want matched updates", result.Items)
+	}
 }
 
 func assertPayloadOmits(t *testing.T, payload map[string]any, keys ...string) {

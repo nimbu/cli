@@ -44,8 +44,8 @@ func readJSONAnyInput(file string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	var value any
-	if err := json.Unmarshal(data, &value); err != nil {
+	value, err := decodeJSONAnyUseNumber(data)
+	if err != nil {
 		return nil, fmt.Errorf("parse JSON: %w", err)
 	}
 	return value, nil
@@ -71,6 +71,23 @@ func readJSONInputUseNumber(file string) (map[string]any, error) {
 	}
 	if value == nil {
 		return nil, fmt.Errorf("parse JSON: expected an object")
+	}
+	return value, nil
+}
+
+func decodeJSONAnyUseNumber(data []byte) (any, error) {
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("trailing JSON value")
+		}
+		return nil, fmt.Errorf("trailing JSON data: %w", err)
 	}
 	return value, nil
 }

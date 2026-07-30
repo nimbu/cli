@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,6 +50,24 @@ func TestReadJSONInputFromFile(t *testing.T) {
 
 	if body["name"] != "nimbu" {
 		t.Fatalf("unexpected name: %v", body["name"])
+	}
+}
+
+func TestReadJSONInputPreservesExactNumbers(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "body.json")
+	if err := os.WriteFile(file, []byte(`{"large":9007199254740993,"precise":0.12345678901234567890}`), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	body, err := readJSONInput(file)
+	if err != nil {
+		t.Fatalf("readJSONInput: %v", err)
+	}
+	if body["large"] != json.Number("9007199254740993") {
+		t.Fatalf("large = %#v", body["large"])
+	}
+	if body["precise"] != json.Number("0.12345678901234567890") {
+		t.Fatalf("precise = %#v", body["precise"])
 	}
 }
 

@@ -32,6 +32,31 @@ func TestSettingsConsentConfigCommandsAreInContract(t *testing.T) {
 	}
 }
 
+func TestSettingsConsentConfigReplaceContractRequiresFileAndHasNoAssignments(t *testing.T) {
+	parser, _, err := newParser()
+	if err != nil {
+		t.Fatalf("new parser: %v", err)
+	}
+	for _, command := range buildCommandContract(parser.Model).Commands {
+		if command.Path != "nimbu settings consent config replace" {
+			continue
+		}
+		if len(command.Arguments) != 0 {
+			t.Fatalf("replace arguments = %#v, want none", command.Arguments)
+		}
+		for _, flag := range command.Flags {
+			if flag.Name == "file" {
+				if !flag.Required {
+					t.Fatal("replace --file must be required in the command contract")
+				}
+				return
+			}
+		}
+		t.Fatal("replace --file missing from command contract")
+	}
+	t.Fatal("replace command missing from contract")
+}
+
 func TestSettingsConsentConfigGetPreservesLocalizedFields(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/settings/consent" {
@@ -172,7 +197,6 @@ func TestSettingsConsentConfigReplaceGuardsWholeConfigWrite(t *testing.T) {
 		want string
 	}{
 		{name: "file required", cmd: SettingsConsentConfigReplaceCmd{}, flag: RootFlags{Force: true}, want: "--file is required"},
-		{name: "inline rejected", cmd: SettingsConsentConfigReplaceCmd{File: "config.json", Assignments: []string{"enabled:=true"}}, flag: RootFlags{Force: true}, want: "inline assignments"},
 		{name: "force required", cmd: SettingsConsentConfigReplaceCmd{File: "config.json"}, want: "--force"},
 		{name: "readonly", cmd: SettingsConsentConfigReplaceCmd{File: "config.json"}, flag: RootFlags{Force: true, Readonly: true}, want: "readonly"},
 	}

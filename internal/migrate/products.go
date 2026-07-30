@@ -50,7 +50,7 @@ func CopyProducts(ctx context.Context, fromClient, toClient *api.Client, fromRef
 		return result, idMapping, fmt.Errorf("get product schema: %w", err)
 	}
 	info := buildSchemaInfo("products", fields)
-	sourceLocales, targetLocales, locales, localeWarnings, localeInfoReady, err := productLocalePlan(ctx, fromClient, toClient, fromRef, toRef)
+	sourceLocales, targetLocales, locales, localeWarnings, err := productLocalePlan(ctx, fromClient, toClient, fromRef, toRef)
 	result.Warnings = append(result.Warnings, localeWarnings...)
 	if err != nil {
 		return result, idMapping, err
@@ -66,25 +66,24 @@ func CopyProducts(ctx context.Context, fromClient, toClient *api.Client, fromRef
 		return result, idMapping, fmt.Errorf("list target products: %w", err)
 	}
 	defaultSourceProducts := indexRecordsByID(srcProducts)
-	localizedProducts := map[string]map[string]map[string]any{}
-	localizedTargets := map[string]map[string]map[string]any{}
-	if localeInfoReady {
-		localizedProducts[sourceLocales.DefaultLocale] = defaultSourceProducts
-		sourceFetchLocales := locales
-		if targetLocales.DefaultLocale != sourceLocales.DefaultLocale {
-			sourceFetchLocales = append(append([]string{}, sourceFetchLocales...), targetLocales.DefaultLocale)
-		}
-		sourceFetchLocales = localesExcept(sourceFetchLocales, sourceLocales.DefaultLocale)
-		localizedProducts, localeWarnings, err = mergeLocalizedProducts(ctx, fromClient, localizedProducts, sourceFetchLocales, opts.AllowErrors, targetLocales.DefaultLocale)
-		result.Warnings = append(result.Warnings, localeWarnings...)
-		if err != nil {
-			return result, idMapping, err
-		}
-		localizedTargets, localeWarnings, err = listLocalizedProducts(ctx, toClient, locales, opts.AllowErrors, "target")
-		result.Warnings = append(result.Warnings, localeWarnings...)
-		if err != nil {
-			return result, idMapping, err
-		}
+	localizedProducts := map[string]map[string]map[string]any{
+		sourceLocales.DefaultLocale: defaultSourceProducts,
+	}
+	var localizedTargets map[string]map[string]map[string]any
+	sourceFetchLocales := locales
+	if targetLocales.DefaultLocale != sourceLocales.DefaultLocale {
+		sourceFetchLocales = append(append([]string{}, sourceFetchLocales...), targetLocales.DefaultLocale)
+	}
+	sourceFetchLocales = localesExcept(sourceFetchLocales, sourceLocales.DefaultLocale)
+	localizedProducts, localeWarnings, err = mergeLocalizedProducts(ctx, fromClient, localizedProducts, sourceFetchLocales, opts.AllowErrors, targetLocales.DefaultLocale)
+	result.Warnings = append(result.Warnings, localeWarnings...)
+	if err != nil {
+		return result, idMapping, err
+	}
+	localizedTargets, localeWarnings, err = listLocalizedProducts(ctx, toClient, locales, opts.AllowErrors, "target")
+	result.Warnings = append(result.Warnings, localeWarnings...)
+	if err != nil {
+		return result, idMapping, err
 	}
 	targetBySlug := make(map[string]map[string]any, len(dstProducts))
 	for _, p := range dstProducts {
@@ -101,12 +100,9 @@ func CopyProducts(ctx context.Context, fromClient, toClient *api.Client, fromRef
 			continue
 		}
 
-		baseLocalized := src
-		if localeInfoReady {
-			baseLocalized = localizedProducts[targetLocales.DefaultLocale][sourceID]
-			if len(baseLocalized) == 0 {
-				return result, idMapping, fmt.Errorf("product %s is unavailable in target default locale %q on source site", slug, targetLocales.DefaultLocale)
-			}
+		baseLocalized := localizedProducts[targetLocales.DefaultLocale][sourceID]
+		if len(baseLocalized) == 0 {
+			return result, idMapping, fmt.Errorf("product %s is unavailable in target default locale %q on source site", slug, targetLocales.DefaultLocale)
 		}
 		payload, payloadWarnings := baseProductPayload(src, baseLocalized, info)
 		for _, warning := range payloadWarnings {

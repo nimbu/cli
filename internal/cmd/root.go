@@ -35,7 +35,7 @@ type (
 // Embedded by commands that support query parameters.
 type QueryFlags struct {
 	Fields  string   `help:"Comma-separated fields to return" group:"Query"`
-	Locale  string   `help:"Filter by locale" group:"Query"`
+	Locale  string   `help:"Locale filter; localized resources use it as content locale" group:"Query"`
 	Include string   `help:"Include related resources" group:"Query"`
 	Sort    string   `help:"Sort by field, e.g. field or field:desc" group:"Query"`
 	Filters []string `help:"Filter by key=value, repeatable" group:"Query"`
@@ -43,7 +43,7 @@ type QueryFlags struct {
 
 // CountQueryFlags contains query parameters that count endpoints can honor.
 type CountQueryFlags struct {
-	Locale  string   `help:"Filter by locale" group:"Query"`
+	Locale  string   `help:"Locale filter; localized resources use it as content locale" group:"Query"`
 	Filters []string `help:"Filter by key=value, repeatable" group:"Query"`
 }
 
@@ -84,13 +84,13 @@ type CLI struct {
 	Pages               PagesCmd               `cmd:"" help:"Manage pages"`
 	Menus               MenusCmd               `cmd:"" help:"Manage navigation menus"`
 	Products            ProductsCmd            `cmd:"" help:"Manage products"`
+	ShippingRates       ShippingRatesCmd       `cmd:"" name:"shipping-rates" help:"Manage shipping rates"`
 	Collections         CollectionsCmd         `cmd:"" help:"Manage collections"`
 	Coupons             CouponsCmd             `cmd:"" help:"Manage coupons"`
 	Domains             DomainsCmd             `cmd:"" help:"Manage custom domains"`
 	Orders              OrdersCmd              `cmd:"" help:"Manage orders"`
 	Customers           CustomersCmd           `cmd:"" help:"Manage customers"`
 	Mails               MailsCmd               `cmd:"" aliases:"mail" help:"Sync notification templates to local files"`
-	Accounts            AccountsCmd            `cmd:"" help:"Manage accounts"`
 	Announcements       AnnouncementsCmd       `cmd:"" help:"Manage platform announcements"`
 	DomainRegistrations DomainRegistrationsCmd `cmd:"" name:"domain-registrations" help:"Manage domain registrations"`
 	Settings            SettingsCmd            `cmd:"" help:"Manage site settings"`

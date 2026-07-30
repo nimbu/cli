@@ -104,48 +104,6 @@ func (c *ChannelEntriesListCmd) Run(ctx context.Context, flags *RootFlags) error
 	return writeListFooter(ctx, "entries", meta)
 }
 
-func entryDisplayTitle(entry api.Entry) string {
-	if strings.TrimSpace(entry.Title) != "" {
-		return entry.Title
-	}
-
-	if entry.Fields != nil {
-		if raw, ok := entry.Fields["title"]; ok {
-			if title, ok := raw.(string); ok {
-				title = strings.TrimSpace(title)
-				if title != "" {
-					return title
-				}
-			}
-		}
-	}
-	if entry.Extra != nil {
-		for _, key := range []string{"title", "title_field_value", "name"} {
-			if title := extraString(entry.Extra, key); title != "" {
-				return title
-			}
-		}
-	}
-
-	if strings.TrimSpace(entry.Slug) != "" {
-		return entry.Slug
-	}
-
-	return entry.ID
-}
-
-func extraString(values map[string]any, key string) string {
-	raw, ok := values[key]
-	if !ok {
-		return ""
-	}
-	text, ok := raw.(string)
-	if !ok {
-		return ""
-	}
-	return strings.TrimSpace(text)
-}
-
 func channelEntryListRequestOptions(flags *QueryFlags, extra ...api.RequestOption) ([]api.RequestOption, error) {
 	if flags == nil {
 		return listRequestOptions(flags, extra...)

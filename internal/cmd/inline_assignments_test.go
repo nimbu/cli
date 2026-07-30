@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -35,15 +36,31 @@ func TestParseInlineAssignments(t *testing.T) {
 	want := map[string]any{
 		"name":        "Wine Box",
 		"description": "foo:=bar",
-		"price":       float64(29.9),
+		"price":       json.Number("29.9"),
 		"published":   true,
-		"meta":        map[string]any{"a": float64(1)},
+		"meta":        map[string]any{"a": json.Number("1")},
 		"title":       "hello",
 		"attrs":       map[string]any{"color": "red"},
 	}
 
 	if !reflect.DeepEqual(body, want) {
 		t.Fatalf("unexpected body:\n got: %#v\nwant: %#v", body, want)
+	}
+}
+
+func TestParseInlineAssignmentsPreservesExactJSONNumbers(t *testing.T) {
+	body, err := parseInlineAssignments([]string{
+		"large:=9007199254740993",
+		"precise:=0.12345678901234567890",
+	})
+	if err != nil {
+		t.Fatalf("parseInlineAssignments: %v", err)
+	}
+	if got := body["large"]; got != json.Number("9007199254740993") {
+		t.Fatalf("large = %#v", got)
+	}
+	if got := body["precise"]; got != json.Number("0.12345678901234567890") {
+		t.Fatalf("precise = %#v", got)
 	}
 }
 

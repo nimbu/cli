@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -82,14 +81,4 @@ func (c *BlogsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	return writeListFooter(ctx, "blogs", meta)
-}
-
-func blogDisplayHandle(blog api.Blog) string {
-	if strings.TrimSpace(blog.Handle) != "" {
-		return blog.Handle
-	}
-	if strings.TrimSpace(blog.ID) != "" {
-		return blog.ID
-	}
-	return "-"
 }

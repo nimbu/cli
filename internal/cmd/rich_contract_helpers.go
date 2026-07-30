@@ -42,6 +42,12 @@ func validateShallowInlineAssignments(resource string, assignments []string, all
 
 func mergeTopLevel(dst map[string]any, src map[string]any) {
 	for key, value := range src {
+		dstMap, dstIsMap := dst[key].(map[string]any)
+		srcMap, srcIsMap := value.(map[string]any)
+		if dstIsMap && srcIsMap {
+			mergeTopLevel(dstMap, srcMap)
+			continue
+		}
 		dst[key] = value
 	}
 }
