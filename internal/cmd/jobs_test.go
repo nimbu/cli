@@ -1,12 +1,18 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/nimbu/cli/internal/output"
 )
 
 func jobsTestServer(t *testing.T, status int, response string) (*httptest.Server, *capturedRequest) {
@@ -95,6 +101,141 @@ func TestJobsRunValidationHintsJSONAssignment(t *testing.T) {
 	err := cmd.Run(ctx, &RootFlags{Site: "demo", APIURL: srv.URL})
 	if err == nil || !strings.Contains(err.Error(), "activiteiten:=") {
 		t.Fatalf("expected := hint, got %v", err)
+	}
+}
+
+func TestJobsRunWaitResolvesOwningAppOutsideProject(t *testing.T) {
+	originalPollInterval := appsLogsPollInterval
+	appsLogsPollInterval = time.Hour
+	defer func() { appsLogsPollInterval = originalPollInterval }()
+
+	baseCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var requestsMu sync.Mutex
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/user" {
+			requestsMu.Lock()
+			requests = append(requests, r.Method+" "+r.URL.Path)
+			requestsMu.Unlock()
+		}
+
+		switch r.URL.Path {
+		case "/user":
+			_, _ = w.Write([]byte(`{}`))
+		case "/apps":
+			_, _ = w.Write([]byte(`[{"key":"storefront","name":"Storefront"}]`))
+		case "/apps/storefront":
+			_, _ = w.Write([]byte(`{"key":"storefront","name":"Storefront","jobs":[{"name":"reindex"}]}`))
+		case "/jobs/reindex":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode job body: %v", err)
+			}
+			if body["year"] != float64(2026) {
+				t.Fatalf("year = %#v, want 2026", body["year"])
+			}
+			_, _ = w.Write([]byte(`{"jid":"j1"}`))
+		case "/apps/storefront/logs":
+			if got := r.URL.Query().Get("job"); got != "reindex" {
+				t.Fatalf("job log filter = %q, want reindex", got)
+			}
+			_, _ = w.Write([]byte(`[]`))
+			go func() {
+				time.Sleep(10 * time.Millisecond)
+				cancel()
+			}()
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	ctx, _, _ := newAppsLogsTestContextFromBase(t, baseCtx, server.URL, output.Mode{})
+	withTempCWD(t, t.TempDir(), func() {
+		cmd := &JobsRunCmd{Job: "reindex", Wait: true, Assignments: []string{"year:=2026"}}
+		if err := cmd.Run(ctx, &RootFlags{Site: "demo", APIURL: server.URL}); err != nil {
+			t.Fatalf("run job with wait outside project: %v", err)
+		}
+	})
+
+	requestsMu.Lock()
+	got := append([]string(nil), requests...)
+	requestsMu.Unlock()
+	want := []string{
+		"GET /apps",
+		"GET /apps/storefront",
+		"POST /jobs/reindex",
+		"GET /apps/storefront/logs",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("request order = %#v, want %#v", got, want)
+	}
+}
+
+func TestJobsRunWaitDoesNotScheduleWhenJobIsUnregistered(t *testing.T) {
+	var scheduled atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user":
+			_, _ = w.Write([]byte(`{}`))
+		case "/apps":
+			_, _ = w.Write([]byte(`[{"key":"storefront","name":"Storefront"}]`))
+		case "/apps/storefront":
+			_, _ = w.Write([]byte(`{"key":"storefront","name":"Storefront","jobs":[{"name":"another_job"}]}`))
+		case "/jobs/missing":
+			scheduled.Add(1)
+			_, _ = w.Write([]byte(`{"jid":"unexpected"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	ctx, _ := newAppsTestContextWithOut(t, server.URL)
+	cmd := &JobsRunCmd{Job: "missing", Wait: true}
+	err := cmd.Run(ctx, &RootFlags{Site: "demo", APIURL: server.URL})
+	if err == nil || !strings.Contains(err.Error(), "not registered") {
+		t.Fatalf("expected unregistered job error, got %v", err)
+	}
+	if got := scheduled.Load(); got != 0 {
+		t.Fatalf("scheduled requests = %d, want 0", got)
+	}
+}
+
+func TestJobsRunWaitDoesNotScheduleAmbiguousJob(t *testing.T) {
+	var scheduled atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user":
+			_, _ = w.Write([]byte(`{}`))
+		case "/apps":
+			_, _ = w.Write([]byte(`[
+				{"key":"storefront","name":"Storefront"},
+				{"key":"backoffice","name":"Backoffice"}
+			]`))
+		case "/apps/storefront":
+			_, _ = w.Write([]byte(`{"key":"storefront","jobs":[{"name":"reindex"}]}`))
+		case "/apps/backoffice":
+			_, _ = w.Write([]byte(`{"key":"backoffice","jobs":[{"name":"reindex"}]}`))
+		case "/jobs/reindex":
+			scheduled.Add(1)
+			_, _ = w.Write([]byte(`{"jid":"unexpected"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	ctx, _ := newAppsTestContextWithOut(t, server.URL)
+	cmd := &JobsRunCmd{Job: "reindex", Wait: true}
+	err := cmd.Run(ctx, &RootFlags{Site: "demo", APIURL: server.URL})
+	if err == nil || !strings.Contains(err.Error(), "multiple apps") {
+		t.Fatalf("expected duplicate registration error, got %v", err)
+	}
+	if got := scheduled.Load(); got != 0 {
+		t.Fatalf("scheduled requests = %d, want 0", got)
 	}
 }
 

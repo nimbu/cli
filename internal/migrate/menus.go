@@ -84,7 +84,7 @@ func CopyMenusWithOptions(ctx context.Context, fromClient, toClient *api.Client,
 			action := "update"
 			if opts.DryRun {
 				action = "dry-run:" + action
-			} else if _, err := api.PatchMenuDocument(ctx, toClient, slug, menu); err != nil {
+			} else if _, err := api.PatchMenuDocument(ctx, toClient, slug, menu, api.WithReplace(true)); err != nil {
 				return result, fmt.Errorf("update menu %s: %w", slug, err)
 			}
 			result.Items = append(result.Items, MenuCopyItem{Slug: slug, Action: action})

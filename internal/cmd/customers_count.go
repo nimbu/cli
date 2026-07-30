@@ -9,7 +9,9 @@ import (
 )
 
 // CustomersCountCmd gets customer count.
-type CustomersCountCmd struct{}
+type CustomersCountCmd struct {
+	CountQueryFlags `embed:""`
+}
 
 // Run executes the count command.
 func (c *CustomersCountCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -23,7 +25,11 @@ func (c *CustomersCountCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	count, err := api.Count(ctx, client, "/customers/count")
+	opts, err := countRequestOptions(&c.CountQueryFlags, false)
+	if err != nil {
+		return fmt.Errorf("count customers: %w", err)
+	}
+	count, err := api.Count(ctx, client, "/customers/count", opts...)
 	if err != nil {
 		return fmt.Errorf("count customers: %w", err)
 	}

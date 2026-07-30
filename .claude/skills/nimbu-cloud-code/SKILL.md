@@ -9,7 +9,7 @@ description: >
   the `nimbu-js-sdk`. For the CLI side (channel schemas, deploy with
   `nimbu apps push`), use the companion `nimbu` skill.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # Nimbu Cloud Code
@@ -195,6 +195,7 @@ Cloud-code files live in the **site's `code/` directory**, alongside the theme. 
 
 Highlights:
 
+- **`main.js` is the entrypoint.** The runtime evaluates `main.js` and files it explicitly requires. Add the `require` in the same push as every new module, otherwise its jobs and functions are not registered.
 - **One file per domain**, not a single `index.js`. Typical names: `articles.js`, `orders.js`, `customers.js`, `helpers.js`, `environment.js`. Each file registers its own `Cloud.define` / `Cloud.job` / `Cloud.before` etc.
 - **`.eslintrc.json`** declares the runtime globals (`Nimbu`, `Mail`, `HTTP`, `crypto`, `jwt`, `I18n`) so lint doesn't flag them.
 - **Optional build pipeline**: a `Makefile` may compile CoffeeScript with `coffee -b -c -o dist *.coffee` and copy plain JS into `dist/`; `nimbu apps push` then deploys from `dist/`.
@@ -208,9 +209,11 @@ These are CLI commands — they belong to the companion `nimbu` skill, but two a
 ```bash
 nimbu apps push                       # deploy code/ (or dist/) to the site
 nimbu apps push --only file.js        # push a single file
-nimbu functions run myFn --site ...   # invoke a cloud function remotely
-nimbu jobs run myJob --site ...       # invoke a job remotely
+nimbu functions run --function=myFn --site=...   # invoke a cloud function remotely
+nimbu jobs run --job=myJob --site=... --wait retry:=true  # invoke a job and follow it
 ```
+
+Job names are unique per site. `jobs run --wait` resolves the owning app from the server-side registry, so it works from any directory without `nimbu.yml` or an app flag.
 
 For the full CLI surface (auth, sites, channel introspection, deployment flags) see the companion `nimbu` skill — especially `nimbu channels fields list --channel <slug> --json` to pull the exact field schema before writing code against a channel.
 

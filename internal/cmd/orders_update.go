@@ -50,13 +50,14 @@ func (c *OrdersUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		body = statusBody
 	}
 
-	var o api.Order
+	var document api.Document[api.Order]
 	path := "/orders/" + url.PathEscape(c.Order)
-	if err := client.Put(ctx, path, body, &o); err != nil {
+	if err := client.Put(ctx, path, body, &document); err != nil {
 		return fmt.Errorf("update order: %w", err)
 	}
+	o := document.Value
 
-	return output.Print(ctx, o, []any{o.ID, o.Number, o.Status}, func() error {
+	return output.Print(ctx, document, []any{o.ID, o.Number, o.Status}, func() error {
 		_, err := output.Fprintf(ctx, "Updated order: %s (status: %s)\n", o.Number, o.Status)
 		return err
 	})

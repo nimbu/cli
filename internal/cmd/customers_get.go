@@ -26,11 +26,12 @@ func (c *CustomersGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var cust api.Customer
+	var document api.Document[api.Customer]
 	path := "/customers/" + url.PathEscape(c.Customer)
-	if err := client.Get(ctx, path, &cust); err != nil {
+	if err := client.Get(ctx, path, &document); err != nil {
 		return fmt.Errorf("get customer: %w", err)
 	}
+	cust := document.Value
 
 	fields := []output.Field{
 		output.FAlways("ID", cust.ID),
@@ -46,5 +47,5 @@ func (c *CustomersGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		fields = append(fields, output.FAlways("Updated", cust.UpdatedAt.Format("2006-01-02 15:04:05")))
 	}
 
-	return output.Detail(ctx, cust, []any{cust.ID, cust.Email, cust.FirstName, cust.LastName, cust.Phone}, fields)
+	return output.Detail(ctx, document, []any{cust.ID, cust.Email, cust.FirstName, cust.LastName, cust.Phone}, fields)
 }

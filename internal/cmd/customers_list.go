@@ -36,29 +36,30 @@ func (c *CustomersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("list customers: %w", err)
 	}
 
-	var customers []api.Customer
+	var documents []api.Document[api.Customer]
 	var meta listFooterMeta
 
 	if c.All {
-		customers, err = api.List[api.Customer](ctx, client, "/customers", opts...)
+		documents, err = api.List[api.Document[api.Customer]](ctx, client, "/customers", opts...)
 		if err != nil {
 			return fmt.Errorf("list customers: %w", err)
 		}
-		meta = allListFooterMeta(len(customers))
+		meta = allListFooterMeta(len(documents))
 	} else {
-		paged, err := api.ListPage[api.Customer](ctx, client, "/customers", c.Page, c.PerPage, opts...)
+		paged, err := api.ListPage[api.Document[api.Customer]](ctx, client, "/customers", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list customers: %w", err)
 		}
-		customers = paged.Data
-		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(customers))
+		documents = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(documents))
 		meta.probeTotal(ctx, client, "/customers/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
-		return output.JSON(ctx, customers)
+		return output.JSON(ctx, documents)
 	}
+	customers := api.DocumentValues(documents)
 
 	plainFields := []string{"id", "email", "first_name", "last_name"}
 	tableFields := []string{"id", "email", "first_name", "last_name"}

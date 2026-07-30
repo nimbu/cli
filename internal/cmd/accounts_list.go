@@ -18,12 +18,7 @@ type AccountsListCmd struct {
 
 // Run executes the list command.
 func (c *AccountsListCmd) Run(ctx context.Context, flags *RootFlags) error {
-	site, err := RequireSite(ctx, "")
-	if err != nil {
-		return err
-	}
-
-	client, err := GetAPIClientWithSite(ctx, site)
+	client, err := GetAPIClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -33,24 +28,25 @@ func (c *AccountsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("list accounts: %w", err)
 	}
 
-	var accounts []api.Account
+	var documents []api.Document[api.Account]
 	if c.All {
-		accounts, err = api.List[api.Account](ctx, client, "/accounts", opts...)
+		documents, err = api.List[api.Document[api.Account]](ctx, client, "/accounts", opts...)
 		if err != nil {
 			return fmt.Errorf("list accounts: %w", err)
 		}
 	} else {
-		paged, err := api.ListPage[api.Account](ctx, client, "/accounts", c.Page, c.PerPage, opts...)
+		paged, err := api.ListPage[api.Document[api.Account]](ctx, client, "/accounts", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list accounts: %w", err)
 		}
-		accounts = paged.Data
+		documents = paged.Data
 	}
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
-		return output.JSON(ctx, accounts)
+		return output.JSON(ctx, documents)
 	}
+	accounts := api.DocumentValues(documents)
 
 	plainFields := []string{"id", "name", "plan", "owner"}
 	tableFields := []string{"id", "name", "plan", "site_count", "users_count", "owner"}

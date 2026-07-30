@@ -9,7 +9,9 @@ import (
 )
 
 // NotificationsCountCmd gets count of notifications.
-type NotificationsCountCmd struct{}
+type NotificationsCountCmd struct {
+	CountQueryFlags `embed:""`
+}
 
 // Run executes the count command.
 func (c *NotificationsCountCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -23,7 +25,11 @@ func (c *NotificationsCountCmd) Run(ctx context.Context, flags *RootFlags) error
 		return err
 	}
 
-	count, err := api.Count(ctx, client, "/notifications/count")
+	opts, err := countRequestOptions(&c.CountQueryFlags, false)
+	if err != nil {
+		return fmt.Errorf("count notifications: %w", err)
+	}
+	count, err := api.Count(ctx, client, "/notifications/count", opts...)
 	if err != nil {
 		return fmt.Errorf("count notifications: %w", err)
 	}

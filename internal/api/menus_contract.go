@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	neturl "net/url"
+	"slices"
 	"strings"
 )
 
@@ -12,8 +14,10 @@ type MenuDocument map[string]any
 
 // MenuDocumentStats summarizes a nested menu tree.
 type MenuDocumentStats struct {
+	HasItems  bool
 	ItemCount int
 	MaxDepth  int
+	Shape     string
 }
 
 // GetMenuDocument fetches a menu document, falling back to the nested list contract when needed.
@@ -25,27 +29,30 @@ func GetMenuDocument(ctx context.Context, c *Client, identifier string, opts ...
 	err := c.Get(ctx, path, &doc, opts...)
 	switch {
 	case err == nil:
-		if MenuDocumentHasItems(doc) {
+		// Already nested: skip the nested=1 list round-trip.
+		if MenuStats(doc).MaxDepth > 1 {
 			return doc, nil
 		}
 	case !IsNotFound(err):
 		return nil, err
 	}
 
-	fallbackIdentifier := MenuDocumentSlug(doc)
-	if fallbackIdentifier == "" {
-		fallbackIdentifier = identifier
+	slug := MenuDocumentSlug(doc)
+	if slug == "" {
+		slug = identifier
 	}
 
-	listOpts := append([]RequestOption{}, opts...)
-	listOpts = append(listOpts, WithParam("nested", "1"), WithParam("slug", fallbackIdentifier))
-	var menus []MenuDocument
-	if err := c.Get(ctx, "/menus", &menus, listOpts...); err != nil {
-		return nil, err
+	nested, nestedErr := fetchNestedMenuDocument(ctx, c, identifier, slug, opts...)
+	if nestedErr != nil {
+		// Singular GET already gave us items: keep them rather than failing the read.
+		if err == nil && MenuDocumentHasItems(doc) {
+			return doc, nil
+		}
+		return nil, nestedErr
 	}
-
-	if selected, ok := SelectMenuDocument(menus, identifier); ok {
-		return selected, nil
+	// Prefer nested list when it carries items (or singular had none).
+	if nested != nil && (MenuDocumentHasItems(nested) || !MenuDocumentHasItems(doc)) {
+		return nested, nil
 	}
 	if doc != nil {
 		return doc, nil
@@ -54,11 +61,28 @@ func GetMenuDocument(ctx context.Context, c *Client, identifier string, opts ...
 	return nil, &Error{StatusCode: 404, Message: fmt.Sprintf("menu %q not found", identifier)}
 }
 
-// PatchMenuDocument updates a menu document with replace semantics.
+func fetchNestedMenuDocument(ctx context.Context, c *Client, identifier, slug string, opts ...RequestOption) (MenuDocument, error) {
+	listOpts := append([]RequestOption{}, opts...)
+	listOpts = append(listOpts, WithParam("nested", "1"), WithParam("slug", slug))
+	var menus []MenuDocument
+	if err := c.Get(ctx, "/menus", &menus, listOpts...); err != nil {
+		return nil, err
+	}
+	if selected, ok := SelectMenuDocument(menus, identifier); ok {
+		return selected, nil
+	}
+	if slug != identifier {
+		if selected, ok := SelectMenuDocument(menus, slug); ok {
+			return selected, nil
+		}
+	}
+	return nil, nil
+}
+
+// PatchMenuDocument updates a menu document. Pass WithReplace(true) for full-tree replace semantics.
 func PatchMenuDocument(ctx context.Context, c *Client, slug string, doc MenuDocument, opts ...RequestOption) (MenuDocument, error) {
 	var out MenuDocument
 	path := "/menus/" + neturl.PathEscape(strings.TrimSpace(slug))
-	opts = append(opts, WithParam("replace", "1"))
 	if err := c.Patch(ctx, path, doc, &out, opts...); err != nil {
 		return nil, err
 	}
@@ -108,8 +132,48 @@ func MenuStats(doc MenuDocument) MenuDocumentStats {
 	if !ok {
 		return stats
 	}
+	stats.HasItems = true
 	stats.MaxDepth = menuDepth(items, 1, &stats.ItemCount)
+	stats.Shape = menuShape(items)
 	return stats
+}
+
+// MenuNestingLost reports whether a write response dropped nested depth relative to the submitted tree.
+func MenuNestingLost(submitted, returned MenuDocumentStats) bool {
+	if !submitted.HasItems && submitted.MaxDepth == 0 && submitted.ItemCount == 0 && submitted.Shape == "" {
+		return false
+	}
+	return returned.MaxDepth < submitted.MaxDepth ||
+		returned.ItemCount != submitted.ItemCount ||
+		(submitted.Shape != "" && returned.Shape != submitted.Shape)
+}
+
+func menuShape(items []any) string {
+	encoded, _ := json.Marshal(menuShapeValue(items))
+	return string(encoded)
+}
+
+func menuShapeValue(items []any) []any {
+	shape := make([]any, 0, len(items))
+	for index, rawItem := range items {
+		item, ok := mapValue(rawItem)
+		if !ok {
+			continue
+		}
+		label := stringValue(item["name"])
+		if label == "" {
+			label = stringValue(item["title"])
+		}
+		if label == "" {
+			label = stringValue(item["id"])
+		}
+		if label == "" {
+			label = fmt.Sprintf("#%d", index)
+		}
+		children, _ := sliceValue(item["children"])
+		shape = append(shape, []any{label, menuShapeValue(children)})
+	}
+	return shape
 }
 
 func menuDepth(items []any, depth int, count *int) int {
@@ -135,13 +199,69 @@ func menuDepth(items []any, depth int, count *int) int {
 	return maxDepth
 }
 
-// NormalizeMenuDocumentForWrite strips write-unsafe fields from a nested menu tree.
+// NormalizeMenuDocumentForWrite strips write-unsafe fields and fills API field aliases
+// (title→name, url→target_url) on a nested menu tree without deleting the aliases.
 func NormalizeMenuDocumentForWrite(doc MenuDocument) {
 	items, ok := sliceValue(doc["items"])
 	if !ok {
 		return
 	}
 	normalizeMenuItems(items)
+}
+
+// ReconcileMenuDocument appends explicit tombstones for existing items omitted
+// from a desired full-tree document. This provides replace semantics without
+// the server's recursive replace=1 behavior, which can delete nested siblings.
+func ReconcileMenuDocument(current, desired MenuDocument) {
+	currentIDs := map[string]struct{}{}
+	desiredIDs := map[string]struct{}{}
+	collectMenuItemIDs(current["items"], currentIDs)
+	collectMenuItemIDs(desired["items"], desiredIDs)
+
+	items, _ := sliceValue(desired["items"])
+	setMenuPositions(items)
+	removedIDs := make([]string, 0, len(currentIDs))
+	for id := range currentIDs {
+		if _, retained := desiredIDs[id]; retained {
+			continue
+		}
+		removedIDs = append(removedIDs, id)
+	}
+	slices.Sort(removedIDs)
+	for _, id := range removedIDs {
+		items = append(items, map[string]any{"id": id, "_destroy": true})
+	}
+	desired["items"] = items
+}
+
+func collectMenuItemIDs(raw any, ids map[string]struct{}) {
+	items, ok := sliceValue(raw)
+	if !ok {
+		return
+	}
+	for _, rawItem := range items {
+		item, ok := mapValue(rawItem)
+		if !ok {
+			continue
+		}
+		if id := stringValue(item["id"]); id != "" {
+			ids[id] = struct{}{}
+		}
+		collectMenuItemIDs(item["children"], ids)
+	}
+}
+
+func setMenuPositions(items []any) {
+	for position, rawItem := range items {
+		item, ok := mapValue(rawItem)
+		if !ok {
+			continue
+		}
+		item["position"] = position
+		if children, ok := sliceValue(item["children"]); ok {
+			setMenuPositions(children)
+		}
+	}
 }
 
 func normalizeMenuItems(items []any) {
@@ -151,10 +271,21 @@ func normalizeMenuItems(items []any) {
 			continue
 		}
 		delete(item, "target_page")
-		children, ok := sliceValue(item["children"])
-		if ok && len(children) > 0 {
+		copyStringAlias(item, "name", "title")
+		copyStringAlias(item, "target_url", "url")
+		if children, ok := sliceValue(item["children"]); ok && len(children) > 0 {
 			normalizeMenuItems(children)
 		}
+	}
+}
+
+// copyStringAlias sets dst from src when dst is empty and src is non-empty.
+func copyStringAlias(item map[string]any, dst, src string) {
+	if stringValue(item[dst]) != "" {
+		return
+	}
+	if value := stringValue(item[src]); value != "" {
+		item[dst] = value
 	}
 }
 

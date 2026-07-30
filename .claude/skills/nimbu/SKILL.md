@@ -6,7 +6,7 @@ description: >
   cloud code, and local dev server for Nimbu sites. Use when building,
   querying, migrating, or deploying Nimbu CMS content and themes.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # Nimbu CLI
@@ -147,8 +147,8 @@ nimbu pages update --page about --file payload.json
 |---------|-------------|-------|
 | `channels` | list, get, create, info, copy, diff, empty, delete, fields | `create` from JSON/inline; `delete` needs `--force` |
 | `channels fields` | list, add, update, delete, apply, replace, diff | Channel field schema workflows |
-| `channels entries` | list, get, create, update, delete, count, copy | Entry CRUD within a channel |
-| `pages` | list, get, create, update, delete, count, copy | Fullpath as identifier |
+| `channels entries` | list, get, create, update, delete, count, copy, gallery | Entry CRUD within a channel |
+| `pages` | list, get, create, update, delete, count, copy, versions | Fullpath as identifier |
 | `menus` | list, get, create, update, delete, count, copy | Nested tree structure |
 | `blogs` | list, get, create, update, delete, count, copy | Has `posts` subcommand |
 | `blogs posts` | list, get, create, update, delete, count | Blog post CRUD |
@@ -160,11 +160,11 @@ nimbu pages update --page about --file payload.json
 
 | Command | Subcommands | Notes |
 |---------|-------------|-------|
-| `products` | list, get, create, update, delete, count, copy | Product catalog |
+| `products` | list, get, create, update, delete, count, copy, attachments | Product catalog |
 | `collections` | list, get, create, update, delete, count, copy | Product collections |
 | `coupons` | list, get, create, update, delete, count, copy | Discount coupons |
 | `orders` | list, get, update, count | **No create/delete** — orders are read-only except status |
-| `customers` | list, get, create, update, delete, count, copy | Customer records |
+| `customers` | list, get, create, update, delete, count, copy, roles | Customer records |
 
 ### Infrastructure
 
@@ -176,12 +176,16 @@ nimbu pages update --page about --file payload.json
 | `themes snippets` | list, get, create, delete | Snippet CRUD |
 | `themes assets` | list, get, create, delete | Asset CRUD |
 | `themes files` | list, get, create, delete | Generic file CRUD |
-| `apps` | list, get, config, push | Cloud code management |
-| `uploads` | list, get, create, delete, count | File uploads — `create` takes `--file`/`-f` (or `--source`) |
+| `apps` | list, get, config, push, logs, code | Cloud code management |
+| `uploads` | list, get, create, download, delete, count | File uploads and exact-byte downloads |
 | `webhooks` | list, get, create, update, delete, count | Webhook management |
 | `redirects` | list, get, create, update, delete, copy | URL redirects |
 | `roles` | list, get, create, update, delete, count, copy | Permission roles |
-| `accounts` | list, count | Account listing |
+| `accounts` | list, count | Account listing and counts |
+| `announcements` | list, get, create, update, delete | HQ announcement management |
+| `domain-registrations` | list, get, count, upsert, update | HQ domain registration management |
+| `settings` | get, update, consent | Stable settings sections and consent resources |
+| `events` | track, ingest | Event submission |
 
 ### Operations
 
@@ -193,9 +197,16 @@ nimbu pages update --page about --file payload.json
 | `init` | *(run directly)* | Bootstrap theme project with TUI |
 | `config` | list, get, set, unset, banner, path | CLI configuration |
 | `functions` | run | Execute cloud functions |
-| `jobs` | run | Execute cloud jobs |
-| `api` | *(run directly)* | Raw API access — `nimbu api --method=POST --path=/... -d '{...}'` (no subcommands) |
+| `jobs` | list, run | Inspect and execute cloud jobs |
+| `api` | get, post, put, patch, delete | Raw escape hatch: `nimbu api get /path`; legacy `--method/--path` remains valid |
+| `commands` | *(run directly)* | Export the machine-readable CLI contract |
 | `completion` | --shell bash/zsh/fish | Shell completions |
+
+### Raw API and downloads
+
+Prefer native commands. Use `nimbu api get|post|put|patch|delete /path` only as an escape hatch. `--data` accepts inline JSON, `@file`, or `-` for stdin; `--all` follows paginated array responses. The old `--method/--path` form remains compatible.
+
+Binary commands require `--output=<file>` or `--output=-`. They preserve exact bytes, write files atomically, and refuse to overwrite without `--force`. Never replace a native product attachment, upload, app-code, page-version, settings, announcement, domain-registration, customer-role, or event workflow with raw API calls.
 
 ## Schema Discovery for Theme Development
 
@@ -223,6 +234,19 @@ nimbu channels info --channel staging/blog --typescript
 - `hint` — field description/help text
 
 **Agent tip**: Always run `nimbu channels fields list --channel <channel> --json` before working with channel data in templates. This gives you the exact field names and types to use.
+
+## Gallery fields
+
+Use the dedicated gallery commands instead of hand-building gallery JSON:
+
+```bash
+nimbu channels entries gallery list --channel=articles --entry=ENTRY --field=photos --json
+nimbu channels entries gallery add --channel=articles --entry=ENTRY --field=photos --image=hero.jpg
+nimbu channels entries gallery update --channel=articles --entry=ENTRY --field=photos --image-id=IMAGE --caption="Hero"
+nimbu channels entries gallery remove --channel=articles --entry=ENTRY --field=photos --image-id=IMAGE --force
+```
+
+Inspect the channel schema and current gallery first. Use returned image IDs, never guessed IDs, and prefer `--dry-run --json` before risky replacements.
 
 ## Channel Field Workflows
 
@@ -266,8 +290,8 @@ Three resource types have special contracts beyond standard CRUD:
 ### Menus
 
 - **Identifier**: slug/handle
-- `menus get --menu <slug> --json` returns full nested tree
-- `menus update` uses replace-safe patch for nested updates
+- `menus get --menu <slug> --json` returns full nested tree (recovers via `?nested=1` when needed)
+- `menus update --file` reconciles nested trees with explicit tombstones; inline `name`/`handle` is shallow
 - `menus update` inline: only `name`, `handle` — deep edits need `--file`
 
 ### Channels
@@ -293,6 +317,8 @@ Three resource types have special contracts beyond standard CRUD:
 7. **Theme sync excludes `code/` and `content/`**: These directories are intentionally not managed by `themes push/sync`.
 
 8. **Copy commands use `--from`/`--to` refs**: Format is `site` for site-level ops, `site/channel` for channel-level ops.
+
+9. **Jobs are site-level**: Job names are unique per site. `jobs run --wait` resolves the owning app from the server-side job registry, so it works outside a project directory and never needs `--app` or `nimbu.yml`.
 
 ## Common Workflows
 

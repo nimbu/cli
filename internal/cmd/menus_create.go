@@ -30,28 +30,29 @@ func (c *MenusCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var body api.MenuDocument
+	var rawBody map[string]any
 	if c.File != "" {
 		if len(c.Assignments) > 0 {
 			return fmt.Errorf("use either --file or inline assignments, not both")
 		}
-		rawBody, err := readRichDocumentInput(c.File)
-		if err != nil {
-			return err
-		}
-		body = api.MenuDocument(rawBody)
+		rawBody, err = readRichDocumentInput(c.File)
 	} else {
-		rawBody, err := readJSONBodyInput("", c.Assignments)
-		if err != nil {
-			return err
-		}
-		body = api.MenuDocument(rawBody)
+		rawBody, err = readJSONBodyInput("", c.Assignments)
 	}
+	if err != nil {
+		return err
+	}
+	body := api.MenuDocument(rawBody)
+	submitted := api.MenuStats(body)
 	api.NormalizeMenuDocumentForWrite(body)
 
 	menu, err := api.PostMenuDocument(ctx, client, body)
 	if err != nil {
 		return fmt.Errorf("create menu: %w", err)
+	}
+
+	if err := verifyMenuNesting(ctx, client, submitted, menu); err != nil {
+		return err
 	}
 
 	return output.Print(ctx, menu, []any{menu["id"]}, func() error {

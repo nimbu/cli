@@ -35,12 +35,13 @@ func (c *ProductsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var p api.Product
-	if err := client.Post(ctx, "/products", body, &p); err != nil {
+	var document api.Document[api.Product]
+	if err := client.Post(ctx, "/products", body, &document); err != nil {
 		return fmt.Errorf("create product: %w", err)
 	}
+	p := document.Value
 
-	return output.Print(ctx, p, []any{p.ID, p.Slug, p.Name}, func() error {
+	return output.Print(ctx, document, []any{p.ID, p.Slug, p.Name}, func() error {
 		_, err := output.Fprintf(ctx, "Created product: %s (%s)\n", p.Name, p.ID)
 		return err
 	})

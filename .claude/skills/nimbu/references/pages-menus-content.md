@@ -111,7 +111,7 @@ Accepts `--file` or inline assignments. No inline key restrictions -- the body i
 
 `nimbu pages copy --only <fullpath|prefix*> --from <site> --to <site>`
 
-Copies pages between sites. Supports glob prefix (`archive/*`). Default is `*` (all pages). Requires `--write`. Cross-host copy supported via `--from-host` / `--to-host`.
+Copies pages between sites. Supports glob prefix (`archive/*`). Default is `*` (all pages). Fails under `--readonly`. Cross-host copy supported via `--from-host` / `--to-host`.
 
 ### delete
 
@@ -123,26 +123,29 @@ Subcommands: `list`, `get`, `create`, `update`, `delete`, `count`, `copy`.
 
 ### get returns nested tree
 
-`nimbu menus get --menu <slug>` returns the full menu document including nested `items` tree with depth stats.
+`nimbu menus get --menu <slug>` returns the full menu document including nested `items` tree with depth stats. If the singular GET returns a flat `items` projection, the CLI recovers the nested tree via `GET /menus?nested=1`.
 
-### update inline limits
+### update: shallow inline vs replace tree
 
 Inline assignments only accept:
 - `name`, `handle`
 
-Editing menu items requires `--file` or stdin with the full document. The body is normalized before write (`NormalizeMenuDocumentForWrite` strips `target_page` recursively), so the CLI handles internal cleanup.
+Shallow inline updates PATCH **only those fields** (no `items`, no `replace=1`), so renaming a menu cannot flatten the tree.
+
+Editing menu items requires `--file` or stdin with the full document. The body is normalized before write (`NormalizeMenuDocumentForWrite` strips `target_page` recursively and fills API aliases: `title`→`name`, `url`→`target_url`).
 
 ### create / update with a nested tree
 
-Both `menus create` and `menus update --file` send the document through the nested-menu contract, which preserves `items[].children[]` and keeps your ordering. (A raw `api --method=POST --path=/menus` does NOT — it bypasses the contract and the server re-sorts items alphabetically by `name`, dropping the nesting. Always use the `menus` commands.)
+Both `menus create --file` and `menus update --file` send nested `items[].children[]` through the menu contract and keep your ordering. Prefer these over raw `nimbu api` for menus so the CLI can normalize aliases and reject a write when verification shows that the server changed the tree.
 
-Recipe for a nested menu:
+Recipe for a nested menu (create in one shot, or create empty then replace):
 
 ```bash
-# 1. Create the empty menu (gets you a handle/slug to target)
-nimbu menus create name=Main handle=main
+# One-shot create with a tree
+nimbu menus create --file tree.json
 
-# 2. Build the tree locally, then push it
+# Or: create empty, then replace the tree
+nimbu menus create name=Main handle=main
 nimbu menus update --menu main --file tree.json
 ```
 
@@ -150,6 +153,8 @@ nimbu menus update --menu main --file tree.json
 
 ```json
 {
+  "name": "Main",
+  "handle": "main",
   "items": [
     { "name": "Home", "url": "/", "position": 0 },
     {
@@ -164,8 +169,10 @@ nimbu menus update --menu main --file tree.json
 ```
 
 - Nest via `children[]` on a parent item; a child may itself carry `children[]`.
-- Set `position` on each item to control sort order — without it the server falls back to ordering by `name`.
-- `menus update` uses replace semantics (`replace=1`), so the tree you send is the tree you get.
+- Item label/URL: API fields are `name` and `target_url`. The CLI also accepts `title`/`url` on write and copies them into `name`/`target_url`.
+- Set `position` on each item to control sort order — without it the server may fall back to ordering by `name`.
+- `menus update --file` reconciles the desired tree client-side and sends explicit tombstones for removed items; it does not use the server's recursive `replace=1` mode.
+- The CLI verifies item count, hierarchy, ordering, and labels after the write. A changed tree is a hard failure.
 
 ### copy
 
@@ -242,7 +249,7 @@ Hello {{ user.name }}, ...
 
 `nimbu notifications pull [--only slug1 --only slug2]`
 
-Downloads all notifications into `content/notifications/`. Locale directories are created only when a translation differs from the base. Requires `--write`.
+Downloads all notifications into `content/notifications/`. Locale directories are created only when a translation differs from the base. Fails under `--readonly`.
 
 ### push
 
@@ -256,7 +263,7 @@ Reads local templates, validates locale directories against the site's configure
 
 ## Common flags
 
-- `--write` -- required for any mutating operation (create, update, delete, pull, push, copy)
+- `--readonly` -- rejects every mutating operation (create, update, delete, pull, push, copy)
 - `--force` -- required for delete; skips confirmation on copy overwrite
 - `--locale <code>` -- filter by locale on get/update for pages
 - `--json` / `--plain` -- output format control

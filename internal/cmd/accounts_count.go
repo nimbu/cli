@@ -9,21 +9,22 @@ import (
 )
 
 // AccountsCountCmd gets count of accounts.
-type AccountsCountCmd struct{}
+type AccountsCountCmd struct {
+	CountQueryFlags `embed:""`
+}
 
 // Run executes the count command.
 func (c *AccountsCountCmd) Run(ctx context.Context, flags *RootFlags) error {
-	site, err := RequireSite(ctx, "")
+	client, err := GetAPIClient(ctx)
 	if err != nil {
 		return err
 	}
 
-	client, err := GetAPIClientWithSite(ctx, site)
+	opts, err := countRequestOptions(&c.CountQueryFlags, false)
 	if err != nil {
-		return err
+		return fmt.Errorf("count accounts: %w", err)
 	}
-
-	count, err := api.Count(ctx, client, "/accounts/count")
+	count, err := api.Count(ctx, client, "/accounts/count", opts...)
 	if err != nil {
 		return fmt.Errorf("count accounts: %w", err)
 	}

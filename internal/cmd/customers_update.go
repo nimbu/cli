@@ -37,13 +37,14 @@ func (c *CustomersUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var cust api.Customer
+	var document api.Document[api.Customer]
 	path := "/customers/" + url.PathEscape(c.Customer)
-	if err := client.Put(ctx, path, body, &cust); err != nil {
+	if err := client.Put(ctx, path, body, &document); err != nil {
 		return fmt.Errorf("update customer: %w", err)
 	}
+	cust := document.Value
 
-	return output.Print(ctx, cust, []any{cust.ID, cust.Email}, func() error {
+	return output.Print(ctx, document, []any{cust.ID, cust.Email}, func() error {
 		_, err := output.Fprintf(ctx, "Updated customer: %s (%s)\n", cust.Email, cust.ID)
 		return err
 	})

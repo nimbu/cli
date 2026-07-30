@@ -11,7 +11,8 @@ import (
 
 // BlogPostsCountCmd gets count of articles for a blog.
 type BlogPostsCountCmd struct {
-	Blog string `required:"" help:"Blog ID or handle"`
+	CountQueryFlags `embed:""`
+	Blog            string `required:"" help:"Blog ID or handle"`
 }
 
 // Run executes the count command.
@@ -27,7 +28,11 @@ func (c *BlogPostsCountCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	path := "/blogs/" + url.PathEscape(c.Blog) + "/articles/count"
-	count, err := api.Count(ctx, client, path)
+	opts, err := countRequestOptions(&c.CountQueryFlags, false)
+	if err != nil {
+		return fmt.Errorf("count articles: %w", err)
+	}
+	count, err := api.Count(ctx, client, path, opts...)
 	if err != nil {
 		return fmt.Errorf("count articles: %w", err)
 	}

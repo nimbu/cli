@@ -41,30 +41,31 @@ func (c *OrdersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		opts = append(opts, api.WithParam("status", c.Status))
 	}
 
-	var orders []api.Order
+	var documents []api.Document[api.Order]
 	var meta listFooterMeta
 
 	if c.All {
-		orders, err = api.List[api.Order](ctx, client, "/orders", opts...)
+		documents, err = api.List[api.Document[api.Order]](ctx, client, "/orders", opts...)
 		if err != nil {
 			return fmt.Errorf("list orders: %w", err)
 		}
-		meta = allListFooterMeta(len(orders))
+		meta = allListFooterMeta(len(documents))
 	} else {
-		paged, err := api.ListPage[api.Order](ctx, client, "/orders", c.Page, c.PerPage, opts...)
+		paged, err := api.ListPage[api.Document[api.Order]](ctx, client, "/orders", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list orders: %w", err)
 		}
-		orders = paged.Data
-		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(orders))
+		documents = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(documents))
 		meta.probeTotal(ctx, client, "/orders/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
-		return output.JSON(ctx, orders)
+		return output.JSON(ctx, documents)
 	}
 
+	orders := api.DocumentValues(documents)
 	displayOrders := buildOrderListRows(orders)
 
 	plainFields := []string{"id", "number", "status", "total", "currency"}

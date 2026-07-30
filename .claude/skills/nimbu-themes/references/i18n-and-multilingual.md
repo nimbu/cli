@@ -39,9 +39,9 @@ Most real themes use the tag form exclusively (a filter form is also documented 
 `{% translate %}` reads from translation YAML files maintained server-side. Manage them with the CLI (see `nimbu` skill):
 
 ```bash
-nimbu translations index
-nimbu translations push
-nimbu translations pull
+nimbu translations list --all --json
+nimbu translations create --file=translation.json
+nimbu translations copy --from=source-site --to=target-site
 ```
 
 The keys you reference in Liquid (`home.hero.title`) map to nested YAML in the `translations/<locale>.yml` files.
@@ -175,4 +175,4 @@ Prefer `{% translate %}` for short copy. Fall back to `{% case locale %}` for wh
 - <https://docs.nimbu.io/docs/themes/other/multilingual.md> — multilingual overview
 - <https://docs.nimbu.io/docs/themes/filters/dates-time.md> — `localized_date`
 - <https://docs.nimbu.io/docs/themes/liquid-context.md> — `locale`, `default_locale`, `locale_url_prefix`
-- Companion `nimbu` skill — `nimbu translations push/pull`
+- Companion `nimbu` skill — `nimbu translations list/create/update/copy`

@@ -203,7 +203,9 @@ Nimbu.Cloud.schedule('reindex_articles', {}, { every: '0 3 * * *' });        // 
 
 The third argument is **always an object** (or `null`), never a bare cron string. Cron is 5-field (minute hour day month weekday) and runs in UTC.
 
-Trigger remotely with the CLI: `nimbu jobs run reindex_articles --site <slug>`.
+Trigger remotely with the CLI: `nimbu jobs run --job reindex_articles --site <slug> --wait`.
+
+Job names are unique per site. The CLI resolves the owning app from the server-side job registry when `--wait` is used, so this command does not depend on the current directory or a local `nimbu.yml`.
 
 Docs: https://docs.nimbu.io/docs/cloud-code/jobs.md
 

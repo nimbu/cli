@@ -64,6 +64,9 @@ func (c *ThemeLayoutsCreateCmd) Run(ctx context.Context, flags *RootFlags) error
 	if err := client.Post(ctx, path, body, &result, opts...); err != nil {
 		return fmt.Errorf("create layout: %w", err)
 	}
+	if err := verifyThemeCodeResponse(ctx, client, c.Theme, "layouts", c.Name, content, result); err != nil {
+		return err
+	}
 
 	return output.Print(ctx, result, []any{result.ID, result.Name}, func() error {
 		if _, err := output.Fprintf(ctx, "Upserted layout: %s\n", result.Name); err != nil {

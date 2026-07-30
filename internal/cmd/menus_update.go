@@ -32,8 +32,15 @@ func (c *MenusUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
+	slug := strings.TrimSpace(c.Menu)
 	var body api.MenuDocument
+	var submitted api.MenuDocumentStats
+	fullDocument := false
+
 	if len(c.Assignments) > 0 {
+		if c.File != "" {
+			return fmt.Errorf("use either --file or inline assignments, not both")
+		}
 		if err := validateShallowInlineAssignments("menus update", c.Assignments, map[string]struct{}{
 			"name":   {},
 			"handle": {},
@@ -41,32 +48,40 @@ func (c *MenusUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 			return err
 		}
 
-		body, err = api.GetMenuDocument(ctx, client, c.Menu)
-		if err != nil {
-			return fmt.Errorf("fetch current menu: %w", err)
-		}
-
 		updates, err := readJSONBodyInput("", c.Assignments)
 		if err != nil {
 			return err
 		}
-		mergeTopLevel(body, updates)
+		// Shallow metadata only — do not fetch/resend items or force replace.
+		body = api.MenuDocument(updates)
 	} else {
 		rawBody, err := readRichDocumentInput(c.File)
 		if err != nil {
 			return err
 		}
 		body = api.MenuDocument(rawBody)
+		submitted = api.MenuStats(body)
+		api.NormalizeMenuDocumentForWrite(body)
+		fullDocument = true
+		if bodySlug := api.MenuDocumentSlug(body); bodySlug != "" {
+			slug = bodySlug
+		}
+		current, err := api.GetMenuDocument(ctx, client, slug)
+		if err != nil {
+			return fmt.Errorf("read current menu before reconciliation: %w", err)
+		}
+		api.ReconcileMenuDocument(current, body)
 	}
-	api.NormalizeMenuDocumentForWrite(body)
 
-	slug := api.MenuDocumentSlug(body)
-	if slug == "" {
-		slug = strings.TrimSpace(c.Menu)
-	}
 	menu, err := api.PatchMenuDocument(ctx, client, slug, body)
 	if err != nil {
 		return fmt.Errorf("update menu: %w", err)
+	}
+
+	if fullDocument {
+		if err := verifyMenuNesting(ctx, client, submitted, menu); err != nil {
+			return err
+		}
 	}
 
 	return output.Print(ctx, menu, []any{menu["id"]}, func() error {

@@ -37,13 +37,14 @@ func (c *ProductsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var p api.Product
+	var document api.Document[api.Product]
 	path := "/products/" + url.PathEscape(c.Product)
-	if err := client.Put(ctx, path, body, &p); err != nil {
+	if err := client.Put(ctx, path, body, &document); err != nil {
 		return fmt.Errorf("update product: %w", err)
 	}
+	p := document.Value
 
-	return output.Print(ctx, p, []any{p.ID, p.Slug, p.Name}, func() error {
+	return output.Print(ctx, document, []any{p.ID, p.Slug, p.Name}, func() error {
 		_, err := output.Fprintf(ctx, "Updated product: %s (%s)\n", p.Name, p.ID)
 		return err
 	})

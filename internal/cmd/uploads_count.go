@@ -9,7 +9,9 @@ import (
 )
 
 // UploadsCountCmd gets upload count.
-type UploadsCountCmd struct{}
+type UploadsCountCmd struct {
+	CountQueryFlags `embed:""`
+}
 
 // Run executes the count command.
 func (c *UploadsCountCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -23,7 +25,11 @@ func (c *UploadsCountCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	count, err := api.Count(ctx, client, "/uploads/count")
+	opts, err := countRequestOptions(&c.CountQueryFlags, false)
+	if err != nil {
+		return fmt.Errorf("count uploads: %w", err)
+	}
+	count, err := api.Count(ctx, client, "/uploads/count", opts...)
 	if err != nil {
 		return fmt.Errorf("count uploads: %w", err)
 	}

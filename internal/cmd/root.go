@@ -41,6 +41,12 @@ type QueryFlags struct {
 	Filters []string `help:"Filter by key=value, repeatable" group:"Query"`
 }
 
+// CountQueryFlags contains query parameters that count endpoints can honor.
+type CountQueryFlags struct {
+	Locale  string   `help:"Filter by locale" group:"Query"`
+	Filters []string `help:"Filter by key=value, repeatable" group:"Query"`
+}
+
 // RootFlags contains global flags available to all commands.
 type RootFlags struct {
 	// Essential (ungrouped — always visible in help)
@@ -69,39 +75,44 @@ type RootFlags struct {
 type CLI struct {
 	RootFlags `embed:""`
 
-	HelpAll       bool                `help:"Show all flags including hidden" name:"help-all" hidden:""`
-	Version       kong.VersionFlag    `help:"Print version and exit"`
-	Auth          AuthCmd             `cmd:"" help:"Authentication and credentials"`
-	Init          InitCmd             `cmd:"" help:"Bootstrap a local theme project"`
-	Sites         SitesCmd            `cmd:"" help:"Manage sites"`
-	Channels      ChannelsCmd         `cmd:"" help:"Manage channels and entries"`
-	Pages         PagesCmd            `cmd:"" help:"Manage pages"`
-	Menus         MenusCmd            `cmd:"" help:"Manage navigation menus"`
-	Products      ProductsCmd         `cmd:"" help:"Manage products"`
-	Collections   CollectionsCmd      `cmd:"" help:"Manage collections"`
-	Coupons       CouponsCmd          `cmd:"" help:"Manage coupons"`
-	Domains       DomainsCmd          `cmd:"" help:"Manage custom domains"`
-	Orders        OrdersCmd           `cmd:"" help:"Manage orders"`
-	Customers     CustomersCmd        `cmd:"" help:"Manage customers"`
-	Mails         MailsCmd            `cmd:"" aliases:"mail" help:"Sync notification templates to local files"`
-	Accounts      AccountsCmd         `cmd:"" help:"Manage accounts"`
-	Notifications NotificationsCmd    `cmd:"" help:"Manage notifications"`
-	Roles         RolesCmd            `cmd:"" help:"Manage roles"`
-	Redirects     RedirectsCmd        `cmd:"" help:"Manage redirects"`
-	Functions     FunctionsCmd        `cmd:"" help:"Execute cloud functions"`
-	Jobs          JobsCmd             `cmd:"" help:"Execute cloud jobs"`
-	Apps          AppsCmd             `cmd:"" help:"Manage OAuth apps"`
-	Senders       SendersCmd          `cmd:"" help:"Manage email sender domains"`
-	Themes        ThemesCmd           `cmd:"" help:"Manage themes"`
-	Uploads       UploadsCmd          `cmd:"" help:"Manage uploads"`
-	Blogs         BlogsCmd            `cmd:"" help:"Manage blogs"`
-	Webhooks      WebhooksCmd         `cmd:"" help:"Manage webhooks"`
-	Translations  TranslationsCmd     `cmd:"" help:"Manage translations"`
-	Server        ServerCmd           `cmd:"" help:"Run local simulator proxy with child dev server"`
-	Config        ConfigCmd           `cmd:"" help:"Manage configuration"`
-	API           APICmd              `cmd:"" help:"Raw API access"`
-	Completion    CompletionCmd       `cmd:"" help:"Generate shell completions"`
-	Complete      InternalCompleteCmd `cmd:"" name:"__complete" hidden:""`
+	HelpAll             bool                   `help:"Show all flags including hidden" name:"help-all" hidden:""`
+	Version             kong.VersionFlag       `help:"Print version and exit"`
+	Auth                AuthCmd                `cmd:"" help:"Authentication and credentials"`
+	Init                InitCmd                `cmd:"" help:"Bootstrap a local theme project"`
+	Sites               SitesCmd               `cmd:"" help:"Manage sites"`
+	Channels            ChannelsCmd            `cmd:"" help:"Manage channels and entries"`
+	Pages               PagesCmd               `cmd:"" help:"Manage pages"`
+	Menus               MenusCmd               `cmd:"" help:"Manage navigation menus"`
+	Products            ProductsCmd            `cmd:"" help:"Manage products"`
+	Collections         CollectionsCmd         `cmd:"" help:"Manage collections"`
+	Coupons             CouponsCmd             `cmd:"" help:"Manage coupons"`
+	Domains             DomainsCmd             `cmd:"" help:"Manage custom domains"`
+	Orders              OrdersCmd              `cmd:"" help:"Manage orders"`
+	Customers           CustomersCmd           `cmd:"" help:"Manage customers"`
+	Mails               MailsCmd               `cmd:"" aliases:"mail" help:"Sync notification templates to local files"`
+	Accounts            AccountsCmd            `cmd:"" help:"Manage accounts"`
+	Announcements       AnnouncementsCmd       `cmd:"" help:"Manage platform announcements"`
+	DomainRegistrations DomainRegistrationsCmd `cmd:"" name:"domain-registrations" help:"Manage domain registrations"`
+	Settings            SettingsCmd            `cmd:"" help:"Manage site settings"`
+	Events              EventsCmd              `cmd:"" help:"Track and ingest events"`
+	Notifications       NotificationsCmd       `cmd:"" help:"Manage notifications"`
+	Roles               RolesCmd               `cmd:"" help:"Manage roles"`
+	Redirects           RedirectsCmd           `cmd:"" help:"Manage redirects"`
+	Functions           FunctionsCmd           `cmd:"" help:"Execute cloud functions"`
+	Jobs                JobsCmd                `cmd:"" help:"Execute cloud jobs"`
+	Apps                AppsCmd                `cmd:"" help:"Manage OAuth apps"`
+	Senders             SendersCmd             `cmd:"" help:"Manage email sender domains"`
+	Themes              ThemesCmd              `cmd:"" help:"Manage themes"`
+	Uploads             UploadsCmd             `cmd:"" help:"Manage uploads"`
+	Blogs               BlogsCmd               `cmd:"" help:"Manage blogs"`
+	Webhooks            WebhooksCmd            `cmd:"" help:"Manage webhooks"`
+	Translations        TranslationsCmd        `cmd:"" help:"Manage translations"`
+	Server              ServerCmd              `cmd:"" help:"Run local simulator proxy with child dev server"`
+	Config              ConfigCmd              `cmd:"" help:"Manage configuration"`
+	API                 APICmd                 `cmd:"" help:"Raw API access"`
+	Commands            CommandsCmd            `cmd:"" help:"Export the machine-readable command contract"`
+	Completion          CompletionCmd          `cmd:"" help:"Generate shell completions"`
+	Complete            InternalCompleteCmd    `cmd:"" name:"__complete" hidden:""`
 }
 
 // Note: ConfigCmd and CompletionCmd are implemented in their own files (config.go, completion.go)

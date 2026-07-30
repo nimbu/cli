@@ -13,4 +13,5 @@ type CustomersCmd struct {
 	Config             CustomersConfigCmd             `cmd:"" help:"Copy or diff customer customizations"`
 	ResetPassword      CustomersResetPasswordCmd      `cmd:"reset-password" help:"Send password reset instructions"`
 	ResendConfirmation CustomersResendConfirmationCmd `cmd:"resend-confirmation" help:"Resend confirmation instructions"`
+	Roles              CustomerRolesCmd               `cmd:"" help:"Manage customer roles"`
 }

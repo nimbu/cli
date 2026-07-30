@@ -22,7 +22,16 @@ func TestMenusCreateFromFilePreservesNestingAndStripsTargetPage(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 				t.Fatalf("decode post body: %v", err)
 			}
-			_, _ = w.Write([]byte(`{"id":"m1","slug":"main","handle":"main","name":"Main"}`))
+			_, _ = w.Write([]byte(`{
+				"id":"m1","slug":"main","handle":"main","name":"Main",
+				"items":[
+					{"title":"Home","url":"/"},
+					{"title":"Shop","children":[
+						{"title":"Wine","url":"/wine"},
+						{"title":"Gifts","children":[{"title":"Boxes"}]}
+					]}
+				]
+			}`))
 			return
 		}
 		http.NotFound(w, r)
@@ -53,7 +62,7 @@ func TestMenusCreateFromFilePreservesNestingAndStripsTargetPage(t *testing.T) {
 		]
 	}`)
 
-	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	ctx, _, errOut := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
 	cmd := &MenusCreateCmd{File: file}
 	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
 		t.Fatalf("run menus create: %v", err)
@@ -78,6 +87,9 @@ func TestMenusCreateFromFilePreservesNestingAndStripsTargetPage(t *testing.T) {
 	if home["url"] != "/" {
 		t.Fatalf("expected unrelated fields preserved, got %#v", home["url"])
 	}
+	if home["name"] != "Home" || home["target_url"] != "/" {
+		t.Fatalf("expected title/url aliases filled, got %#v", home)
+	}
 
 	shop := items[1].(map[string]any)
 	children, ok := shop["children"].([]any)
@@ -88,6 +100,9 @@ func TestMenusCreateFromFilePreservesNestingAndStripsTargetPage(t *testing.T) {
 	wine := children[0].(map[string]any)
 	if wine["title"] != "Wine" {
 		t.Fatalf("expected first child Wine (nesting order preserved), got %#v", wine["title"])
+	}
+	if wine["name"] != "Wine" || wine["target_url"] != "/wine" {
+		t.Fatalf("expected child aliases filled, got %#v", wine)
 	}
 	if _, ok := wine["target_page"]; ok {
 		t.Fatalf("expected target_page stripped from child item, got %#v", wine)
@@ -100,6 +115,102 @@ func TestMenusCreateFromFilePreservesNestingAndStripsTargetPage(t *testing.T) {
 	}
 	if grandchildren[0].(map[string]any)["title"] != "Boxes" {
 		t.Fatalf("expected grandchild Boxes, got %#v", grandchildren[0])
+	}
+	if strings.Contains(errOut.String(), "warning:") {
+		t.Fatalf("expected no nesting warning when response preserves depth, got %q", errOut.String())
+	}
+}
+
+func TestMenusCreateFailsWhenServerFlattensNesting(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/menus":
+			// Response omits nested children — flat projection.
+			_, _ = w.Write([]byte(`{
+				"id":"m1","slug":"main","handle":"main","name":"Main",
+				"items":[
+					{"name":"Home","depth":0},
+					{"name":"Wine","depth":1},
+					{"name":"Boxes","depth":1}
+				]
+			}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/menus/main":
+			_, _ = w.Write([]byte(`{
+				"id":"m1","slug":"main","handle":"main","name":"Main",
+				"items":[
+					{"name":"Home","depth":0},
+					{"name":"Wine","depth":1},
+					{"name":"Boxes","depth":1}
+				]
+			}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/menus":
+			// Nested fallback also flat — nesting truly lost.
+			_, _ = w.Write([]byte(`[{
+				"id":"m1","slug":"main","handle":"main","name":"Main",
+				"items":[
+					{"name":"Home","depth":0},
+					{"name":"Wine","depth":1},
+					{"name":"Boxes","depth":1}
+				]
+			}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	file := writeMenuFile(t, `{
+		"name": "Main",
+		"handle": "main",
+		"items": [
+			{"title": "Home"},
+			{"title": "Shop", "children": [
+				{"title": "Wine"},
+				{"title": "Gifts", "children": [{"title": "Boxes"}]}
+			]}
+		]
+	}`)
+
+	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	cmd := &MenusCreateCmd{File: file}
+	err := cmd.Run(ctx, &RootFlags{Site: "demo"})
+	if err == nil || !strings.Contains(err.Error(), "verification failed") {
+		t.Fatalf("expected nesting verification failure, got %v", err)
+	}
+}
+
+func TestMenusCreateRefetchesWhenWriteResponseIsFlat(t *testing.T) {
+	var verificationReads int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/menus":
+			_, _ = w.Write([]byte(`{
+				"id":"m1","slug":"main","handle":"main","name":"Main",
+				"items":[{"name":"Home","depth":0},{"name":"Wine","depth":1}]
+			}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/menus/main":
+			verificationReads++
+			_, _ = w.Write([]byte(`{
+				"id":"m1","slug":"main","handle":"main","name":"Main",
+				"items":[{"name":"Shop","children":[{"name":"Wine"}]}]
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	file := writeMenuFile(t, `{
+		"name":"Main",
+		"handle":"main",
+		"items":[{"name":"Shop","children":[{"name":"Wine"}]}]
+	}`)
+	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	if err := (&MenusCreateCmd{File: file}).Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("create menu: %v", err)
+	}
+	if verificationReads != 1 {
+		t.Fatalf("verification reads = %d", verificationReads)
 	}
 }
 

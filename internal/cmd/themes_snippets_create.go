@@ -64,6 +64,9 @@ func (c *ThemeSnippetsCreateCmd) Run(ctx context.Context, flags *RootFlags) erro
 	if err := client.Post(ctx, path, body, &result, opts...); err != nil {
 		return fmt.Errorf("create snippet: %w", err)
 	}
+	if err := verifyThemeCodeResponse(ctx, client, c.Theme, "snippets", c.Name, content, result); err != nil {
+		return err
+	}
 
 	return output.Print(ctx, result, []any{result.ID, result.Name}, func() error {
 		if _, err := output.Fprintf(ctx, "Upserted snippet: %s\n", result.Name); err != nil {

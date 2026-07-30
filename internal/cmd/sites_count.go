@@ -9,7 +9,9 @@ import (
 )
 
 // SitesCountCmd gets site count.
-type SitesCountCmd struct{}
+type SitesCountCmd struct {
+	CountQueryFlags `embed:""`
+}
 
 // Run executes the count command.
 func (c *SitesCountCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -18,7 +20,11 @@ func (c *SitesCountCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	count, err := api.Count(ctx, client, "/sites/count")
+	opts, err := countRequestOptions(&c.CountQueryFlags, false)
+	if err != nil {
+		return fmt.Errorf("count sites: %w", err)
+	}
+	count, err := api.Count(ctx, client, "/sites/count", opts...)
 	if err != nil {
 		return fmt.Errorf("count sites: %w", err)
 	}

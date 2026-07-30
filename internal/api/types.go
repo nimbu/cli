@@ -224,6 +224,10 @@ type Menu struct {
 type MenuSummary = Menu
 
 // MenuItem represents a menu item.
+//
+// Read/write documents use MenuDocument (map[string]any). The API write shape
+// prefers name/target_url; NormalizeMenuDocumentForWrite also accepts title/url
+// aliases. This typed struct retains title/url for list/summary compatibility.
 type MenuItem struct {
 	ID       string     `json:"id"`
 	Title    string     `json:"title"`

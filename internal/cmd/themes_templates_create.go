@@ -64,6 +64,9 @@ func (c *ThemeTemplatesCreateCmd) Run(ctx context.Context, flags *RootFlags) err
 	if err := client.Post(ctx, path, body, &result, opts...); err != nil {
 		return fmt.Errorf("create template: %w", err)
 	}
+	if err := verifyThemeCodeResponse(ctx, client, c.Theme, "templates", c.Name, content, result); err != nil {
+		return err
+	}
 
 	return output.Print(ctx, result, []any{result.ID, result.Name}, func() error {
 		if _, err := output.Fprintf(ctx, "Upserted template: %s\n", result.Name); err != nil {

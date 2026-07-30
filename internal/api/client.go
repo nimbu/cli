@@ -284,12 +284,18 @@ func (c *Client) DownloadURL(ctx context.Context, rawURL string) (*http.Response
 		}
 		parsed = base.ResolveReference(parsed)
 		attachAuth = true
-	} else if base, err := url.Parse(c.BaseURL); err == nil && strings.EqualFold(base.Host, parsed.Host) {
+	} else if base, err := url.Parse(c.BaseURL); err == nil &&
+		strings.EqualFold(base.Scheme, parsed.Scheme) &&
+		strings.EqualFold(base.Host, parsed.Host) {
 		attachAuth = true
 	}
-	q := parsed.Query()
-	q.Set("raw", "true")
-	parsed.RawQuery = q.Encode()
+	// Only API-owned URLs may be safely extended. External URLs are often
+	// signed, so even a harmless-looking query parameter invalidates them.
+	if attachAuth {
+		q := parsed.Query()
+		q.Set("raw", "true")
+		parsed.RawQuery = q.Encode()
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
 		return nil, "", err

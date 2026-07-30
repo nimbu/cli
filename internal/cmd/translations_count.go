@@ -9,7 +9,9 @@ import (
 )
 
 // TranslationsCountCmd gets translation count.
-type TranslationsCountCmd struct{}
+type TranslationsCountCmd struct {
+	CountQueryFlags `embed:""`
+}
 
 // Run executes the count command.
 func (c *TranslationsCountCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -23,7 +25,11 @@ func (c *TranslationsCountCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 
-	count, err := api.Count(ctx, client, "/translations/count")
+	opts, err := countRequestOptions(&c.CountQueryFlags, false)
+	if err != nil {
+		return fmt.Errorf("count translations: %w", err)
+	}
+	count, err := api.Count(ctx, client, "/translations/count", opts...)
 	if err != nil {
 		return fmt.Errorf("count translations: %w", err)
 	}

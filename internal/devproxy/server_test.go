@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -250,9 +251,17 @@ func TestCatchAllUsesRegisteredTemplateOverlay(t *testing.T) {
 		t.Fatalf("write layout: %v", err)
 	}
 
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve test port: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
 	client := &captureSimulatorClient{}
 	server, err := New(Config{
 		DevToken:     "secret",
+		Port:         port,
 		TemplateRoot: root,
 		Watch:        false,
 	}, client)

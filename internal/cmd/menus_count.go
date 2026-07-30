@@ -9,7 +9,9 @@ import (
 )
 
 // MenusCountCmd gets menu count.
-type MenusCountCmd struct{}
+type MenusCountCmd struct {
+	CountQueryFlags `embed:""`
+}
 
 // Run executes the count command.
 func (c *MenusCountCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -23,7 +25,11 @@ func (c *MenusCountCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	count, err := api.Count(ctx, client, "/menus/count")
+	opts, err := countRequestOptions(&c.CountQueryFlags, false)
+	if err != nil {
+		return fmt.Errorf("count menus: %w", err)
+	}
+	count, err := api.Count(ctx, client, "/menus/count", opts...)
 	if err != nil {
 		return fmt.Errorf("count menus: %w", err)
 	}
