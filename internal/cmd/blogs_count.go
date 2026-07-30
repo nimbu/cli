@@ -9,7 +9,9 @@ import (
 )
 
 // BlogsCountCmd gets blog count.
-type BlogsCountCmd struct{}
+type BlogsCountCmd struct {
+	CountQueryFlags `embed:""`
+}
 
 // Run executes the count command.
 func (c *BlogsCountCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -23,7 +25,11 @@ func (c *BlogsCountCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	count, err := api.Count(ctx, client, "/blogs/count")
+	opts, err := countRequestOptions(&c.CountQueryFlags, false)
+	if err != nil {
+		return fmt.Errorf("count blogs: %w", err)
+	}
+	count, err := api.Count(ctx, client, "/blogs/count", opts...)
 	if err != nil {
 		return fmt.Errorf("count blogs: %w", err)
 	}

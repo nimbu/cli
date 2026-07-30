@@ -89,6 +89,19 @@ func UpsertBytes(ctx context.Context, client *api.Client, theme string, resource
 	if err := client.Post(ctx, requestPath, body, &ignored, opts...); err != nil {
 		return err
 	}
+	if resource.Kind != KindAsset {
+		remoteCode := ignored.Code
+		if remoteCode == "" {
+			verified, err := FetchResource(ctx, client, theme, resource.Kind, resource.RemoteName)
+			if err != nil {
+				return fmt.Errorf("verify uploaded %s: %w", resource.DisplayPath, err)
+			}
+			remoteCode = verified.Code
+		}
+		if remoteCode != string(content) {
+			return fmt.Errorf("verify uploaded %s: remote content does not match submitted content", resource.DisplayPath)
+		}
+	}
 	return nil
 }
 

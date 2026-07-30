@@ -9,7 +9,9 @@ import (
 )
 
 // CouponsCountCmd gets count of coupons.
-type CouponsCountCmd struct{}
+type CouponsCountCmd struct {
+	CountQueryFlags `embed:""`
+}
 
 // Run executes the count command.
 func (c *CouponsCountCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -23,7 +25,11 @@ func (c *CouponsCountCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	count, err := api.Count(ctx, client, "/coupons/count")
+	opts, err := countRequestOptions(&c.CountQueryFlags, false)
+	if err != nil {
+		return fmt.Errorf("count coupons: %w", err)
+	}
+	count, err := api.Count(ctx, client, "/coupons/count", opts...)
 	if err != nil {
 		return fmt.Errorf("count coupons: %w", err)
 	}

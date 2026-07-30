@@ -143,7 +143,7 @@ Typical `package.json` scripts (varies per project):
 ```json
 {
   "scripts": {
-    "start":            "nimbu themes serve",
+    "start":            "nimbu server",
     "build":            "webpack --mode development --watch",
     "build:production": "NIMBU_ENV=production webpack --mode production",
     "release:production": "yarn build:production && nimbu themes push"

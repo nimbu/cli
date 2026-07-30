@@ -22,7 +22,7 @@ For different API hosts, add `--from-host` / `--to-host` (bare domain or full UR
 | `info` | `nimbu channels info --channel <slug or site/channel>` | `--typescript` | Accepts cross-site ref. `--typescript` emits a TS interface. |
 | `fields` | `nimbu channels fields list --channel <slug>` | | Schema introspection — see detailed section below. |
 | `diff` | `nimbu channels diff --from <ref> --to <ref>` | `--from-host`, `--to-host` | Compares channel attrs + field schema. Reports added/removed/updated. |
-| `copy` | `nimbu channels copy --from <ref> --to <ref>` | `--all`, `--from-host`, `--to-host` | Copies channel config (not entries). `--all` copies all channels from source site. Requires `--write` (not readonly). |
+| `copy` | `nimbu channels copy --from <ref> --to <ref>` | `--all`, `--from-host`, `--to-host` | Copies channel config (not entries). `--all` copies all channels from source site. Fails under `--readonly`. |
 
 ### Schema Discovery: `fields` vs `info` vs `get`
 

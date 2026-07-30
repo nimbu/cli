@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/nimbu/cli/internal/api"
 )
 
 func readRichDocumentInput(file string) (map[string]any, error) {
@@ -41,4 +44,27 @@ func mergeTopLevel(dst map[string]any, src map[string]any) {
 	for key, value := range src {
 		dst[key] = value
 	}
+}
+
+// verifyMenuNesting rejects writes whose response or verification read flattened
+// a submitted nested tree.
+func verifyMenuNesting(ctx context.Context, client *api.Client, submitted api.MenuDocumentStats, menu api.MenuDocument) error {
+	if !submitted.HasItems {
+		return nil
+	}
+	returned := api.MenuStats(menu)
+	if api.MenuNestingLost(submitted, returned) || !api.MenuDocumentHasItems(menu) {
+		if identifier := api.MenuDocumentSlug(menu); identifier != "" {
+			if refetched, err := api.GetMenuDocument(ctx, client, identifier); err == nil {
+				returned = api.MenuStats(refetched)
+			}
+		}
+	}
+	if !api.MenuNestingLost(submitted, returned) {
+		return nil
+	}
+	return fmt.Errorf(
+		"menu verification failed: server returned a different item tree (items %d/%d, max depth %d/%d)",
+		returned.ItemCount, submitted.ItemCount, returned.MaxDepth, submitted.MaxDepth,
+	)
 }

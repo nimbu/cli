@@ -2,6 +2,7 @@ package themes
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -68,6 +69,10 @@ func TestRunPushPromptsAndRetriesConflictWithForce(t *testing.T) {
 		if r.URL.Path != "/themes/demo/templates" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode upload: %v", err)
+		}
 		postQueries = append(postQueries, r.URL.RawQuery)
 		if len(postQueries) == 1 {
 			w.WriteHeader(http.StatusConflict)
@@ -77,7 +82,7 @@ func TestRunPushPromptsAndRetriesConflictWithForce(t *testing.T) {
 		if r.URL.Query().Get("force") != "true" {
 			t.Fatalf("expected forced retry, got query %q", r.URL.RawQuery)
 		}
-		_, _ = w.Write([]byte(`{}`))
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": body["code"]})
 	}))
 	defer server.Close()
 
@@ -149,7 +154,11 @@ func TestRunPushForceBypassesConflictPrompt(t *testing.T) {
 		if r.URL.Query().Get("force") != "true" {
 			t.Fatalf("expected initial force query, got %q", r.URL.RawQuery)
 		}
-		_, _ = w.Write([]byte(`{}`))
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode upload: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": body["code"]})
 	}))
 	defer server.Close()
 
@@ -182,7 +191,11 @@ func TestRunPushOrdersUploadsByLiquidDependencies(t *testing.T) {
 		switch r.URL.Path {
 		case "/themes/demo/snippets", "/themes/demo/layouts", "/themes/demo/templates", "/themes/demo/assets":
 			uploads = append(uploads, r.URL.Path)
-			_, _ = w.Write([]byte(`{}`))
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode upload: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": body["code"]})
 		default:
 			http.NotFound(w, r)
 		}

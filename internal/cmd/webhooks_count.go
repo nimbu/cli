@@ -9,7 +9,9 @@ import (
 )
 
 // WebhooksCountCmd gets webhook count.
-type WebhooksCountCmd struct{}
+type WebhooksCountCmd struct {
+	CountQueryFlags `embed:""`
+}
 
 // Run executes the count command.
 func (c *WebhooksCountCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -23,7 +25,11 @@ func (c *WebhooksCountCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	count, err := api.Count(ctx, client, "/webhooks/count")
+	opts, err := countRequestOptions(&c.CountQueryFlags, false)
+	if err != nil {
+		return fmt.Errorf("count webhooks: %w", err)
+	}
+	count, err := api.Count(ctx, client, "/webhooks/count", opts...)
 	if err != nil {
 		return fmt.Errorf("count webhooks: %w", err)
 	}

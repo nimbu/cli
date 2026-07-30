@@ -252,16 +252,18 @@ func TestPagesGetUsesHomeCassette(t *testing.T) {
 	}
 }
 
-func TestMenusUpdateUsesPatchReplaceAndStripsTargetPage(t *testing.T) {
+func TestMenusUpdateInlinePatchesMetadataWithoutReplaceOrItems(t *testing.T) {
 	var gotMethod string
 	var gotReplace string
 	var gotBody map[string]any
+	var gotGet bool
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/menus/main":
 			if r.Method == http.MethodGet {
-				_, _ = w.Write([]byte(`{"id":"m1","slug":"main","handle":"main","name":"Main","items":[{"title":"Home","target_page":"home"}]}`))
+				gotGet = true
+				_, _ = w.Write([]byte(`{"id":"m1","slug":"main","handle":"main","name":"Main","items":[{"title":"Home","children":[{"title":"Wine"}]}]}`))
 				return
 			}
 			gotMethod = r.Method
@@ -269,7 +271,7 @@ func TestMenusUpdateUsesPatchReplaceAndStripsTargetPage(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 				t.Fatalf("decode patch body: %v", err)
 			}
-			_, _ = w.Write([]byte(`{"id":"m1","slug":"main","handle":"main","name":"Primary","items":[{"title":"Home"}]}`))
+			_, _ = w.Write([]byte(`{"id":"m1","slug":"main","handle":"main","name":"Primary"}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -285,16 +287,20 @@ func TestMenusUpdateUsesPatchReplaceAndStripsTargetPage(t *testing.T) {
 	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
 		t.Fatalf("run menus update: %v", err)
 	}
+	if gotGet {
+		t.Fatal("shallow inline update must not fetch the current menu document")
+	}
 	if gotMethod != http.MethodPatch {
 		t.Fatalf("expected PATCH, got %s", gotMethod)
 	}
-	if gotReplace != "1" {
-		t.Fatalf("expected replace=1, got %q", gotReplace)
+	if gotReplace != "" {
+		t.Fatalf("expected no replace on shallow update, got %q", gotReplace)
 	}
-	items := gotBody["items"].([]any)
-	first := items[0].(map[string]any)
-	if _, ok := first["target_page"]; ok {
-		t.Fatalf("expected target_page stripped, got %#v", first)
+	if _, ok := gotBody["items"]; ok {
+		t.Fatalf("expected no items on shallow update, got %#v", gotBody)
+	}
+	if gotBody["name"] != "Primary" {
+		t.Fatalf("expected name=Primary, got %#v", gotBody)
 	}
 }
 

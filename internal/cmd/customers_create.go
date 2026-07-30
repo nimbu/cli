@@ -35,12 +35,13 @@ func (c *CustomersCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var cust api.Customer
-	if err := client.Post(ctx, "/customers", body, &cust); err != nil {
+	var document api.Document[api.Customer]
+	if err := client.Post(ctx, "/customers", body, &document); err != nil {
 		return fmt.Errorf("create customer: %w", err)
 	}
+	cust := document.Value
 
-	return output.Print(ctx, cust, []any{cust.ID, cust.Email}, func() error {
+	return output.Print(ctx, document, []any{cust.ID, cust.Email}, func() error {
 		_, err := output.Fprintf(ctx, "Created customer: %s (%s)\n", cust.Email, cust.ID)
 		return err
 	})

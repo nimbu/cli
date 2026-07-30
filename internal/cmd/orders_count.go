@@ -10,7 +10,8 @@ import (
 
 // OrdersCountCmd counts orders.
 type OrdersCountCmd struct {
-	Status string `help:"Filter by status"`
+	CountQueryFlags `embed:""`
+	Status          string `help:"Filter by status"`
 }
 
 // Run executes the count command.
@@ -25,7 +26,10 @@ func (c *OrdersCountCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var opts []api.RequestOption
+	opts, err := countRequestOptions(&c.CountQueryFlags, false)
+	if err != nil {
+		return fmt.Errorf("count orders: %w", err)
+	}
 	if c.Status != "" {
 		opts = append(opts, api.WithParam("status", c.Status))
 	}

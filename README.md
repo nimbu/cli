@@ -159,8 +159,8 @@ For richer document resources, inline updates stay intentionally shallow:
 - `pages get --page <fullpath> --json` returns the full page document, including nested `items`
 - `pages get --page <fullpath> --download-assets DIR --json` downloads file editables and rewrites them to `attachment_path`
 - `pages update --page <fullpath>` uses replace-safe patch semantics and supports `attachment_path` file refs in JSON
-- `menus get --menu <slug> --json` returns the full nested menu tree
-- `menus update` uses replace-safe patch semantics for nested menu updates
+- `menus get --menu <slug> --json` returns the full nested menu tree (recovers via `?nested=1` when needed)
+- `menus update --file` reconciles nested menu trees with explicit tombstones; inline `name`/`handle` updates are shallow (no items rewrite)
 - `channels get --channel <slug> --json` returns the richer channel contract, including schema/customizations and ACL-oriented fields
 
 Examples:
@@ -288,22 +288,21 @@ nimbu channels empty --channel news --site my-site --confirm news --force
 nimbu uploads create --site target-site --file-ref nimbu://archive-site/uploads/507f1f77bcf86cd799439014
 ```
 
-## Advanced Admin Endpoints
-
-Some newer admin endpoints are intentionally left on the raw API surface until they justify dedicated CLI UX.
+## Advanced Workflows
 
 ```bash
-# Settings
-nimbu sites settings --site my-site --json
-nimbu api --method PATCH --path /settings/shipping --site my-site -d '{"bpost_label_qty":2}'
+# Native settings
+nimbu settings update --section shipping --site my-site bpost_label_qty:=2
 
-# Shipping rates
-nimbu api --method GET --path /shipping_rates --site my-site
+# Media and version history
+nimbu products attachments download --product PRODUCT --attachment ATTACHMENT --output manual.pdf
+nimbu pages versions list --page about --site my-site
 
-# Tax schemes
-nimbu api --method GET --path /tax_schemes --site my-site
+# Raw API remains an escape hatch
+nimbu api get /shipping_rates --site my-site
+nimbu api patch /unsupported_endpoint --data @payload.json
 
-# Subscriptions
+# Legacy raw syntax remains compatible
 nimbu api --method GET --path /subscriptions --site my-site
 ```
 

@@ -53,15 +53,21 @@ func TestUpsertBytesAssetUsesSourcePayload(t *testing.T) {
 
 func TestUpsertBytesTemplateUsesCodePayload(t *testing.T) {
 	var captured map[string]any
+	verificationReads := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/themes/demo/templates" {
-			t.Fatalf("path = %s", r.URL.Path)
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/themes/demo/templates":
+			if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{}`))
+		case r.Method == http.MethodGet && r.URL.EscapedPath() == "/themes/demo/templates/customers/login.liquid":
+			verificationReads++
+			_, _ = w.Write([]byte(`{"name":"customers/login.liquid","code":"{{ content }}"}`))
+		default:
+			t.Fatalf("unexpected %s %s", r.Method, r.URL.EscapedPath())
 		}
-		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer server.Close()
 
@@ -82,5 +88,8 @@ func TestUpsertBytesTemplateUsesCodePayload(t *testing.T) {
 	}
 	if _, ok := captured["source"]; ok {
 		t.Fatalf("unexpected source payload: %#v", captured)
+	}
+	if verificationReads != 1 {
+		t.Fatalf("verification reads = %d", verificationReads)
 	}
 }

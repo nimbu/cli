@@ -36,29 +36,30 @@ func (c *ProductsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("list products: %w", err)
 	}
 
-	var products []api.Product
+	var documents []api.Document[api.Product]
 	var meta listFooterMeta
 
 	if c.All {
-		products, err = api.List[api.Product](ctx, client, "/products", opts...)
+		documents, err = api.List[api.Document[api.Product]](ctx, client, "/products", opts...)
 		if err != nil {
 			return fmt.Errorf("list products: %w", err)
 		}
-		meta = allListFooterMeta(len(products))
+		meta = allListFooterMeta(len(documents))
 	} else {
-		paged, err := api.ListPage[api.Product](ctx, client, "/products", c.Page, c.PerPage, opts...)
+		paged, err := api.ListPage[api.Document[api.Product]](ctx, client, "/products", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list products: %w", err)
 		}
-		products = paged.Data
-		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(products))
+		documents = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(documents))
 		meta.probeTotal(ctx, client, "/products/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
-		return output.JSON(ctx, products)
+		return output.JSON(ctx, documents)
 	}
+	products := api.DocumentValues(documents)
 
 	plainFields := []string{"id", "slug", "name", "sku", "price", "status"}
 	tableFields := []string{"id", "slug", "name", "sku", "price", "status"}

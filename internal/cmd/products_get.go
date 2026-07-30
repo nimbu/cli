@@ -26,11 +26,12 @@ func (c *ProductsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var p api.Product
+	var document api.Document[api.Product]
 	path := "/products/" + url.PathEscape(c.Product)
-	if err := client.Get(ctx, path, &p); err != nil {
+	if err := client.Get(ctx, path, &document); err != nil {
 		return fmt.Errorf("get product: %w", err)
 	}
+	p := document.Value
 
 	price := fmt.Sprintf("%.2f", p.Price)
 	if p.Currency != "" {
@@ -59,5 +60,5 @@ func (c *ProductsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		fields = append(fields, output.FAlways("Updated", p.UpdatedAt.Format("2006-01-02 15:04:05")))
 	}
 
-	return output.Detail(ctx, p, []any{p.ID, p.Slug, p.Name, p.SKU, p.Price, p.Status}, fields)
+	return output.Detail(ctx, document, []any{p.ID, p.Slug, p.Name, p.SKU, p.Price, p.Status}, fields)
 }

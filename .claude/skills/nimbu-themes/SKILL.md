@@ -11,7 +11,7 @@ description: >
   (`nimbu themes push/sync`), use the companion `nimbu` skill. For server-side
   JavaScript in `code/`, use `nimbu-cloud-code`.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # Nimbu Themes
@@ -211,7 +211,7 @@ For the full directory contract and asset pipeline, see [theme-structure.md](ref
 Use the companion `nimbu` skill for the CLI:
 
 ```bash
-nimbu themes serve                    # local preview
+nimbu server                          # local preview
 nimbu themes push                     # deploy theme
 nimbu themes sync                     # bidirectional sync (rare)
 nimbu themes diff                     # show what would change

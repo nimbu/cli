@@ -9,7 +9,9 @@ import (
 )
 
 // PagesCountCmd gets page count.
-type PagesCountCmd struct{}
+type PagesCountCmd struct {
+	CountQueryFlags `embed:""`
+}
 
 // Run executes the count command.
 func (c *PagesCountCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -23,7 +25,11 @@ func (c *PagesCountCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	count, err := api.Count(ctx, client, "/pages/count")
+	opts, err := countRequestOptions(&c.CountQueryFlags, false)
+	if err != nil {
+		return fmt.Errorf("count pages: %w", err)
+	}
+	count, err := api.Count(ctx, client, "/pages/count", opts...)
 	if err != nil {
 		return fmt.Errorf("count pages: %w", err)
 	}

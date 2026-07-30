@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 .DEFAULT_GOAL := build
 
-.PHONY: build run help fmt fmt-check lint test ci tools setup clean skill-doc-links
+.PHONY: build run help fmt fmt-check lint test ci tools setup clean skill-doc-links skill-commands
 
 BIN_DIR := $(CURDIR)/bin
 BIN := $(BIN_DIR)/nimbu
@@ -73,6 +73,9 @@ ci: fmt-check lint test
 
 skill-doc-links:
 	@bash scripts/check-skill-doc-links.sh
+
+skill-commands:
+	@bash scripts/check-skill-commands.sh
 
 setup: tools
 	@command -v lefthook >/dev/null 2>&1 || { echo "Install lefthook: brew install lefthook"; exit 1; }

@@ -26,11 +26,12 @@ func (c *OrdersGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var o api.Order
+	var document api.Document[api.Order]
 	path := "/orders/" + url.PathEscape(c.Order)
-	if err := client.Get(ctx, path, &o); err != nil {
+	if err := client.Get(ctx, path, &document); err != nil {
 		return fmt.Errorf("get order: %w", err)
 	}
+	o := document.Value
 
 	fields := []output.Field{
 		output.FAlways("ID", o.ID),
@@ -46,5 +47,5 @@ func (c *OrdersGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		fields = append(fields, output.FAlways("Updated", o.UpdatedAt.Format("2006-01-02 15:04:05")))
 	}
 
-	return output.Detail(ctx, o, []any{o.ID, o.Number, o.Status, o.Total, o.Currency, o.CustomerID}, fields)
+	return output.Detail(ctx, document, []any{o.ID, o.Number, o.Status, o.Total, o.Currency, o.CustomerID}, fields)
 }

@@ -58,7 +58,7 @@ func TestRunCopyTransfersLiquidAndAssets(t *testing.T) {
 			t.Fatalf("decode upload: %v", err)
 		}
 		uploads = append(uploads, r.URL.Path+":"+body["name"].(string))
-		_, _ = w.Write([]byte(`{}`))
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": body["code"]})
 	}))
 	defer target.Close()
 
@@ -112,7 +112,7 @@ func TestRunCopyContinuesAfterResourceErrorWhenRequested(t *testing.T) {
 			http.Error(w, "invalid template", http.StatusUnprocessableEntity)
 			return
 		}
-		_, _ = w.Write([]byte(`{}`))
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": body["code"]})
 	}))
 	defer target.Close()
 
@@ -214,7 +214,7 @@ func TestRunCopyUploadsLiquidCodeOnlyAndIgnoresTemplateItems(t *testing.T) {
 			t.Fatalf("decode upload: %v", err)
 		}
 		captured = append(captured, body)
-		_, _ = w.Write([]byte(`{}`))
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": body["code"]})
 	}))
 	defer target.Close()
 
@@ -282,7 +282,7 @@ func TestRunCopyOrdersLiquidByDependenciesAndAssetsLast(t *testing.T) {
 			t.Fatalf("decode upload: %v", err)
 		}
 		uploads = append(uploads, r.URL.Path+":"+body["name"].(string))
-		_, _ = w.Write([]byte(`{}`))
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": body["code"]})
 	}))
 	defer target.Close()
 

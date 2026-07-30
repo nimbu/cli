@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nimbu/cli/internal/api"
-	"github.com/nimbu/cli/internal/apps"
 	"github.com/nimbu/cli/internal/output"
 )
 
@@ -18,7 +17,6 @@ type JobsRunCmd struct {
 	Job         string   `help:"Job identifier"`
 	File        string   `help:"Read job params JSON from file (use - for stdin)"`
 	Wait        bool     `help:"After scheduling, tail the job's cloud-code logs until interrupted"`
-	App         string   `help:"App whose logs --wait tails (local name or key; defaults to the only configured app)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. foo=bar, retry:=true)"`
 }
 
@@ -54,6 +52,14 @@ func (c *JobsRunCmd) Run(ctx context.Context, flags *RootFlags) error {
 		body = map[string]any{}
 	}
 
+	appKey := ""
+	if c.Wait {
+		appKey, err = resolveJobAppKey(ctx, client, job)
+		if err != nil {
+			return err
+		}
+	}
+
 	// The server hands the request body to the job as its params; wrapping it
 	// in a {"params": ...} envelope would leak the envelope into the job.
 	scheduledAt := appsLogsNow()
@@ -84,7 +90,7 @@ func (c *JobsRunCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if c.Wait {
-		return c.waitForLogs(ctx, flags, site, job, scheduledAt)
+		return c.waitForLogs(ctx, client, appKey, job, scheduledAt)
 	}
 	return nil
 }
@@ -104,26 +110,11 @@ func (c *JobsRunCmd) resolveJobAndAssignments() (string, []string, error) {
 }
 
 // waitForLogs tails the job's cloud-code logs from the moment it was scheduled.
-func (c *JobsRunCmd) waitForLogs(ctx context.Context, flags *RootFlags, site, job string, scheduledAt time.Time) error {
-	appRef := strings.TrimSpace(c.App)
-	if appRef == "" {
-		project, err := resolveProjectContext()
-		if err != nil {
-			return fmt.Errorf("--wait needs an app to tail logs from; pass --app (%w)", err)
-		}
-		configured := apps.VisibleApps(project.ProjectRoot, project.Config, currentAPIHost(flags), site)
-		if len(configured) != 1 {
-			return fmt.Errorf("--wait needs an app to tail logs from; pass --app (found %d configured apps)", len(configured))
-		}
-		appRef = configured[0].Name
-	}
-
-	logsCmd := &AppsLogsCmd{
-		App:   appRef,
-		Tail:  true,
-		Job:   job,
+func (c *JobsRunCmd) waitForLogs(ctx context.Context, client *api.Client, appKey, job string, scheduledAt time.Time) error {
+	logsCmd := &AppsLogsCmd{}
+	return logsCmd.tail(ctx, client, appKey, api.AppLogOptions{
 		Since: formatAppLogEpoch(scheduledAt.Add(-time.Second)),
+		Job:   job,
 		Limit: appsLogsDefaultLimit,
-	}
-	return logsCmd.Run(ctx, flags)
+	})
 }

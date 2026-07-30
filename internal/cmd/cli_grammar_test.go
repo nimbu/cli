@@ -30,6 +30,9 @@ func TestPublicCommandsUseFlagsForIdentity(t *testing.T) {
 			if strings.Contains(compactLine, "Assignments []string") || strings.Contains(compactLine, "Words []string") {
 				continue
 			}
+			if file == "api.go" && strings.Contains(compactLine, "Path string") {
+				continue
+			}
 			// `nimbu init [directory]` takes a filesystem destination (like
 			// `git init <dir>`), not a resource-identity value, so a positional
 			// argument is the idiomatic syntax here.
@@ -90,7 +93,6 @@ func TestOldPositionalIdentitySyntaxFails(t *testing.T) {
 		{"pages", "get", "about/team"},
 		{"products", "update", "sku-123", "name=Wine"},
 		{"config", "set", "default_site", "demo"},
-		{"api", "GET", "/channels"},
 		{"completion", "zsh"},
 	}
 

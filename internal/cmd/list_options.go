@@ -44,6 +44,28 @@ func listRequestOptions(flags *QueryFlags, extra ...api.RequestOption) ([]api.Re
 	return opts, nil
 }
 
+func countRequestOptions(flags *CountQueryFlags, contentLocale bool) ([]api.RequestOption, error) {
+	var opts []api.RequestOption
+	if flags == nil {
+		return opts, nil
+	}
+	if flags.Locale != "" {
+		if contentLocale {
+			opts = append(opts, api.WithContentLocale(flags.Locale))
+		} else {
+			opts = append(opts, api.WithLocale(flags.Locale))
+		}
+	}
+	for _, raw := range flags.Filters {
+		key, value, err := parseFilter(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --filter: %w", err)
+		}
+		opts = append(opts, api.WithParam(key, value))
+	}
+	return opts, nil
+}
+
 func parseSort(sort string) (string, error) {
 	sort = strings.TrimSpace(sort)
 	if sort == "" {
