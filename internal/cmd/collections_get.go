@@ -27,14 +27,19 @@ func (c *CollectionsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var col api.Collection
+	var document api.Document[api.Collection]
 	path := "/collections/" + url.PathEscape(c.Collection)
 	var opts []api.RequestOption
 	if c.Locale != "" {
 		opts = append(opts, api.WithContentLocale(c.Locale))
 	}
-	if err := client.Get(ctx, path, &col, opts...); err != nil {
+	if err := client.Get(ctx, path, &document, opts...); err != nil {
 		return fmt.Errorf("get collection: %w", err)
+	}
+	col := document.Value
+	display, err := localizedDocumentMap(document, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project collection locale: %w", err)
 	}
 
 	var created, updated string
@@ -45,11 +50,11 @@ func (c *CollectionsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		updated = col.UpdatedAt.Format("2006-01-02 15:04:05")
 	}
 
-	return output.Detail(ctx, col, []any{col.ID, col.Slug, col.Name, col.Status, col.Type}, []output.Field{
-		output.FAlways("ID", col.ID),
-		output.FAlways("Slug", col.Slug),
-		output.FAlways("Name", col.Name),
-		output.F("Description", col.Description),
+	return output.Detail(ctx, document, []any{display["id"], display["slug"], display["name"], col.Status, col.Type}, []output.Field{
+		output.FAlways("ID", display["id"]),
+		output.FAlways("Slug", display["slug"]),
+		output.FAlways("Name", display["name"]),
+		output.F("Description", display["description"]),
 		output.FAlways("Status", col.Status),
 		output.FAlways("Type", col.Type),
 		output.FAlways("Products", col.ProductCount),

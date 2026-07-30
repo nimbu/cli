@@ -36,16 +36,17 @@ func (c *PagesCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var page api.Page
+	var document api.Document[api.Page]
 	var opts []api.RequestOption
 	if c.Locale != "" {
 		opts = append(opts, api.WithContentLocale(c.Locale))
 	}
-	if err := client.Post(ctx, "/pages", body, &page, opts...); err != nil {
+	if err := client.Post(ctx, "/pages", body, &document, opts...); err != nil {
 		return fmt.Errorf("create page: %w", err)
 	}
+	page := document.Value
 
-	return output.Print(ctx, page, []any{page.ID}, func() error {
+	return output.Print(ctx, document, []any{page.ID}, func() error {
 		_, err := output.Fprintf(ctx, "Created page %s\n", page.ID)
 		return err
 	})

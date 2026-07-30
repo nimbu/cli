@@ -48,9 +48,13 @@ func (c *ProductsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("update product: %w", err)
 	}
 	p := document.Value
+	display, err := localizedDocumentMap(document, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project product locale: %w", err)
+	}
 
-	return output.Print(ctx, document, []any{p.ID, p.Slug, p.Name}, func() error {
-		_, err := output.Fprintf(ctx, "Updated product: %s (%s)\n", p.Name, p.ID)
+	return output.Print(ctx, document, []any{display["id"], display["slug"], display["name"]}, func() error {
+		_, err := output.Fprintf(ctx, "Updated product: %v (%s)\n", display["name"], p.ID)
 		return err
 	})
 }

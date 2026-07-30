@@ -44,25 +44,26 @@ func (c *ChannelEntriesUpdateCmd) Run(ctx context.Context, flags *RootFlags) err
 	if c.Locale != "" {
 		opts = append(opts, api.WithContentLocale(c.Locale))
 	}
-	var entry api.Entry
-	if err := client.Put(ctx, path, body, &entry, opts...); err != nil {
+	var document api.Document[api.Entry]
+	if err := client.Put(ctx, path, body, &document, opts...); err != nil {
 		if !api.IsNotFound(err) {
 			return hintJSONAssignments(fmt.Errorf("update entry: %w", err), c.Assignments)
 		}
-		found, findErr := findChannelEntryBySlug(ctx, client, c.Channel, c.Entry, opts...)
+		found, findErr := findChannelEntryDocumentBySlug(ctx, client, c.Channel, c.Entry, opts...)
 		if findErr != nil {
 			return fmt.Errorf("update entry: %w", findErr)
 		}
-		if found.ID == "" {
+		if found.Value.ID == "" {
 			return fmt.Errorf("update entry: %w", err)
 		}
-		path = "/channels/" + url.PathEscape(c.Channel) + "/entries/" + url.PathEscape(found.ID)
-		if err := client.Put(ctx, path, body, &entry, opts...); err != nil {
+		path = "/channels/" + url.PathEscape(c.Channel) + "/entries/" + url.PathEscape(found.Value.ID)
+		if err := client.Put(ctx, path, body, &document, opts...); err != nil {
 			return hintJSONAssignments(fmt.Errorf("update entry: %w", err), c.Assignments)
 		}
 	}
+	entry := document.Value
 
-	return output.Print(ctx, entry, []any{entry.ID}, func() error {
+	return output.Print(ctx, document, []any{entry.ID}, func() error {
 		_, err := output.Fprintf(ctx, "Updated entry %s\n", entry.ID)
 		return err
 	})

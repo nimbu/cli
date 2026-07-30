@@ -35,15 +35,15 @@ func (c *ChannelEntriesGetCmd) Run(ctx context.Context, flags *RootFlags) error 
 		opts = append(opts, api.WithContentLocale(c.Locale))
 	}
 
-	var entry api.Entry
-	if err := client.Get(ctx, path, &entry, opts...); err != nil {
+	var document api.Document[api.Entry]
+	if err := client.Get(ctx, path, &document, opts...); err != nil {
 		if api.IsNotFound(err) {
-			found, findErr := findChannelEntryBySlug(ctx, client, c.Channel, c.Entry, opts...)
+			found, findErr := findChannelEntryDocumentBySlug(ctx, client, c.Channel, c.Entry, opts...)
 			if findErr != nil {
 				return fmt.Errorf("get entry: %w", findErr)
 			}
-			if found.ID != "" {
-				entry = found
+			if found.Value.ID != "" {
+				document = found
 			} else {
 				return fmt.Errorf("get entry: %w", err)
 			}
@@ -51,28 +51,38 @@ func (c *ChannelEntriesGetCmd) Run(ctx context.Context, flags *RootFlags) error 
 			return fmt.Errorf("get entry: %w", err)
 		}
 	}
+	projected, err := output.ProjectLocale(document, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project entry locale: %w", err)
+	}
+	display := projected.(map[string]any)
 
-	return output.Detail(ctx, entry, []any{entry.ID, entry.Slug, entry.Title, entry.Published}, []output.Field{
-		output.FAlways("ID", entry.ID),
-		output.FAlways("Slug", entry.Slug),
-		output.FAlways("Title", entry.Title),
-		output.FAlways("Published", entry.Published),
-		output.F("Locale", entry.Locale),
-		output.F("Body", entry.Body),
+	return output.Detail(ctx, document, []any{display["id"], display["slug"], display["title"], display["published"]}, []output.Field{
+		output.FAlways("ID", display["id"]),
+		output.FAlways("Slug", display["slug"]),
+		output.FAlways("Title", display["title"]),
+		output.FAlways("Published", display["published"]),
+		output.F("Locale", display["locale"]),
+		output.F("Body", display["body"]),
 	})
 }
 
 func findChannelEntryBySlug(ctx context.Context, client *api.Client, channel, slug string, opts ...api.RequestOption) (api.Entry, error) {
+	document, err := findChannelEntryDocumentBySlug(ctx, client, channel, slug, opts...)
+	return document.Value, err
+}
+
+func findChannelEntryDocumentBySlug(ctx context.Context, client *api.Client, channel, slug string, opts ...api.RequestOption) (api.Document[api.Entry], error) {
 	escapedSlug := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(slug)
 	where := fmt.Sprintf(`_slug:"%s"`, escapedSlug)
 	requestOpts := append([]api.RequestOption{api.WithParam("where", where)}, opts...)
 	path := "/channels/" + url.PathEscape(channel) + "/entries"
-	var entries []api.Entry
+	var entries []api.Document[api.Entry]
 	if err := client.Get(ctx, path, &entries, requestOpts...); err != nil {
-		return api.Entry{}, err
+		return api.Document[api.Entry]{}, err
 	}
 	if len(entries) == 0 {
-		return api.Entry{}, nil
+		return api.Document[api.Entry]{}, nil
 	}
 	return entries[0], nil
 }

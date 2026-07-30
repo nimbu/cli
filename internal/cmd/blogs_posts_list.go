@@ -36,28 +36,32 @@ func (c *BlogPostsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("list articles: %w", err)
 	}
 
-	var posts []api.BlogPost
+	var documents []api.Document[api.BlogPost]
 	var meta listFooterMeta
 
 	if c.All {
-		posts, err = api.List[api.BlogPost](ctx, client, path, opts...)
+		documents, err = api.List[api.Document[api.BlogPost]](ctx, client, path, opts...)
 		if err != nil {
 			return fmt.Errorf("list articles: %w", err)
 		}
-		meta = allListFooterMeta(len(posts))
+		meta = allListFooterMeta(len(documents))
 	} else {
-		paged, err := api.ListPage[api.BlogPost](ctx, client, path, c.Page, c.PerPage, opts...)
+		paged, err := api.ListPage[api.Document[api.BlogPost]](ctx, client, path, c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list articles: %w", err)
 		}
-		posts = paged.Data
-		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(posts))
+		documents = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(documents))
 		meta.probeTotal(ctx, client, "/blogs/"+url.PathEscape(c.Blog)+"/articles/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
-		return output.JSON(ctx, posts)
+		return output.JSON(ctx, documents)
+	}
+	posts, err := localizedDocumentMaps(documents, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project article locale: %w", err)
 	}
 
 	plainFields := []string{"id", "slug", "title"}

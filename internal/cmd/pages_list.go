@@ -36,28 +36,32 @@ func (c *PagesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("list pages: %w", err)
 	}
 
-	var pages []api.PageSummary
+	var documents []api.Document[api.PageSummary]
 	var meta listFooterMeta
 
 	if c.All {
-		pages, err = api.List[api.PageSummary](ctx, client, "/pages", opts...)
+		documents, err = api.List[api.Document[api.PageSummary]](ctx, client, "/pages", opts...)
 		if err != nil {
 			return fmt.Errorf("list pages: %w", err)
 		}
-		meta = allListFooterMeta(len(pages))
+		meta = allListFooterMeta(len(documents))
 	} else {
-		paged, err := api.ListPage[api.PageSummary](ctx, client, "/pages", c.Page, c.PerPage, opts...)
+		paged, err := api.ListPage[api.Document[api.PageSummary]](ctx, client, "/pages", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list pages: %w", err)
 		}
-		pages = paged.Data
-		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(pages))
+		documents = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(documents))
 		meta.probeTotal(ctx, client, "/pages/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
-		return output.JSON(ctx, pages)
+		return output.JSON(ctx, documents)
+	}
+	pages, err := localizedDocumentMaps(documents, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project page locale: %w", err)
 	}
 
 	plainFields := []string{"id", "fullpath", "title"}

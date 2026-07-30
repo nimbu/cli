@@ -38,17 +38,23 @@ func (c *BlogsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var blog api.Blog
+	var document api.Document[api.Blog]
 	path := "/blogs/" + url.PathEscape(c.Blog)
 	var opts []api.RequestOption
 	if c.Locale != "" {
 		opts = append(opts, api.WithContentLocale(c.Locale))
 	}
-	if err := client.Put(ctx, path, body, &blog, opts...); err != nil {
+	if err := client.Put(ctx, path, body, &document, opts...); err != nil {
 		return fmt.Errorf("update blog: %w", err)
 	}
+	blog := document.Value
+	display, err := localizedDocumentMap(document, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project blog locale: %w", err)
+	}
+	applyBlogDisplayHandle(display)
 
-	return output.Print(ctx, blog, []any{blog.ID, blog.Handle, blog.Name}, func() error {
+	return output.Print(ctx, document, []any{display["id"], display["handle"], display["name"]}, func() error {
 		_, err := output.Fprintf(ctx, "Updated blog: %s\n", blog.ID)
 		return err
 	})

@@ -36,17 +36,22 @@ func (c *CollectionsCreateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 
-	var col api.Collection
+	var document api.Document[api.Collection]
 	var opts []api.RequestOption
 	if c.Locale != "" {
 		opts = append(opts, api.WithContentLocale(c.Locale))
 	}
-	if err := client.Post(ctx, "/collections", body, &col, opts...); err != nil {
+	if err := client.Post(ctx, "/collections", body, &document, opts...); err != nil {
 		return fmt.Errorf("create collection: %w", err)
 	}
+	col := document.Value
+	display, err := localizedDocumentMap(document, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project collection locale: %w", err)
+	}
 
-	return output.Print(ctx, col, []any{col.ID, col.Slug, col.Name}, func() error {
-		_, err := output.Fprintf(ctx, "Created collection: %s (%s)\n", col.Name, col.ID)
+	return output.Print(ctx, document, []any{display["id"], display["slug"], display["name"]}, func() error {
+		_, err := output.Fprintf(ctx, "Created collection: %v (%s)\n", display["name"], col.ID)
 		return err
 	})
 }

@@ -37,6 +37,10 @@ func (c *ProductsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("get product: %w", err)
 	}
 	p := document.Value
+	display, err := localizedDocumentMap(document, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project product locale: %w", err)
+	}
 
 	price := fmt.Sprintf("%.2f", p.Price)
 	if p.Currency != "" {
@@ -44,11 +48,11 @@ func (c *ProductsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	fields := []output.Field{
-		output.FAlways("ID", p.ID),
-		output.FAlways("Slug", p.Slug),
-		output.FAlways("Name", p.Name),
+		output.FAlways("ID", display["id"]),
+		output.FAlways("Slug", display["slug"]),
+		output.FAlways("Name", display["name"]),
 		output.F("SKU", p.SKU),
-		output.F("Description", p.Description),
+		output.F("Description", display["description"]),
 		output.F("Status", p.Status),
 		output.FAlways("Price", price),
 		output.FAlways("Stock", p.CurrentStock),
@@ -65,5 +69,5 @@ func (c *ProductsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		fields = append(fields, output.FAlways("Updated", p.UpdatedAt.Format("2006-01-02 15:04:05")))
 	}
 
-	return output.Detail(ctx, document, []any{p.ID, p.Slug, p.Name, p.SKU, p.Price, p.Status}, fields)
+	return output.Detail(ctx, document, []any{display["id"], display["slug"], display["name"], p.SKU, p.Price, p.Status}, fields)
 }

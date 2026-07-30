@@ -39,16 +39,17 @@ func (c *ChannelEntriesCreateCmd) Run(ctx context.Context, flags *RootFlags) err
 	}
 
 	path := "/channels/" + url.PathEscape(c.Channel) + "/entries"
-	var entry api.Entry
+	var document api.Document[api.Entry]
 	var opts []api.RequestOption
 	if c.Locale != "" {
 		opts = append(opts, api.WithContentLocale(c.Locale))
 	}
-	if err := client.Post(ctx, path, body, &entry, opts...); err != nil {
+	if err := client.Post(ctx, path, body, &document, opts...); err != nil {
 		return hintJSONAssignments(fmt.Errorf("create entry: %w", err), c.Assignments)
 	}
+	entry := document.Value
 
-	return output.Print(ctx, entry, []any{entry.ID}, func() error {
+	return output.Print(ctx, document, []any{entry.ID}, func() error {
 		_, err := output.Fprintf(ctx, "Created entry %s\n", entry.ID)
 		return err
 	})

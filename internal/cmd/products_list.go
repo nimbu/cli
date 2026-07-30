@@ -59,7 +59,21 @@ func (c *ProductsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if mode.JSON {
 		return output.JSON(ctx, documents)
 	}
-	products := api.DocumentValues(documents)
+	products, err := localizedDocumentMaps(documents, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project product locale: %w", err)
+	}
+	for i, product := range api.DocumentValues(documents) {
+		defaults := map[string]any{
+			"id": product.ID, "slug": product.Slug, "name": product.Name,
+			"sku": product.SKU, "price": product.Price, "status": product.Status,
+		}
+		for field, value := range defaults {
+			if _, exists := products[i][field]; !exists {
+				products[i][field] = value
+			}
+		}
+	}
 
 	plainFields := []string{"id", "slug", "name", "sku", "price", "status"}
 	tableFields := []string{"id", "slug", "name", "sku", "price", "status"}

@@ -33,27 +33,31 @@ func (c *NotificationsListCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return fmt.Errorf("list notifications: %w", err)
 	}
 
-	var notifications []api.Notification
+	var documents []api.Document[api.Notification]
 	var meta listFooterMeta
 	if c.All {
-		notifications, err = api.List[api.Notification](ctx, client, "/notifications", opts...)
+		documents, err = api.List[api.Document[api.Notification]](ctx, client, "/notifications", opts...)
 		if err != nil {
 			return fmt.Errorf("list notifications: %w", err)
 		}
-		meta = allListFooterMeta(len(notifications))
+		meta = allListFooterMeta(len(documents))
 	} else {
-		paged, err := api.ListPage[api.Notification](ctx, client, "/notifications", c.Page, c.PerPage, opts...)
+		paged, err := api.ListPage[api.Document[api.Notification]](ctx, client, "/notifications", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list notifications: %w", err)
 		}
-		notifications = paged.Data
-		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(notifications))
+		documents = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(documents))
 		meta.probeTotal(ctx, client, "/notifications/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
-		return output.JSON(ctx, notifications)
+		return output.JSON(ctx, documents)
+	}
+	notifications, err := localizedDocumentMaps(documents, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project notification locale: %w", err)
 	}
 
 	plainFields := []string{"id", "slug", "name", "subject"}

@@ -29,21 +29,25 @@ func (c *BlogPostsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	path := "/blogs/" + url.PathEscape(c.Blog) + "/articles/" + url.PathEscape(c.Post)
-	var post api.BlogPost
+	var document api.Document[api.BlogPost]
 	var opts []api.RequestOption
 	if c.Locale != "" {
 		opts = append(opts, api.WithContentLocale(c.Locale))
 	}
-	if err := client.Get(ctx, path, &post, opts...); err != nil {
+	if err := client.Get(ctx, path, &document, opts...); err != nil {
 		return fmt.Errorf("get article: %w", err)
 	}
+	post, err := localizedDocumentMap(document, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project article locale: %w", err)
+	}
 
-	return output.Detail(ctx, post, []any{post.ID, post.Slug, post.Title, post.Status}, []output.Field{
-		output.FAlways("ID", post.ID),
-		output.FAlways("Slug", post.Slug),
-		output.FAlways("Title", post.Title),
-		output.FAlways("Status", post.Status),
-		output.F("Author", post.Author),
-		output.F("Body", post.TextContent),
+	return output.Detail(ctx, document, []any{post["id"], post["slug"], post["title"], post["status"]}, []output.Field{
+		output.FAlways("ID", post["id"]),
+		output.FAlways("Slug", post["slug"]),
+		output.FAlways("Title", post["title"]),
+		output.FAlways("Status", post["status"]),
+		output.F("Author", post["author"]),
+		output.F("Body", post["text_content"]),
 	})
 }

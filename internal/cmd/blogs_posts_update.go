@@ -49,10 +49,12 @@ func (c *BlogPostsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("update article: %w", err)
 	}
 
-	id, _ := result["id"].(string)
-	slug, _ := result["slug"].(string)
-	title, _ := result["title"].(string)
-	return output.Print(ctx, result, []any{id, slug, title}, func() error {
+	projected, err := output.ProjectLocale(result, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project article locale: %w", err)
+	}
+	display := projected.(map[string]any)
+	return output.Print(ctx, result, []any{display["id"], display["slug"], display["title"]}, func() error {
 		_, err := output.Fprintf(ctx, "Updated article in blog %s\n", c.Blog)
 		return err
 	})

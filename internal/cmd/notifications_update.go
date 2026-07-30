@@ -38,18 +38,23 @@ func (c *NotificationsUpdateCmd) Run(ctx context.Context, flags *RootFlags) erro
 		return err
 	}
 
-	var notification api.Notification
+	var document api.Document[api.Notification]
 	path := "/notifications/" + url.PathEscape(c.Notification)
 	var opts []api.RequestOption
 	if c.Locale != "" {
 		opts = append(opts, api.WithContentLocale(c.Locale))
 	}
-	if err := client.Put(ctx, path, body, &notification, opts...); err != nil {
+	if err := client.Put(ctx, path, body, &document, opts...); err != nil {
 		return fmt.Errorf("update notification: %w", err)
 	}
+	notification := document.Value
+	display, err := localizedDocumentMap(document, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project notification locale: %w", err)
+	}
 
-	return output.Print(ctx, notification, []any{notification.ID, notification.Slug, notification.Name}, func() error {
-		_, err := output.Fprintf(ctx, "Updated notification: %s (%s)\n", notification.Name, notification.ID)
+	return output.Print(ctx, document, []any{display["id"], display["slug"], display["name"]}, func() error {
+		_, err := output.Fprintf(ctx, "Updated notification: %v (%s)\n", display["name"], notification.ID)
 		return err
 	})
 }

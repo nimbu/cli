@@ -60,6 +60,9 @@ func (c *TranslationsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
+		if c.Locale != "" {
+			return output.JSON(ctx, expandTranslationsListRows(translations, c.Locale))
+		}
 		return output.JSON(ctx, translations)
 	}
 
@@ -87,6 +90,14 @@ func expandTranslationsListRows(translations []api.Translation, localeFilter str
 
 	for _, translation := range translations {
 		if translation.Locale != "" || translation.Value != "" || len(translation.Values) == 0 {
+			if localeFilter != "" {
+				if translation.Locale == "" {
+					continue
+				}
+				if _, ok := translationValueForLocale(map[string]string{translation.Locale: translation.Value}, localeFilter); !ok {
+					continue
+				}
+			}
 			rows = append(rows, translation)
 			continue
 		}

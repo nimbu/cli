@@ -45,9 +45,13 @@ func (c *ProductsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("create product: %w", err)
 	}
 	p := document.Value
+	display, err := localizedDocumentMap(document, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project product locale: %w", err)
+	}
 
-	return output.Print(ctx, document, []any{p.ID, p.Slug, p.Name}, func() error {
-		_, err := output.Fprintf(ctx, "Created product: %s (%s)\n", p.Name, p.ID)
+	return output.Print(ctx, document, []any{display["id"], display["slug"], display["name"]}, func() error {
+		_, err := output.Fprintf(ctx, "Created product: %v (%s)\n", display["name"], p.ID)
 		return err
 	})
 }
