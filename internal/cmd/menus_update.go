@@ -12,6 +12,7 @@ import (
 // MenusUpdateCmd updates a menu.
 type MenusUpdateCmd struct {
 	Menu        string   `required:"" help:"Menu slug or handle"`
+	Locale      string   `help:"Content locale for localized menu fields"`
 	File        string   `help:"Read menu JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Main, handle=main)"`
 }
@@ -33,6 +34,10 @@ func (c *MenusUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	slug := strings.TrimSpace(c.Menu)
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
 	var body api.MenuDocument
 	var submitted api.MenuDocumentStats
 	fullDocument := false
@@ -42,8 +47,9 @@ func (c *MenusUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 			return fmt.Errorf("use either --file or inline assignments, not both")
 		}
 		if err := validateShallowInlineAssignments("menus update", c.Assignments, map[string]struct{}{
-			"name":   {},
-			"handle": {},
+			"name":         {},
+			"handle":       {},
+			"translations": {},
 		}); err != nil {
 			return err
 		}
@@ -66,20 +72,20 @@ func (c *MenusUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if bodySlug := api.MenuDocumentSlug(body); bodySlug != "" {
 			slug = bodySlug
 		}
-		current, err := api.GetMenuDocument(ctx, client, slug)
+		current, err := api.GetMenuDocument(ctx, client, slug, opts...)
 		if err != nil {
 			return fmt.Errorf("read current menu before reconciliation: %w", err)
 		}
 		api.ReconcileMenuDocument(current, body)
 	}
 
-	menu, err := api.PatchMenuDocument(ctx, client, slug, body)
+	menu, err := api.PatchMenuDocument(ctx, client, slug, body, opts...)
 	if err != nil {
 		return fmt.Errorf("update menu: %w", err)
 	}
 
 	if fullDocument {
-		if err := verifyMenuNesting(ctx, client, submitted, menu); err != nil {
+		if err := verifyMenuNesting(ctx, client, submitted, menu, opts...); err != nil {
 			return err
 		}
 	}

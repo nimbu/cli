@@ -12,6 +12,7 @@ import (
 // ProductsGetCmd gets a product by ID or slug.
 type ProductsGetCmd struct {
 	Product string `required:"" help:"Product ID or slug"`
+	Locale  string `help:"Content locale for localized product fields"`
 }
 
 // Run executes the get command.
@@ -28,7 +29,11 @@ func (c *ProductsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	var document api.Document[api.Product]
 	path := "/products/" + url.PathEscape(c.Product)
-	if err := client.Get(ctx, path, &document); err != nil {
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	if err := client.Get(ctx, path, &document, opts...); err != nil {
 		return fmt.Errorf("get product: %w", err)
 	}
 	p := document.Value

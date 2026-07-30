@@ -32,7 +32,7 @@ func (c *PagesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	var opts []api.RequestOption
 	if c.Locale != "" {
-		opts = append(opts, api.WithLocale(c.Locale))
+		opts = append(opts, api.WithContentLocale(c.Locale))
 	}
 
 	page, err := api.GetPageDocument(ctx, client, c.Page, opts...)

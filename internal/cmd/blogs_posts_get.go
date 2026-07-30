@@ -11,8 +11,9 @@ import (
 
 // BlogPostsGetCmd gets a blog article.
 type BlogPostsGetCmd struct {
-	Blog string `required:"" help:"Blog ID or handle"`
-	Post string `required:"" help:"Post ID or slug"`
+	Blog   string `required:"" help:"Blog ID or handle"`
+	Post   string `required:"" help:"Post ID or slug"`
+	Locale string `help:"Content locale for localized post fields"`
 }
 
 // Run executes the get command.
@@ -29,7 +30,11 @@ func (c *BlogPostsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	path := "/blogs/" + url.PathEscape(c.Blog) + "/articles/" + url.PathEscape(c.Post)
 	var post api.BlogPost
-	if err := client.Get(ctx, path, &post); err != nil {
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	if err := client.Get(ctx, path, &post, opts...); err != nil {
 		return fmt.Errorf("get article: %w", err)
 	}
 

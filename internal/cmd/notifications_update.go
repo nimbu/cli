@@ -12,6 +12,7 @@ import (
 // NotificationsUpdateCmd updates a notification.
 type NotificationsUpdateCmd struct {
 	Notification string   `required:"" help:"Notification slug or identifier"`
+	Locale       string   `help:"Content locale for localized notification fields"`
 	File         string   `help:"Read notification JSON from file (use - for stdin)"`
 	Assignments  []string `arg:"" optional:"" help:"Inline assignments (e.g. subject=Hello, html_enabled:=true)"`
 }
@@ -39,7 +40,11 @@ func (c *NotificationsUpdateCmd) Run(ctx context.Context, flags *RootFlags) erro
 
 	var notification api.Notification
 	path := "/notifications/" + url.PathEscape(c.Notification)
-	if err := client.Put(ctx, path, body, &notification); err != nil {
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	if err := client.Put(ctx, path, body, &notification, opts...); err != nil {
 		return fmt.Errorf("update notification: %w", err)
 	}
 

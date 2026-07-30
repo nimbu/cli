@@ -12,6 +12,7 @@ import (
 // ChannelEntriesCreateCmd creates a channel entry.
 type ChannelEntriesCreateCmd struct {
 	Channel     string   `required:"" help:"Channel ID or slug"`
+	Locale      string   `help:"Content locale for localized channel fields"`
 	File        string   `help:"Read entry JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. title=Hello, fields.teaser=Text)"`
 }
@@ -39,7 +40,11 @@ func (c *ChannelEntriesCreateCmd) Run(ctx context.Context, flags *RootFlags) err
 
 	path := "/channels/" + url.PathEscape(c.Channel) + "/entries"
 	var entry api.Entry
-	if err := client.Post(ctx, path, body, &entry); err != nil {
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	if err := client.Post(ctx, path, body, &entry, opts...); err != nil {
 		return hintJSONAssignments(fmt.Errorf("create entry: %w", err), c.Assignments)
 	}
 

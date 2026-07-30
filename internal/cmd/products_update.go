@@ -12,6 +12,7 @@ import (
 // ProductsUpdateCmd updates a product.
 type ProductsUpdateCmd struct {
 	Product     string   `required:"" help:"Product ID or slug"`
+	Locale      string   `help:"Content locale for localized product fields"`
 	File        string   `help:"Read product JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Wine, price:=19.9)"`
 }
@@ -39,7 +40,11 @@ func (c *ProductsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	var document api.Document[api.Product]
 	path := "/products/" + url.PathEscape(c.Product)
-	if err := client.Put(ctx, path, body, &document); err != nil {
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	if err := client.Put(ctx, path, body, &document, opts...); err != nil {
 		return fmt.Errorf("update product: %w", err)
 	}
 	p := document.Value

@@ -38,7 +38,7 @@ func (c *PagesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	var opts []api.RequestOption
 	if c.Locale != "" {
-		opts = append(opts, api.WithLocale(c.Locale))
+		opts = append(opts, api.WithContentLocale(c.Locale))
 	}
 	if c.Replace && c.File == "" {
 		return fmt.Errorf("--replace requires --file")
@@ -51,10 +51,11 @@ func (c *PagesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	var current api.PageDocument
 	if len(c.Assignments) > 0 {
 		if err := validateShallowInlineAssignments("pages update", c.Assignments, map[string]struct{}{
-			"title":     {},
-			"template":  {},
-			"published": {},
-			"locale":    {},
+			"title":        {},
+			"template":     {},
+			"published":    {},
+			"locale":       {},
+			"translations": {},
 		}); err != nil {
 			return err
 		}

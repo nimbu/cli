@@ -10,6 +10,7 @@ import (
 
 // NotificationsCreateCmd creates a notification.
 type NotificationsCreateCmd struct {
+	Locale      string   `help:"Content locale for localized notification fields"`
 	File        string   `help:"Read notification JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. slug=order_created, subject=Hello)"`
 }
@@ -36,7 +37,11 @@ func (c *NotificationsCreateCmd) Run(ctx context.Context, flags *RootFlags) erro
 	}
 
 	var notification api.Notification
-	if err := client.Post(ctx, "/notifications", body, &notification); err != nil {
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	if err := client.Post(ctx, "/notifications", body, &notification, opts...); err != nil {
 		return fmt.Errorf("create notification: %w", err)
 	}
 

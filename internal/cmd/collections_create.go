@@ -10,6 +10,7 @@ import (
 
 // CollectionsCreateCmd creates a collection.
 type CollectionsCreateCmd struct {
+	Locale      string   `help:"Content locale for localized collection fields"`
 	File        string   `help:"Read collection JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Summer, slug=summer)"`
 }
@@ -36,7 +37,11 @@ func (c *CollectionsCreateCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 
 	var col api.Collection
-	if err := client.Post(ctx, "/collections", body, &col); err != nil {
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	if err := client.Post(ctx, "/collections", body, &col, opts...); err != nil {
 		return fmt.Errorf("create collection: %w", err)
 	}
 

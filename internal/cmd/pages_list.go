@@ -31,7 +31,7 @@ func (c *PagesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	opts, err := listRequestOptions(&c.QueryFlags)
+	opts, err := localizedContentListRequestOptions(&c.QueryFlags)
 	if err != nil {
 		return fmt.Errorf("list pages: %w", err)
 	}

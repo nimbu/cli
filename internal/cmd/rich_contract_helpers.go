@@ -48,14 +48,14 @@ func mergeTopLevel(dst map[string]any, src map[string]any) {
 
 // verifyMenuNesting rejects writes whose response or verification read flattened
 // a submitted nested tree.
-func verifyMenuNesting(ctx context.Context, client *api.Client, submitted api.MenuDocumentStats, menu api.MenuDocument) error {
+func verifyMenuNesting(ctx context.Context, client *api.Client, submitted api.MenuDocumentStats, menu api.MenuDocument, opts ...api.RequestOption) error {
 	if !submitted.HasItems {
 		return nil
 	}
 	returned := api.MenuStats(menu)
 	if api.MenuNestingLost(submitted, returned) || !api.MenuDocumentHasItems(menu) {
 		if identifier := api.MenuDocumentSlug(menu); identifier != "" {
-			if refetched, err := api.GetMenuDocument(ctx, client, identifier); err == nil {
+			if refetched, err := api.GetMenuDocument(ctx, client, identifier, opts...); err == nil {
 				returned = api.MenuStats(refetched)
 			}
 		}

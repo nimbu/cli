@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
 )
 
@@ -12,6 +13,7 @@ import (
 type BlogPostsUpdateCmd struct {
 	Blog        string   `required:"" help:"Blog ID or handle"`
 	Post        string   `required:"" help:"Post ID or slug"`
+	Locale      string   `help:"Content locale for localized post fields"`
 	File        string   `help:"Read post JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. title=Hello, status=published)"`
 }
@@ -39,7 +41,11 @@ func (c *BlogPostsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	var result map[string]any
 	path := "/blogs/" + url.PathEscape(c.Blog) + "/articles/" + url.PathEscape(c.Post)
-	if err := client.Put(ctx, path, body, &result); err != nil {
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	if err := client.Put(ctx, path, body, &result, opts...); err != nil {
 		return fmt.Errorf("update article: %w", err)
 	}
 

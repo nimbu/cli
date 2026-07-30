@@ -12,6 +12,7 @@ import (
 // BlogsUpdateCmd updates a blog.
 type BlogsUpdateCmd struct {
 	Blog        string   `required:"" help:"Blog ID or handle"`
+	Locale      string   `help:"Content locale for localized blog fields"`
 	File        string   `help:"Read blog JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Blog, slug=news)"`
 }
@@ -39,7 +40,11 @@ func (c *BlogsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	var blog api.Blog
 	path := "/blogs/" + url.PathEscape(c.Blog)
-	if err := client.Put(ctx, path, body, &blog); err != nil {
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	if err := client.Put(ctx, path, body, &blog, opts...); err != nil {
 		return fmt.Errorf("update blog: %w", err)
 	}
 

@@ -27,6 +27,18 @@ func requireForce(flags *RootFlags, target string) error {
 }
 
 func readJSONInput(file string) (map[string]any, error) {
+	value, err := readJSONAnyInput(file)
+	if err != nil {
+		return nil, err
+	}
+	body, ok := value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("parse JSON: expected an object")
+	}
+	return body, nil
+}
+
+func readJSONAnyInput(file string) (any, error) {
 	var input io.Reader
 
 	switch file {
@@ -58,12 +70,12 @@ func readJSONInput(file string) (map[string]any, error) {
 		return nil, errNoJSONInput
 	}
 
-	body := map[string]any{}
-	if err := json.Unmarshal(data, &body); err != nil {
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
 		return nil, fmt.Errorf("parse JSON: %w", err)
 	}
 
-	return body, nil
+	return value, nil
 }
 
 func stdinIsTerminal() bool {

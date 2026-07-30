@@ -10,7 +10,8 @@ import (
 
 // MenusGetCmd gets menu details.
 type MenusGetCmd struct {
-	Menu string `required:"" help:"Menu slug or handle"`
+	Menu   string `required:"" help:"Menu slug or handle"`
+	Locale string `help:"Content locale for localized menu fields"`
 }
 
 // Run executes the get command.
@@ -25,7 +26,11 @@ func (c *MenusGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	menu, err := api.GetMenuDocument(ctx, client, c.Menu)
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	menu, err := api.GetMenuDocument(ctx, client, c.Menu, opts...)
 	if err != nil {
 		return fmt.Errorf("get menu: %w", err)
 	}

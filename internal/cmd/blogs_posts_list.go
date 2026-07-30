@@ -31,7 +31,7 @@ func (c *BlogPostsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	path := "/blogs/" + url.PathEscape(c.Blog) + "/articles"
-	opts, err := listRequestOptions(&c.QueryFlags)
+	opts, err := localizedContentListRequestOptions(&c.QueryFlags)
 	if err != nil {
 		return fmt.Errorf("list articles: %w", err)
 	}

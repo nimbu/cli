@@ -12,6 +12,7 @@ import (
 // NotificationsGetCmd gets a notification by slug.
 type NotificationsGetCmd struct {
 	Notification string `required:"" help:"Notification slug or identifier"`
+	Locale       string `help:"Content locale for localized notification fields"`
 }
 
 // Run executes the get command.
@@ -28,7 +29,11 @@ func (c *NotificationsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	var notification api.Notification
 	path := "/notifications/" + url.PathEscape(c.Notification)
-	if err := client.Get(ctx, path, &notification); err != nil {
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	if err := client.Get(ctx, path, &notification, opts...); err != nil {
 		return fmt.Errorf("get notification: %w", err)
 	}
 

@@ -12,6 +12,7 @@ import (
 // CollectionsUpdateCmd updates a collection.
 type CollectionsUpdateCmd struct {
 	Collection  string   `required:"" help:"Collection ID or slug"`
+	Locale      string   `help:"Content locale for localized collection fields"`
 	File        string   `help:"Read collection JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Summer, slug=summer)"`
 }
@@ -39,7 +40,11 @@ func (c *CollectionsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 
 	var col api.Collection
 	path := "/collections/" + url.PathEscape(c.Collection)
-	if err := client.Put(ctx, path, body, &col); err != nil {
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	if err := client.Put(ctx, path, body, &col, opts...); err != nil {
 		return fmt.Errorf("update collection: %w", err)
 	}
 

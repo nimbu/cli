@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -75,6 +76,55 @@ func TestPagesUpdateMergesByDefaultAndPreservesDocument(t *testing.T) {
 	}
 	if _, ok := gotBody["items"]; !ok {
 		t.Fatalf("expected existing document preserved, got %#v", gotBody)
+	}
+}
+
+func TestPagesUpdateKeepsPayloadLocaleSeparateFromContentLocaleFlag(t *testing.T) {
+	var gotBody map[string]any
+	var queries []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queries = append(queries, r.URL.RawQuery)
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(`{"id":"p1","fullpath":"about","title":"Old","locale":"en"}`))
+		case http.MethodPatch:
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				t.Fatalf("decode patch body: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"id":"p1","fullpath":"about","title":"Old","locale":"nl"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{})
+	cmd := &PagesUpdateCmd{
+		QueryFlags: QueryFlags{Locale: "fr"},
+		Page:       "about",
+		Assignments: []string{
+			"locale=nl",
+			`translations:={"nl":{"title":"Over"}}`,
+		},
+	}
+
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run pages update: %v", err)
+	}
+	if gotBody["locale"] != "nl" {
+		t.Fatalf("payload locale = %#v", gotBody["locale"])
+	}
+	if _, ok := gotBody["translations"].(map[string]any); !ok {
+		t.Fatalf("payload translations = %#v", gotBody["translations"])
+	}
+	for _, rawQuery := range queries {
+		query, err := url.ParseQuery(rawQuery)
+		if err != nil {
+			t.Fatalf("parse query: %v", err)
+		}
+		if query.Get("content_locale") != "fr" || query.Get("locale") != "" {
+			t.Fatalf("query = %q", rawQuery)
+		}
 	}
 }
 
@@ -208,11 +258,13 @@ func TestPagesGetShapeWarnsWhenPlainModeIsIgnored(t *testing.T) {
 }
 
 func TestPagesGetUsesHomeCassette(t *testing.T) {
-	var gotLocale string
+	var gotContentLocale string
+	var gotLegacyLocale string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/pages/home":
-			gotLocale = r.URL.Query().Get("locale")
+			gotContentLocale = r.URL.Query().Get("content_locale")
+			gotLegacyLocale = r.URL.Query().Get("locale")
 			writeFixtureResponse(t, w, "../testdata/nimbu_api/zenjoy_get/page_home_en.json", nil)
 		default:
 			http.NotFound(w, r)
@@ -228,8 +280,8 @@ func TestPagesGetUsesHomeCassette(t *testing.T) {
 	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
 		t.Fatalf("run pages get: %v", err)
 	}
-	if gotLocale != "en" {
-		t.Fatalf("expected locale=en, got %q", gotLocale)
+	if gotContentLocale != "en" || gotLegacyLocale != "" {
+		t.Fatalf("expected content_locale=en without locale, got content_locale=%q locale=%q", gotContentLocale, gotLegacyLocale)
 	}
 
 	var page map[string]any
