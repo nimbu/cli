@@ -11,7 +11,8 @@ import (
 )
 
 type recordingCopyObserver struct {
-	items []string
+	items    []string
+	warnings map[string][]string
 }
 
 func (o *recordingCopyObserver) StageStart(string) {}
@@ -21,7 +22,12 @@ func (o *recordingCopyObserver) StageItem(stage, _ string, _, _ int64) {
 func (o *recordingCopyObserver) StageDone(string, string)            {}
 func (o *recordingCopyObserver) StageSkip(string, string)            {}
 func (o *recordingCopyObserver) SubStageDone(string, string, string) {}
-func (o *recordingCopyObserver) StageWarning(string, string)         {}
+func (o *recordingCopyObserver) StageWarning(stage, warning string) {
+	if o.warnings == nil {
+		o.warnings = map[string][]string{}
+	}
+	o.warnings[stage] = append(o.warnings[stage], warning)
+}
 
 func TestCopyCustomizationsUsesProvidedStageLabelForItems(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -35,42 +35,31 @@ func CopyBlogs(ctx context.Context, fromClient, toClient *api.Client, fromRef, t
 	}
 
 	for i, blog := range blogs {
-		emitStageItem(ctx, "Blogs", blog.Handle, int64(i+1), int64(len(blogs)))
-		handle := blog.Handle
+		handle := blogHandle(blog)
+		emitStageItem(ctx, "Blogs", handle, int64(i+1), int64(len(blogs)))
 		if handle == "" {
 			continue
 		}
+		payload := blogWritePayload(blog)
 
 		path := "/blogs/" + url.PathEscape(handle)
-		var existing api.Blog
+		var existing map[string]any
 		err := toClient.Get(ctx, path, &existing)
 		switch {
 		case err == nil:
 			action := "update"
 			if dryRun {
 				action = "dry-run:" + action
-			} else {
-				blogPayload := map[string]any{
-					"name": blog.Name,
-					"slug": handle,
-				}
-				if err := toClient.Put(ctx, path, blogPayload, &existing); err != nil {
-					return result, fmt.Errorf("update blog %s: %w", handle, err)
-				}
+			} else if err := toClient.Put(ctx, path, payload, &existing); err != nil {
+				return result, fmt.Errorf("update blog %s: %w", handle, err)
 			}
 			result.Items = append(result.Items, BlogCopyItem{Blog: handle, Kind: "blog", Action: action})
 		case api.IsNotFound(err):
 			action := "create"
 			if dryRun {
 				action = "dry-run:" + action
-			} else {
-				blogPayload := map[string]any{
-					"name": blog.Name,
-					"slug": handle,
-				}
-				if err := toClient.Post(ctx, "/blogs", blogPayload, &existing); err != nil {
-					return result, fmt.Errorf("create blog %s: %w", handle, err)
-				}
+			} else if err := toClient.Post(ctx, "/blogs", payload, &existing); err != nil {
+				return result, fmt.Errorf("create blog %s: %w", handle, err)
 			}
 			result.Items = append(result.Items, BlogCopyItem{Blog: handle, Kind: "blog", Action: action})
 		default:
@@ -88,12 +77,12 @@ func CopyBlogs(ctx context.Context, fromClient, toClient *api.Client, fromRef, t
 func copyBlogPosts(ctx context.Context, fromClient, toClient *api.Client, handle string, media *MediaRewritePlan, result *BlogCopyResult, dryRun bool) error {
 	basePath := "/blogs/" + url.PathEscape(handle) + "/articles"
 
-	srcPosts, err := api.List[api.BlogPost](ctx, fromClient, basePath)
+	srcPosts, err := api.List[map[string]any](ctx, fromClient, basePath)
 	if err != nil {
 		return fmt.Errorf("list posts for blog %s: %w", handle, err)
 	}
 
-	dstPosts, err := api.List[api.BlogPost](ctx, toClient, basePath)
+	dstPosts, err := api.List[map[string]any](ctx, toClient, basePath)
 	if err != nil {
 		if !dryRun {
 			return fmt.Errorf("list target posts for blog %s: %w", handle, err)
@@ -101,30 +90,23 @@ func copyBlogPosts(ctx context.Context, fromClient, toClient *api.Client, handle
 		// In dry-run the blog may not exist on target yet; treat all posts as creates.
 		dstPosts = nil
 	}
-	targetBySlug := make(map[string]api.BlogPost, len(dstPosts))
+	targetBySlug := make(map[string]map[string]any, len(dstPosts))
 	for _, p := range dstPosts {
-		if p.Slug != "" {
-			targetBySlug[p.Slug] = p
+		if slug := stringValue(p["slug"]); slug != "" {
+			targetBySlug[slug] = p
 		}
 	}
 
 	for i, post := range srcPosts {
-		emitStageItem(ctx, "Blogs", handle+"/"+post.Slug, int64(i+1), int64(len(srcPosts)))
-		slug := post.Slug
+		slug := stringValue(post["slug"])
+		emitStageItem(ctx, "Blogs", handle+"/"+slug, int64(i+1), int64(len(srcPosts)))
 		if slug == "" {
 			continue
 		}
 
-		content := post.TextContent
+		payload := blogPostWritePayload(post)
 		if media != nil {
-			content = media.RewriteString("blogs."+handle+"."+slug+".text_content", content)
-		}
-
-		payload := map[string]any{
-			"title":        post.Title,
-			"slug":         slug,
-			"text_content": content,
-			"status":       post.Status,
+			media.RewriteValue("blogs."+handle+"."+slug, payload)
 		}
 
 		if existing, ok := targetBySlug[slug]; ok {
@@ -132,7 +114,7 @@ func copyBlogPosts(ctx context.Context, fromClient, toClient *api.Client, handle
 			if dryRun {
 				action = "dry-run:" + action
 			} else {
-				postPath := basePath + "/" + url.PathEscape(existing.ID)
+				postPath := basePath + "/" + url.PathEscape(stringValue(existing["id"]))
 				if err := toClient.Put(ctx, postPath, payload, nil); err != nil {
 					return fmt.Errorf("update post %s/%s: %w", handle, slug, err)
 				}
@@ -154,20 +136,52 @@ func copyBlogPosts(ctx context.Context, fromClient, toClient *api.Client, handle
 	return nil
 }
 
-func listBlogs(ctx context.Context, client *api.Client, query string) ([]api.Blog, error) {
+func listBlogs(ctx context.Context, client *api.Client, query string) ([]map[string]any, error) {
 	query = strings.TrimSpace(query)
-	blogs, err := api.List[api.Blog](ctx, client, "/blogs")
+	blogs, err := api.List[map[string]any](ctx, client, "/blogs")
 	if err != nil {
 		return nil, err
 	}
 	if query == "" || query == "*" {
 		return blogs, nil
 	}
-	var filtered []api.Blog
+	var filtered []map[string]any
 	for _, b := range blogs {
-		if b.Handle == query {
+		if blogHandle(b) == query {
 			filtered = append(filtered, b)
 		}
 	}
 	return filtered, nil
+}
+
+func blogHandle(blog map[string]any) string {
+	if handle := stringValue(blog["handle"]); handle != "" {
+		return handle
+	}
+	return stringValue(blog["slug"])
+}
+
+func blogWritePayload(blog map[string]any) map[string]any {
+	payload := deepCopyMap(blog)
+	stripBlogReadOnlyFields(payload)
+	if stringValue(payload["slug"]) == "" {
+		payload["slug"] = blogHandle(blog)
+	}
+	return payload
+}
+
+func blogPostWritePayload(post map[string]any) map[string]any {
+	payload := deepCopyMap(post)
+	stripBlogReadOnlyFields(payload)
+	for _, key := range []string{"next_article", "previous_article", "slugified_tags"} {
+		delete(payload, key)
+	}
+	return payload
+}
+
+func stripBlogReadOnlyFields(payload map[string]any) {
+	stripSystemFields(payload)
+	for _, key := range []string{"url", "public_url", "fullpath"} {
+		delete(payload, key)
+	}
 }

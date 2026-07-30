@@ -161,6 +161,10 @@ func CopySite(ctx context.Context, fromClient, toClient *api.Client, fromRef, to
 		return result, err
 	}
 	result.Products = productsResult
+	result.Warnings = append(result.Warnings, productsResult.Warnings...)
+	for _, warning := range productsResult.Warnings {
+		emitStageWarning(ctx, "Products", warning)
+	}
 	emitStageDone(ctx, "Products", fmt.Sprintf("%d synced", len(productsResult.Items)))
 
 	emitStageStart(ctx, "Collections")

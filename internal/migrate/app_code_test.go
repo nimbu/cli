@@ -270,6 +270,8 @@ func writeEmptySiteCopyResponse(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`[]`))
 	case r.Method == http.MethodGet && r.URL.Path == "/products/customizations":
 		_, _ = w.Write([]byte(`[]`))
+	case r.Method == http.MethodGet && (r.URL.Path == "/sites/source/settings" || r.URL.Path == "/sites/target/settings"):
+		_, _ = w.Write([]byte(`{"default_locale":"en","locales":["en"]}`))
 	case r.Method == http.MethodPost && (r.URL.Path == "/customers/customizations" || r.URL.Path == "/products/customizations"):
 		_, _ = w.Write([]byte(`[]`))
 	case r.Method == http.MethodGet && r.URL.Path == "/roles":

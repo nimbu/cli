@@ -10,16 +10,26 @@ import (
 
 // ProductCopyItem describes one copied product.
 type ProductCopyItem struct {
-	Slug   string `json:"slug"`
-	Name   string `json:"name"`
-	Action string `json:"action"`
+	Slug      string                     `json:"slug"`
+	Name      string                     `json:"name"`
+	Action    string                     `json:"action"`
+	Localized []ProductLocalizedCopyItem `json:"localized,omitempty"`
+}
+
+// ProductLocalizedCopyItem describes one locale-specific product update.
+type ProductLocalizedCopyItem struct {
+	Locale   string   `json:"locale"`
+	Action   string   `json:"action"`
+	Fields   []string `json:"fields,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // ProductCopyResult reports product copy results.
 type ProductCopyResult struct {
-	From  SiteRef           `json:"from"`
-	To    SiteRef           `json:"to"`
-	Items []ProductCopyItem `json:"items,omitempty"`
+	From     SiteRef           `json:"from"`
+	To       SiteRef           `json:"to"`
+	Items    []ProductCopyItem `json:"items,omitempty"`
+	Warnings []string          `json:"warnings,omitempty"`
 }
 
 // ProductCopyOptions controls product copy behavior.
@@ -40,6 +50,11 @@ func CopyProducts(ctx context.Context, fromClient, toClient *api.Client, fromRef
 		return result, idMapping, fmt.Errorf("get product schema: %w", err)
 	}
 	info := buildSchemaInfo("products", fields)
+	sourceLocales, targetLocales, locales, localeWarnings, localeInfoReady, err := productLocalePlan(ctx, fromClient, toClient, fromRef, toRef)
+	result.Warnings = append(result.Warnings, localeWarnings...)
+	if err != nil {
+		return result, idMapping, err
+	}
 
 	srcProducts, err := api.List[map[string]any](ctx, fromClient, "/products")
 	if err != nil {
@@ -49,6 +64,27 @@ func CopyProducts(ctx context.Context, fromClient, toClient *api.Client, fromRef
 	dstProducts, err := api.List[map[string]any](ctx, toClient, "/products")
 	if err != nil {
 		return result, idMapping, fmt.Errorf("list target products: %w", err)
+	}
+	defaultSourceProducts := indexRecordsByID(srcProducts)
+	localizedProducts := map[string]map[string]map[string]any{}
+	localizedTargets := map[string]map[string]map[string]any{}
+	if localeInfoReady {
+		localizedProducts[sourceLocales.DefaultLocale] = defaultSourceProducts
+		sourceFetchLocales := locales
+		if targetLocales.DefaultLocale != sourceLocales.DefaultLocale {
+			sourceFetchLocales = append(append([]string{}, sourceFetchLocales...), targetLocales.DefaultLocale)
+		}
+		sourceFetchLocales = localesExcept(sourceFetchLocales, sourceLocales.DefaultLocale)
+		localizedProducts, localeWarnings, err = mergeLocalizedProducts(ctx, fromClient, localizedProducts, sourceFetchLocales, opts.AllowErrors, targetLocales.DefaultLocale)
+		result.Warnings = append(result.Warnings, localeWarnings...)
+		if err != nil {
+			return result, idMapping, err
+		}
+		localizedTargets, localeWarnings, err = listLocalizedProducts(ctx, toClient, locales, opts.AllowErrors, "target")
+		result.Warnings = append(result.Warnings, localeWarnings...)
+		if err != nil {
+			return result, idMapping, err
+		}
 	}
 	targetBySlug := make(map[string]map[string]any, len(dstProducts))
 	for _, p := range dstProducts {
@@ -61,13 +97,26 @@ func CopyProducts(ctx context.Context, fromClient, toClient *api.Client, fromRef
 		emitStageItem(ctx, "Products", stringValue(src["slug"]), int64(i+1), int64(len(srcProducts)))
 		sourceID := stringValue(src["id"])
 		slug := stringValue(src["slug"])
-		name := stringValue(src["name"])
 		if slug == "" {
 			continue
 		}
 
-		payload := deepCopyMap(src)
-		stripSystemFields(payload)
+		baseLocalized := src
+		if localeInfoReady {
+			baseLocalized = localizedProducts[targetLocales.DefaultLocale][sourceID]
+			if len(baseLocalized) == 0 {
+				return result, idMapping, fmt.Errorf("product %s is unavailable in target default locale %q on source site", slug, targetLocales.DefaultLocale)
+			}
+		}
+		payload, payloadWarnings := baseProductPayload(src, baseLocalized, info)
+		for _, warning := range payloadWarnings {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("product %s target default locale: %s", slug, warning))
+		}
+		slug = stringValue(payload["slug"])
+		name := stringValue(payload["name"])
+		if slug == "" {
+			continue
+		}
 
 		if err := prepareProductAttachments(ctx, fromClient, payload, info); err != nil {
 			if opts.AllowErrors {
@@ -96,17 +145,22 @@ func CopyProducts(ctx context.Context, fromClient, toClient *api.Client, fromRef
 					return result, idMapping, fmt.Errorf("update product %s: %w", slug, err)
 				}
 			}
+			localized, warnings, err := copyLocalizedProduct(ctx, fromClient, toClient, sourceID, targetID, existing, info, locales, localizedProducts, localizedTargets, false, opts)
+			result.Warnings = append(result.Warnings, warnings...)
+			if err != nil {
+				return result, idMapping, err
+			}
 			if sourceID != "" && targetID != "" {
 				idMapping[sourceID] = targetID
 			}
-			result.Items = append(result.Items, ProductCopyItem{Slug: slug, Name: name, Action: action})
+			result.Items = append(result.Items, ProductCopyItem{Slug: slug, Name: name, Action: action, Localized: localized})
 		} else {
 			remapProductImageIDs(payload, nil)
 			action := "create"
+			var created map[string]any
 			if opts.DryRun {
 				action = "dry-run:" + action
 			} else {
-				var created map[string]any
 				if err := toClient.Post(ctx, "/products", payload, &created); err != nil {
 					if opts.AllowErrors {
 						continue
@@ -118,7 +172,33 @@ func CopyProducts(ctx context.Context, fromClient, toClient *api.Client, fromRef
 					idMapping[sourceID] = targetID
 				}
 			}
-			result.Items = append(result.Items, ProductCopyItem{Slug: slug, Name: name, Action: action})
+			targetID := stringValue(created["id"])
+			if !opts.DryRun && targetID != "" && localizedVariantsNeedTargetDetails(sourceID, locales, localizedProducts, created) {
+				var hydrated map[string]any
+				path := "/products/" + url.PathEscape(targetID)
+				if err := toClient.Get(ctx, path, &hydrated); err != nil {
+					warning := fmt.Sprintf("hydrate created product %s before localized updates: %v", slug, err)
+					if !opts.AllowErrors {
+						return result, idMapping, fmt.Errorf("%s: %w", warning, err)
+					}
+					localized, warnings := skippedLocalizedProductItems(sourceID, locales, localizedProducts, warning)
+					result.Warnings = append(result.Warnings, warning)
+					result.Warnings = append(result.Warnings, warnings...)
+					result.Items = append(result.Items, ProductCopyItem{Slug: slug, Name: name, Action: action, Localized: localized})
+					continue
+				}
+				created = hydrated
+			}
+			localizedTarget := created
+			if opts.DryRun {
+				localizedTarget = payload
+			}
+			localized, warnings, err := copyLocalizedProduct(ctx, fromClient, toClient, sourceID, targetID, localizedTarget, info, locales, localizedProducts, localizedTargets, opts.DryRun, opts)
+			result.Warnings = append(result.Warnings, warnings...)
+			if err != nil {
+				return result, idMapping, err
+			}
+			result.Items = append(result.Items, ProductCopyItem{Slug: slug, Name: name, Action: action, Localized: localized})
 		}
 	}
 
