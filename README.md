@@ -147,8 +147,10 @@ nimbu pages update --page about title="About us" published:=true
 
 For richer document resources, inline updates stay intentionally shallow:
 
-- `pages update` accepts inline updates for `title`, `template`, `published`, `locale`
-- `menus update` accepts inline updates for `name`, `handle`
+- `pages update` accepts `title`, `template`, `published`, `locale`, or one
+  complete top-level `translations` object
+- `menus update` accepts `name`, `handle`, or one complete top-level
+  `translations` object
 - deep/nested edits for pages and menus should use `--file` or stdin JSON
 
 ## Rich Resource Contracts
@@ -226,7 +228,42 @@ nimbu translations update --key activate.label.lastname nl=Achternaam
 nimbu translations update --key activate.label.lastname values.fr=Nom
 ```
 
-Locales are validated with a strict-lite BCP47 pattern (`nl`, `fr`, `nl-BE`, `zh-Hant`, ...).
+Locale keys are validated and canonicalized (`nl_BE` → `nl-BE`,
+`zh_hant_tw` → `zh-Hant-TW`). `translations create --file` accepts either one
+translation object or an array for batch creation.
+
+### Localized content
+
+For localized resources, `--locale` selects the content locale and is sent as
+`content_locale`. This applies to pages, products, collections, blogs and
+posts, menus, notifications, channel entries, and shipping rates.
+
+```bash
+# Update one locale without touching the default locale
+nimbu pages update --page about --locale nl --file nl.json
+
+# Update several locales in one request
+nimbu pages update --page about --file translations.json
+```
+
+`nl.json` can contain `{"seo_title":"Nederlandse titel"}`.
+`translations.json` can contain:
+
+```json
+{
+  "translations": {
+    "nl": {"seo_title": "Nederlandse titel"},
+    "fr": {"seo_title": "Titre français"}
+  }
+}
+```
+
+Prefer `--file` for nested page content and multi-locale payloads. A complete
+top-level map is also supported as `translations:=@translations.json`; other
+deep page edits remain file-only. JSON output always preserves the complete API
+response, including every `translations` map. Human and plain output
+recursively overlay the selected locale and fall back to the default value when
+a translated field is absent.
 
 ## Commands
 
@@ -238,13 +275,14 @@ nimbu channels   Manage channels and entries
 nimbu pages      Manage pages
 nimbu menus      Manage navigation menus
 nimbu products   Manage products
+nimbu shipping-rates Manage shipping rates
 nimbu collections Manage collections
 nimbu coupons    Manage coupons
 nimbu domains    Manage custom domains
 nimbu orders     Manage orders
 nimbu customers  Manage customers
 nimbu mails      Sync notification templates to local files
-nimbu accounts   Manage accounts
+nimbu settings   Manage site settings and consent configuration
 nimbu notifications Manage notifications
 nimbu roles      Manage roles
 nimbu redirects  Manage redirects
@@ -294,17 +332,37 @@ nimbu uploads create --site target-site --file-ref nimbu://archive-site/uploads/
 # Native settings
 nimbu settings update --section shipping --site my-site bpost_label_qty:=2
 
+# Whole consent configuration
+nimbu settings consent config get --site my-site --json
+nimbu settings consent config update --site my-site enabled:=true
+nimbu settings consent config replace --site my-site --file consent.json --force
+nimbu settings consent config copy --from staging --to production --dry-run
+
+# Shipping rates; translations use one write per locale
+nimbu shipping-rates list --site my-site --json
+nimbu shipping-rates create --site my-site name=Standard criteria=weight price:=7.5 region_id=REGION_ID
+nimbu shipping-rates update --site my-site --rate RATE_ID --locale nl name="Standaard"
+nimbu shipping-rates delete --site my-site --rate RATE_ID --force
+
 # Media and version history
 nimbu products attachments download --product PRODUCT --attachment ATTACHMENT --output manual.pdf
 nimbu pages versions list --page about --site my-site
 
 # Raw API remains an escape hatch
-nimbu api get /shipping_rates --site my-site
 nimbu api patch /unsupported_endpoint --data @payload.json
 
 # Legacy raw syntax remains compatible
 nimbu api --method GET --path /subscriptions --site my-site
 ```
+
+Shipping rates expose `list`, `get`, `create`, `update`, and `delete`; there is
+no `count` or `copy`. The API does not accept a nested `translations` payload
+for this resource, so create once and repeat `update --locale` for each language.
+`region_id` is intentionally opaque: regions are site-specific and are not
+exposed as a public CLI resource.
+
+Accounts, regions, product types, and vendors are internal API resources and
+are intentionally not exposed as public CLI commands.
 
 ## Configuration
 
@@ -557,6 +615,15 @@ for new log entries.
 `nimbu sites copy` copies cloud code by default after content, theme,
 notifications, redirects, and translations. Pass `--skip-cloud-code` to leave
 target app code untouched.
+
+Localized blog/post documents and product fields are preserved during copy.
+Blog and product copy require explicit default locales on both sites, promote
+the target default from the matching source locale, and preserve the remaining
+shared translations. Site copy copies pages before consent so page-backed
+privacy policies can be remapped safely. With `--allow-errors`, consent is
+skipped with a warning when its page dependency was skipped. Shipping rates are inspected but not copied:
+their `region_id` values are site-specific, so non-empty source rates produce a
+warning instead.
 
 Examples:
 

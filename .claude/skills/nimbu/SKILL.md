@@ -6,7 +6,7 @@ description: >
   cloud code, and local dev server for Nimbu sites. Use when building,
   querying, migrating, or deploying Nimbu CMS content and themes.
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # Nimbu CLI
@@ -73,7 +73,7 @@ Progress UI, applied-count lines, warnings, and the structured error envelope al
 | Flag | Purpose |
 |------|---------|
 | `--site <id>` | Site ID or subdomain |
-| `--locale <code>` | Filter by locale |
+| `--locale <code>` | Select the content locale on localized resources |
 | `--fields <list>` | Comma-separated fields to return |
 | `--sort <field>` | Sort, e.g. `created_at:desc` |
 | `--filters key=val` | Filter criteria (repeatable) |
@@ -84,6 +84,38 @@ Progress UI, applied-count lines, warnings, and the structured error envelope al
 | `--no-progress` | Disable live progress UI |
 | `--verbose` | Verbose logging |
 | `--debug` | HTTP request/response traces |
+
+## Localized Content
+
+On pages, products, collections, blogs/posts, menus, notifications, channel
+entries, and shipping rates, `--locale` is sent as `content_locale`. Use it for
+locale-specific reads and writes:
+
+```bash
+nimbu pages get --page about --locale nl --json
+nimbu pages update --page about --locale nl --file nl.json
+```
+
+JSON output stays lossless: it retains the full API document and every
+`translations` map even when `--locale` is set. Human and plain output
+recursively overlay the selected translation; missing translated fields fall
+back to the default-locale value. Canonically equivalent keys such as `nl_BE`
+and `nl-BE` match during display projection.
+
+Use a nested `translations` object to write several locales in one request:
+
+```json
+{
+  "translations": {
+    "nl": {"seo_title": "Nederlandse titel"},
+    "fr": {"seo_title": "Titre français"}
+  }
+}
+```
+
+For pages, prefer `--file`/stdin for this payload. A complete top-level map is
+also supported as `translations:=@translations.json`; arbitrary deep page edits
+remain file-only.
 
 ## Safety
 
@@ -161,6 +193,7 @@ nimbu pages update --page about --file payload.json
 | Command | Subcommands | Notes |
 |---------|-------------|-------|
 | `products` | list, get, create, update, delete, count, copy, attachments | Product catalog |
+| `shipping-rates` | list, get, create, update, delete | Site-specific shipping rates; no count/copy |
 | `collections` | list, get, create, update, delete, count, copy | Product collections |
 | `coupons` | list, get, create, update, delete, count, copy | Discount coupons |
 | `orders` | list, get, update, count | **No create/delete** — orders are read-only except status |
@@ -181,10 +214,9 @@ nimbu pages update --page about --file payload.json
 | `webhooks` | list, get, create, update, delete, count | Webhook management |
 | `redirects` | list, get, create, update, delete, copy | URL redirects |
 | `roles` | list, get, create, update, delete, count, copy | Permission roles |
-| `accounts` | list, count | Account listing and counts |
 | `announcements` | list, get, create, update, delete | HQ announcement management |
 | `domain-registrations` | list, get, count, upsert, update | HQ domain registration management |
-| `settings` | get, update, consent | Stable settings sections and consent resources |
+| `settings` | get, update, consent | Includes whole consent config get/update/replace/copy |
 | `events` | track, ingest | Event submission |
 
 ### Operations
@@ -285,14 +317,16 @@ Three resource types have special contracts beyond standard CRUD:
 - `pages get --page <fullpath> --download-assets DIR --json` downloads file editables, rewrites to `attachment_path`
 - `pages update --page <fullpath> --file page.json` **MERGES by default** — omitted canvases are left intact
 - `pages update --file page.json --replace` does a full destructive rebuild; inline assignments always use merge semantics. Replace is guarded against wiping a populated canvas to 0 (override with `--allow-empty-canvas`). File editables with no writable attachment/source are rejected unless you intentionally pass `--allow-empty-file`. **Never blind-resend a raw GET under `--replace`.**
-- `pages update` inline: only `title`, `template`, `published`, `locale` — deep edits need `--file`
+- `pages update` inline: `title`, `template`, `published`, `locale`, or a
+  complete top-level `translations` object — other deep edits need `--file`
 
 ### Menus
 
 - **Identifier**: slug/handle
 - `menus get --menu <slug> --json` returns full nested tree (recovers via `?nested=1` when needed)
 - `menus update --file` reconciles nested trees with explicit tombstones; inline `name`/`handle` is shallow
-- `menus update` inline: only `name`, `handle` — deep edits need `--file`
+- `menus update` inline: `name`, `handle`, or a complete top-level
+  `translations` object — other deep edits need `--file`
 
 ### Channels
 
@@ -312,13 +346,25 @@ Three resource types have special contracts beyond standard CRUD:
 
 5. **Orders are read-only**: No `create` or `delete` — only `list`, `get`, `update` (status), `count`.
 
-6. **Translations locale shorthand**: Bare locale keys like `nl=text` are rewritten to `values.nl=text`. Reserved keys (`key`, `value`, `values`, `locale`, `url`) are not rewritten.
+6. **Translations locale shorthand**: Bare locale keys like `nl=text` are
+   rewritten to `values.nl=text`. Locale keys are canonicalized (`nl_BE` →
+   `nl-BE`, `zh_hant_tw` → `zh-Hant-TW`) and duplicates after
+   canonicalization are rejected. `translations create --file` accepts one
+   object or an array of objects.
 
 7. **Theme sync excludes `code/` and `content/`**: These directories are intentionally not managed by `themes push/sync`.
 
 8. **Copy commands use `--from`/`--to` refs**: Format is `site` for site-level ops, `site/channel` for channel-level ops.
 
 9. **Jobs are site-level**: Job names are unique per site. `jobs run --wait` resolves the owning app from the server-side job registry, so it works outside a project directory and never needs `--app` or `nimbu.yml`.
+
+10. **Shipping-rate translations are per-locale updates**: The shipping-rates
+    API rejects nested `translations`; create the rate once, then repeat
+    `update --locale`. There is no `shipping-rates count` or `copy`. Keep
+    `region_id` opaque because it is site-specific.
+
+11. **Internal resources stay internal**: Accounts, regions, product types, and
+    vendors are not public CLI commands. Do not replace them with raw API calls.
 
 ## Common Workflows
 
@@ -367,7 +413,35 @@ See [references/themes-and-local-dev.md](references/themes-and-local-dev.md) for
 nimbu sites copy --from staging-site --to production-site --dry-run --json
 ```
 
+Site copy preserves localized blog/post documents and shared product locales.
+Blog and product copy require explicit default locales on both sites and
+promote the target default from the matching source locale. Site copy runs
+pages before consent so page-backed privacy-policy IDs can be remapped; with
+`--allow-errors`, a skipped privacy page also skips consent with a warning.
+Shipping rates are inspected but skipped with a warning because their region IDs
+are site-specific.
+
 See [references/site-migration.md](references/site-migration.md) for full-site and per-resource copy workflows.
+
+For a targeted localized blog copy:
+
+```bash
+nimbu blogs copy --from staging-site --to production-site --only news --json
+```
+
+### Manage the complete consent configuration
+
+```bash
+nimbu settings consent config get --site storefront --json
+nimbu settings consent config update --site storefront enabled:=true
+nimbu settings consent config replace --site storefront --file consent.json --force
+nimbu settings consent config copy --from staging --to production --dry-run
+```
+
+`update` is partial. `replace` is file/stdin-only and requires `--force`.
+`copy` preserves localized and unknown fields and remaps a page-backed privacy
+policy by page fullpath; it stops before writing if the target page is missing.
+Consent config copy itself does not require `--force`.
 
 ### Set up local development
 
@@ -436,6 +510,6 @@ Default behavior returns the first page. Use `--all --json` for complete dataset
 |------|--------|
 | [channels-and-entries.md](references/channels-and-entries.md) | Channel CRUD, entry CRUD, schema, info, copy, diff |
 | [pages-menus-content.md](references/pages-menus-content.md) | Pages, menus, blogs, translations, notifications |
-| [products-orders-customers.md](references/products-orders-customers.md) | Products, orders, customers, collections, coupons |
+| [products-orders-customers.md](references/products-orders-customers.md) | Products, shipping rates, orders, customers, collections, coupons |
 | [themes-and-local-dev.md](references/themes-and-local-dev.md) | Theme sync, local dev server, cloud code apps |
 | [site-migration.md](references/site-migration.md) | Full-site copy, per-resource copy, cross-API migration |
