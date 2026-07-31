@@ -10,7 +10,8 @@ import (
 
 // MenusGetCmd gets menu details.
 type MenusGetCmd struct {
-	Menu string `required:"" help:"Menu slug or handle"`
+	Menu   string `required:"" help:"Menu slug or handle"`
+	Locale string `help:"Content locale for localized menu fields"`
 }
 
 // Run executes the get command.
@@ -25,7 +26,11 @@ func (c *MenusGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	menu, err := api.GetMenuDocument(ctx, client, c.Menu)
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	menu, err := api.GetMenuDocument(ctx, client, c.Menu, opts...)
 	if err != nil {
 		return fmt.Errorf("get menu: %w", err)
 	}
@@ -34,26 +39,31 @@ func (c *MenusGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if mode.JSON {
 		return output.JSON(ctx, menu)
 	}
+	projected, err := output.ProjectLocale(menu, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project menu locale: %w", err)
+	}
+	displayMenu := api.MenuDocument(projected.(map[string]any))
 
-	stats := api.MenuStats(menu)
+	stats := api.MenuStats(displayMenu)
 	if mode.Plain {
-		return output.Plain(ctx, menu["id"], api.MenuDocumentSlug(menu), api.MenuDocumentName(menu), stats.ItemCount)
+		return output.Plain(ctx, displayMenu["id"], api.MenuDocumentSlug(displayMenu), api.MenuDocumentName(displayMenu), stats.ItemCount)
 	}
 
-	if _, err := output.Fprintf(ctx, "ID:        %v\n", menu["id"]); err != nil {
+	if _, err := output.Fprintf(ctx, "ID:        %v\n", displayMenu["id"]); err != nil {
 		return err
 	}
-	if slug := api.MenuDocumentSlug(menu); slug != "" {
+	if slug := api.MenuDocumentSlug(displayMenu); slug != "" {
 		if _, err := output.Fprintf(ctx, "Slug:      %s\n", slug); err != nil {
 			return err
 		}
 	}
-	if handle := api.MenuDocumentHandle(menu); handle != "" {
+	if handle := api.MenuDocumentHandle(displayMenu); handle != "" {
 		if _, err := output.Fprintf(ctx, "Handle:    %s\n", handle); err != nil {
 			return err
 		}
 	}
-	if _, err := output.Fprintf(ctx, "Name:      %s\n", api.MenuDocumentName(menu)); err != nil {
+	if _, err := output.Fprintf(ctx, "Name:      %s\n", api.MenuDocumentName(displayMenu)); err != nil {
 		return err
 	}
 	if _, err := output.Fprintf(ctx, "Items:     %d\n", stats.ItemCount); err != nil {

@@ -11,7 +11,7 @@ import (
 	"github.com/nimbu/cli/internal/api"
 )
 
-var localeKeyRE = regexp.MustCompile(`(?i)^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$`)
+var localeKeyRE = regexp.MustCompile(`(?i)^[a-z]{2,3}(?:-[a-z0-9]{1,8})*$`)
 
 func readJSONBodyInput(file string, assignments []string) (map[string]any, error) {
 	if file != "" && len(assignments) > 0 {
@@ -59,8 +59,8 @@ func parseInlineAssignment(token string) (string, any, error) {
 		if raw == "" {
 			return "", nil, fmt.Errorf("invalid assignment %q", token)
 		}
-		var value any
-		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		value, err := decodeJSONAnyUseNumber([]byte(raw))
+		if err != nil {
 			return "", nil, fmt.Errorf("parse JSON value for %q: %w", path, err)
 		}
 		return path, value, nil
@@ -182,7 +182,7 @@ func translationAssignmentsWithLocaleShorthand(assignments []string) ([]string, 
 	seenLocalePaths := map[string]string{}
 
 	for _, token := range assignments {
-		path, _, err := parseInlineAssignment(token)
+		path, parsedValue, err := parseInlineAssignment(token)
 		if err != nil {
 			return nil, err
 		}
@@ -195,7 +195,7 @@ func translationAssignmentsWithLocaleShorthand(assignments []string) ([]string, 
 		if strings.HasPrefix(path, "values.") {
 			locale := strings.TrimPrefix(path, "values.")
 			normalized := normalizeLocale(locale)
-			if normalized == "" || !localeKeyRE.MatchString(normalized) {
+			if !isValidLocaleKey(normalized) {
 				return nil, fmt.Errorf("invalid locale %q in %q", locale, rawPath)
 			}
 			key := "values." + normalized
@@ -212,13 +212,67 @@ func translationAssignmentsWithLocaleShorthand(assignments []string) ([]string, 
 			continue
 		}
 
+		if strings.EqualFold(path, "locale") {
+			locale, ok := parsedValue.(string)
+			if !ok {
+				return nil, fmt.Errorf("locale assignment must be a string")
+			}
+			normalized := normalizeLocale(locale)
+			if !isValidLocaleKey(normalized) {
+				return nil, fmt.Errorf("invalid locale %q", locale)
+			}
+			if op == ":=" || op == ":=@" {
+				encoded, err := json.Marshal(normalized)
+				if err != nil {
+					return nil, fmt.Errorf("encode locale: %w", err)
+				}
+				rewritten = append(rewritten, "locale:="+string(encoded))
+			} else {
+				rewritten = append(rewritten, "locale="+normalized)
+			}
+			continue
+		}
+
+		if strings.EqualFold(path, "values") && (op == ":=" || op == ":=@") {
+			_, value, err := parseInlineAssignment(token)
+			if err != nil {
+				return nil, err
+			}
+			values, ok := value.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("translation values must be a JSON object")
+			}
+			canonical := make(map[string]any, len(values))
+			for locale, translation := range values {
+				normalized := normalizeLocale(locale)
+				if !isValidLocaleKey(normalized) {
+					return nil, fmt.Errorf("invalid locale %q in values", locale)
+				}
+				localePath := "values." + normalized
+				if prior, exists := seenLocalePaths[localePath]; exists {
+					return nil, fmt.Errorf("duplicate locale assignment for %q (%s, %s)", localePath, prior, rawPath)
+				}
+				if _, exists := canonical[normalized]; exists {
+					return nil, fmt.Errorf("duplicate locale assignment for %q after canonicalization", localePath)
+				}
+				seenLocalePaths[localePath] = rawPath
+				canonical[normalized] = translation
+			}
+			encoded, err := json.Marshal(canonical)
+			if err != nil {
+				return nil, fmt.Errorf("encode translation values: %w", err)
+			}
+			rewritten = append(rewritten, "values:="+string(encoded))
+			continue
+		}
+
 		if _, isReserved := reserved[strings.ToLower(path)]; isReserved {
 			rewritten = append(rewritten, token)
 			continue
 		}
 
 		normalized := normalizeLocale(path)
-		if !localeKeyRE.MatchString(normalized) {
+		if !isValidLocaleKey(normalized) {
 			return nil, fmt.Errorf("invalid locale key %q; use key=<translation.key>, values.<locale>=..., or a locale like nl/en/fr", rawPath)
 		}
 
@@ -262,9 +316,82 @@ func splitInlineAssignment(token string) (path string, op string, rhs string, er
 }
 
 func normalizeLocale(locale string) string {
-	locale = strings.TrimSpace(strings.ToLower(locale))
+	locale = strings.TrimSpace(locale)
 	locale = strings.ReplaceAll(locale, "_", "-")
-	return locale
+	parts := strings.Split(locale, "-")
+	scriptSeen := false
+	regionSeen := false
+	extension := false
+	for i, part := range parts {
+		switch {
+		case i == 0:
+			parts[i] = strings.ToLower(part)
+		case extension:
+			parts[i] = strings.ToLower(part)
+		case len(part) == 1:
+			parts[i] = strings.ToLower(part)
+			extension = true
+		case !scriptSeen && !regionSeen && len(part) == 4 && isASCIIAlpha(part):
+			parts[i] = strings.ToUpper(part[:1]) + strings.ToLower(part[1:])
+			scriptSeen = true
+		case !regionSeen && len(part) == 2 && isASCIIAlpha(part):
+			parts[i] = strings.ToUpper(part)
+			regionSeen = true
+		case !regionSeen && len(part) == 3 && isASCIIDigits(part):
+			parts[i] = part
+			regionSeen = true
+		default:
+			parts[i] = strings.ToLower(part)
+		}
+	}
+	return strings.Join(parts, "-")
+}
+
+func isValidLocaleKey(locale string) bool {
+	if locale == "" || !localeKeyRE.MatchString(locale) {
+		return false
+	}
+
+	parts := strings.Split(locale, "-")
+	seenSingletons := map[string]struct{}{}
+	for index := 1; index < len(parts); index++ {
+		part := strings.ToLower(parts[index])
+		if len(part) != 1 {
+			continue
+		}
+		if _, duplicate := seenSingletons[part]; duplicate {
+			return false
+		}
+		seenSingletons[part] = struct{}{}
+		if index+1 >= len(parts) {
+			return false
+		}
+		if part == "x" {
+			return true
+		}
+		if len(parts[index+1]) < 2 {
+			return false
+		}
+	}
+	return true
+}
+
+func isASCIIAlpha(value string) bool {
+	for _, char := range value {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') {
+			return false
+		}
+	}
+	return value != ""
+}
+
+func isASCIIDigits(value string) bool {
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return value != ""
 }
 
 func readRawValueFromFile(path string) (string, error) {
@@ -286,8 +413,8 @@ func readJSONValueFromFile(path string) (any, error) {
 	if int64(len(data)) > maxJSONInputBytes {
 		return nil, fmt.Errorf("file %q exceeds %d bytes", path, maxJSONInputBytes)
 	}
-	var value any
-	if err := json.Unmarshal(data, &value); err != nil {
+	value, err := decodeJSONAnyUseNumber(data)
+	if err != nil {
 		return nil, fmt.Errorf("parse JSON file %q: %w", path, err)
 	}
 	return value, nil

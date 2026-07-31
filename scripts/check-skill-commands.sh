@@ -42,11 +42,36 @@ declare -a required_commands=(
   'nimbu pages versions restore'
   'nimbu customers roles set'
   'nimbu settings consent list'
+  'nimbu settings consent config get'
+  'nimbu settings consent config update'
+  'nimbu settings consent config replace'
+  'nimbu settings consent config copy'
+  'nimbu shipping-rates list'
+  'nimbu shipping-rates get'
+  'nimbu shipping-rates create'
+  'nimbu shipping-rates update'
+  'nimbu shipping-rates delete'
 )
 
 for command in "${required_commands[@]}"; do
   if ! jq -e --arg command "${command}" '.commands[] | select(.path == $command)' "${contract}" >/dev/null; then
     echo "Required skill command missing from CLI contract: ${command}"
+    failed=1
+  fi
+done
+
+declare -a internal_commands=(
+  'nimbu accounts'
+  'nimbu regions'
+  'nimbu product-types'
+  'nimbu vendors'
+)
+
+for command in "${internal_commands[@]}"; do
+  if jq -e --arg command "${command}" \
+    '.commands[] | select(.path == $command or (.path | startswith($command + " ")))' \
+    "${contract}" >/dev/null; then
+    echo "Internal workflow exposed in CLI contract: ${command}"
     failed=1
   fi
 done

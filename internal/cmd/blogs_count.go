@@ -25,7 +25,7 @@ func (c *BlogsCountCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	opts, err := countRequestOptions(&c.CountQueryFlags, false)
+	opts, err := countRequestOptions(&c.CountQueryFlags, true)
 	if err != nil {
 		return fmt.Errorf("count blogs: %w", err)
 	}

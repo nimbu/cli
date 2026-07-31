@@ -10,7 +10,6 @@ import (
 func TestCLIHasNewTopLevelCommands(t *testing.T) {
 	rt := reflect.TypeOf(CLI{})
 	required := []string{
-		"Accounts",
 		"Collections",
 		"Coupons",
 		"Domains",
@@ -57,7 +56,6 @@ func TestReadmeMentionsNewTopLevelCommands(t *testing.T) {
 
 	readme := string(data)
 	required := []string{
-		"nimbu accounts",
 		"nimbu collections",
 		"nimbu coupons",
 		"nimbu domains",

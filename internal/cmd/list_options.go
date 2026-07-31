@@ -44,6 +44,19 @@ func listRequestOptions(flags *QueryFlags, extra ...api.RequestOption) ([]api.Re
 	return opts, nil
 }
 
+func localizedContentListRequestOptions(flags *QueryFlags, extra ...api.RequestOption) ([]api.RequestOption, error) {
+	if flags == nil || flags.Locale == "" {
+		return listRequestOptions(flags, extra...)
+	}
+
+	requestFlags := *flags
+	locale := requestFlags.Locale
+	requestFlags.Locale = ""
+	localizedExtra := append([]api.RequestOption{}, extra...)
+	localizedExtra = append(localizedExtra, api.WithContentLocale(locale))
+	return listRequestOptions(&requestFlags, localizedExtra...)
+}
+
 func countRequestOptions(flags *CountQueryFlags, contentLocale bool) ([]api.RequestOption, error) {
 	var opts []api.RequestOption
 	if flags == nil {

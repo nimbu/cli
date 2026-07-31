@@ -28,32 +28,36 @@ func (c *CollectionsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	opts, err := listRequestOptions(&c.QueryFlags)
+	opts, err := localizedContentListRequestOptions(&c.QueryFlags)
 	if err != nil {
 		return fmt.Errorf("list collections: %w", err)
 	}
 
-	var collections []api.Collection
+	var documents []api.Document[api.Collection]
 	var meta listFooterMeta
 	if c.All {
-		collections, err = api.List[api.Collection](ctx, client, "/collections", opts...)
+		documents, err = api.List[api.Document[api.Collection]](ctx, client, "/collections", opts...)
 		if err != nil {
 			return fmt.Errorf("list collections: %w", err)
 		}
-		meta = allListFooterMeta(len(collections))
+		meta = allListFooterMeta(len(documents))
 	} else {
-		paged, err := api.ListPage[api.Collection](ctx, client, "/collections", c.Page, c.PerPage, opts...)
+		paged, err := api.ListPage[api.Document[api.Collection]](ctx, client, "/collections", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list collections: %w", err)
 		}
-		collections = paged.Data
-		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(collections))
+		documents = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(documents))
 		meta.probeTotal(ctx, client, "/collections/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
-		return output.JSON(ctx, collections)
+		return output.JSON(ctx, documents)
+	}
+	collections, err := localizedDocumentMaps(documents, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project collection locale: %w", err)
 	}
 
 	plainFields := []string{"id", "slug", "name", "status", "type"}

@@ -261,6 +261,24 @@ type Product struct {
 	UpdatedAt        *time.Time `json:"updated_at,omitempty"`
 }
 
+// ShippingRate represents the stable fields used by human-oriented output.
+// Commands wrap it in Document so structured output retains unknown API fields.
+type ShippingRate struct {
+	ID         string `json:"id"`
+	Name       string `json:"name,omitempty"`
+	Criteria   any    `json:"criteria,omitempty"`
+	Price      any    `json:"price,omitempty"`
+	Default    bool   `json:"default,omitempty"`
+	Pickup     bool   `json:"pickup,omitempty"`
+	RegionID   string `json:"region_id,omitempty"`
+	WeightMin  any    `json:"weight_min,omitempty"`
+	WeightMax  any    `json:"weight_max,omitempty"`
+	OrderMin   any    `json:"order_min,omitempty"`
+	OrderMax   any    `json:"order_max,omitempty"`
+	Restricted bool   `json:"restricted,omitempty"`
+	Zipcodes   any    `json:"zipcodes,omitempty"`
+}
+
 // Order represents an order.
 type Order struct {
 	ID         string     `json:"id"`
@@ -479,23 +497,6 @@ type BlogPost struct {
 	Author      string     `json:"author,omitempty"`
 	CreatedAt   *time.Time `json:"created_at,omitempty"`
 	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
-}
-
-// Account represents an account accessible for the current site context.
-type Account struct {
-	ID           string     `json:"id"`
-	Name         string     `json:"name"`
-	URL          string     `json:"url,omitempty"`
-	Plan         string     `json:"plan,omitempty"`
-	SKUCount     int        `json:"sku_count,omitempty"`
-	SiteCount    int        `json:"site_count,omitempty"`
-	StorageCount int        `json:"storage_count,omitempty"`
-	UsersCount   int        `json:"users_count,omitempty"`
-	Locale       string     `json:"locale,omitempty"`
-	Owner        string     `json:"owner,omitempty"`
-	Sites        []string   `json:"sites,omitempty"`
-	CreatedAt    *time.Time `json:"created_at,omitempty"`
-	UpdatedAt    *time.Time `json:"updated_at,omitempty"`
 }
 
 // CollectionImage represents an image attached to a collection.

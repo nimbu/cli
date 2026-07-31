@@ -81,6 +81,19 @@ func TestFlagFirstSyntaxParsesRepresentativeCommands(t *testing.T) {
 	}
 }
 
+func TestLocalizedCreateLocaleFlagParsesIntoCommand(t *testing.T) {
+	parser, cli, err := newParser()
+	if err != nil {
+		t.Fatalf("newParser: %v", err)
+	}
+	if _, err := parser.Parse([]string{"products", "create", "--locale=nl-BE", "name=Wine"}); err != nil {
+		t.Fatalf("parse localized create: %v", err)
+	}
+	if cli.Products.Create.Locale != "nl-BE" {
+		t.Fatalf("products create locale = %q", cli.Products.Create.Locale)
+	}
+}
+
 func TestOldPositionalIdentitySyntaxFails(t *testing.T) {
 	parser, _, err := newParser()
 	if err != nil {

@@ -32,7 +32,7 @@ func (c *PagesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	var opts []api.RequestOption
 	if c.Locale != "" {
-		opts = append(opts, api.WithLocale(c.Locale))
+		opts = append(opts, api.WithContentLocale(c.Locale))
 	}
 
 	page, err := api.GetPageDocument(ctx, client, c.Page, opts...)
@@ -68,41 +68,46 @@ func (c *PagesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if mode.JSON {
 		return output.JSON(ctx, page)
 	}
+	projected, err := output.ProjectLocale(page, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project page locale: %w", err)
+	}
+	displayPage := api.PageDocument(projected.(map[string]any))
 
-	stats := api.PageStats(page)
+	stats := api.PageStats(displayPage)
 	if mode.Plain {
 		return output.Plain(
 			ctx,
-			page["id"],
-			api.PageDocumentFullpath(page),
-			api.PageDocumentTitle(page),
-			api.PageDocumentPublished(page),
+			displayPage["id"],
+			api.PageDocumentFullpath(displayPage),
+			api.PageDocumentTitle(displayPage),
+			api.PageDocumentPublished(displayPage),
 		)
 	}
 
-	if _, err := output.Fprintf(ctx, "ID:           %v\n", page["id"]); err != nil {
+	if _, err := output.Fprintf(ctx, "ID:           %v\n", displayPage["id"]); err != nil {
 		return err
 	}
-	if _, err := output.Fprintf(ctx, "Fullpath:     %s\n", api.PageDocumentFullpath(page)); err != nil {
+	if _, err := output.Fprintf(ctx, "Fullpath:     %s\n", api.PageDocumentFullpath(displayPage)); err != nil {
 		return err
 	}
-	if parent := api.PageDocumentParentPath(page); parent != "" {
+	if parent := api.PageDocumentParentPath(displayPage); parent != "" {
 		if _, err := output.Fprintf(ctx, "Parent path:  %s\n", parent); err != nil {
 			return err
 		}
 	}
-	if _, err := output.Fprintf(ctx, "Title:        %s\n", api.PageDocumentTitle(page)); err != nil {
+	if _, err := output.Fprintf(ctx, "Title:        %s\n", api.PageDocumentTitle(displayPage)); err != nil {
 		return err
 	}
-	if template := api.PageDocumentTemplate(page); template != "" {
+	if template := api.PageDocumentTemplate(displayPage); template != "" {
 		if _, err := output.Fprintf(ctx, "Template:     %s\n", template); err != nil {
 			return err
 		}
 	}
-	if _, err := output.Fprintf(ctx, "Published:    %v\n", api.PageDocumentPublished(page)); err != nil {
+	if _, err := output.Fprintf(ctx, "Published:    %v\n", api.PageDocumentPublished(displayPage)); err != nil {
 		return err
 	}
-	if locale := api.PageDocumentLocale(page); locale != "" {
+	if locale := api.PageDocumentLocale(displayPage); locale != "" {
 		if _, err := output.Fprintf(ctx, "Locale:       %s\n", locale); err != nil {
 			return err
 		}

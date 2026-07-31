@@ -11,8 +11,9 @@ import (
 )
 
 type siteLocaleInfo struct {
-	DefaultLocale string
-	Locales       []string
+	DefaultLocale   string
+	Locales         []string
+	ExplicitDefault bool
 }
 
 func sharedNonDefaultContentLocales(ctx context.Context, fromClient, toClient *api.Client, fromRef, toRef SiteRef) ([]string, []string) {
@@ -20,10 +21,10 @@ func sharedNonDefaultContentLocales(ctx context.Context, fromClient, toClient *a
 	target, targetErr := fetchSiteLocaleInfo(ctx, toClient, toRef.Site)
 	var warnings []string
 	if sourceErr != nil {
-		warnings = append(warnings, fmt.Sprintf("source site locales fetch failed: %v; localized channel fields will be skipped", sourceErr))
+		warnings = append(warnings, fmt.Sprintf("source site locales fetch failed: %v; localized content will be skipped", sourceErr))
 	}
 	if targetErr != nil {
-		warnings = append(warnings, fmt.Sprintf("target site locales fetch failed: %v; localized channel fields will be skipped", targetErr))
+		warnings = append(warnings, fmt.Sprintf("target site locales fetch failed: %v; localized content will be skipped", targetErr))
 	}
 	if sourceErr != nil || targetErr != nil {
 		return nil, warnings
@@ -48,8 +49,9 @@ func fetchSiteLocaleInfo(ctx context.Context, client *api.Client, site string) (
 	}
 
 	info := siteLocaleInfo{
-		DefaultLocale: stringValue(raw["default_locale"]),
-		Locales:       stringSliceValue(raw["locales"]),
+		DefaultLocale:   stringValue(raw["default_locale"]),
+		Locales:         stringSliceValue(raw["locales"]),
+		ExplicitDefault: strings.TrimSpace(stringValue(raw["default_locale"])) != "",
 	}
 	if len(info.Locales) == 0 {
 		info.Locales = stringSliceValue(raw["available_locales"])
@@ -59,6 +61,9 @@ func fetchSiteLocaleInfo(ctx context.Context, client *api.Client, site string) (
 	}
 	if info.DefaultLocale == "" && len(info.Locales) > 0 {
 		info.DefaultLocale = info.Locales[0]
+	}
+	if info.DefaultLocale == "" {
+		return siteLocaleInfo{}, fmt.Errorf("default locale missing from site settings")
 	}
 	return info, nil
 }

@@ -118,7 +118,13 @@ func (c *SitesCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if _, err := output.Fprintf(ctx, "%scollections\t%d\n", prefix, len(result.Collections.Items)); err != nil {
 			return err
 		}
+		if _, err := output.Fprintf(ctx, "%sshipping_rates\t%d\n", prefix, result.ShippingRates.Skipped); err != nil {
+			return err
+		}
 		if _, err := output.Fprintf(ctx, "%spages\t%d\n", prefix, len(result.Pages.Items)); err != nil {
+			return err
+		}
+		if _, err := output.Fprintf(ctx, "%sconsent\t%s\n", prefix, result.Consent.Action); err != nil {
 			return err
 		}
 		if _, err := output.Fprintf(ctx, "%smenus\t%d\n", prefix, len(result.Menus.Items)); err != nil {

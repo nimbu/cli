@@ -10,6 +10,7 @@ import (
 
 // PagesCreateCmd creates a page.
 type PagesCreateCmd struct {
+	Locale      string   `help:"Content locale for localized page fields"`
 	File        string   `help:"Read page JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. slug=about, title=About)"`
 }
@@ -35,12 +36,17 @@ func (c *PagesCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var page api.Page
-	if err := client.Post(ctx, "/pages", body, &page); err != nil {
+	var document api.Document[api.Page]
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	if err := client.Post(ctx, "/pages", body, &document, opts...); err != nil {
 		return fmt.Errorf("create page: %w", err)
 	}
+	page := document.Value
 
-	return output.Print(ctx, page, []any{page.ID}, func() error {
+	return output.Print(ctx, document, []any{page.ID}, func() error {
 		_, err := output.Fprintf(ctx, "Created page %s\n", page.ID)
 		return err
 	})

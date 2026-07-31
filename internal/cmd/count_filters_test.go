@@ -3,13 +3,13 @@ package cmd
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"net/url"
 	"testing"
 
 	"github.com/nimbu/cli/internal/output"
 )
 
-func TestProductsCountForwardsLocaleAndFilters(t *testing.T) {
+func TestProductsCountForwardsContentLocaleAndFilters(t *testing.T) {
 	var query string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		query = r.URL.RawQuery
@@ -24,7 +24,11 @@ func TestProductsCountForwardsLocaleAndFilters(t *testing.T) {
 	if err := command.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
 		t.Fatalf("count products: %v", err)
 	}
-	if !strings.Contains(query, "locale=nl") || !strings.Contains(query, "status=published") {
+	values, err := url.ParseQuery(query)
+	if err != nil {
+		t.Fatalf("parse query: %v", err)
+	}
+	if values.Get("content_locale") != "nl" || values.Get("locale") != "" || values.Get("status") != "published" {
 		t.Fatalf("query = %q", query)
 	}
 }

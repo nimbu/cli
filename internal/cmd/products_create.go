@@ -10,6 +10,7 @@ import (
 
 // ProductsCreateCmd creates a product.
 type ProductsCreateCmd struct {
+	Locale      string   `help:"Content locale for localized product fields"`
 	File        string   `help:"Read product JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Wine, price:=19.9)"`
 }
@@ -36,13 +37,21 @@ func (c *ProductsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var document api.Document[api.Product]
-	if err := client.Post(ctx, "/products", body, &document); err != nil {
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	if err := client.Post(ctx, "/products", body, &document, opts...); err != nil {
 		return fmt.Errorf("create product: %w", err)
 	}
 	p := document.Value
+	display, err := localizedDocumentMap(document, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project product locale: %w", err)
+	}
 
-	return output.Print(ctx, document, []any{p.ID, p.Slug, p.Name}, func() error {
-		_, err := output.Fprintf(ctx, "Created product: %s (%s)\n", p.Name, p.ID)
+	return output.Print(ctx, document, []any{display["id"], display["slug"], display["name"]}, func() error {
+		_, err := output.Fprintf(ctx, "Created product: %v (%s)\n", display["name"], p.ID)
 		return err
 	})
 }

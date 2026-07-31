@@ -28,7 +28,7 @@ func (c *BlogPostsCountCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	path := "/blogs/" + url.PathEscape(c.Blog) + "/articles/count"
-	opts, err := countRequestOptions(&c.CountQueryFlags, false)
+	opts, err := countRequestOptions(&c.CountQueryFlags, true)
 	if err != nil {
 		return fmt.Errorf("count articles: %w", err)
 	}

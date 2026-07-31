@@ -4,9 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/observer"
 )
 
 func TestCopySiteConflictResolverCanSkipAllExistingTypes(t *testing.T) {
@@ -14,6 +16,11 @@ func TestCopySiteConflictResolverCanSkipAllExistingTypes(t *testing.T) {
 	var writes []string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && r.URL.Path == "/settings/consent" {
+			writes = append(writes, r.Method+" "+r.URL.Path)
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
 		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
 			writes = append(writes, r.Method+" "+r.URL.Path)
 			http.Error(w, "unexpected write", http.StatusInternalServerError)
@@ -38,8 +45,12 @@ func TestCopySiteConflictResolverCanSkipAllExistingTypes(t *testing.T) {
 			_, _ = w.Write([]byte(`[{"name":"subtitle","type":"string"}]`))
 		case r.URL.Path == "/products/customizations" && site == "target":
 			_, _ = w.Write([]byte(`[{"name":"subtitle","type":"string"}]`))
+		case (r.URL.Path == "/sites/source/settings" || r.URL.Path == "/sites/target/settings"):
+			_, _ = w.Write([]byte(`{"default_locale":"en","locales":["en","nl"]}`))
 		case r.URL.Path == "/roles":
 			_, _ = w.Write([]byte(`[]`))
+		case r.URL.Path == "/products" && site == "source" && r.URL.Query().Get("content_locale") == "nl":
+			http.Error(w, `{"message":"localized products unavailable"}`, http.StatusServiceUnavailable)
 		case r.URL.Path == "/products":
 			_, _ = w.Write([]byte(`[]`))
 		case r.URL.Path == "/collections":
@@ -50,6 +61,8 @@ func TestCopySiteConflictResolverCanSkipAllExistingTypes(t *testing.T) {
 			_, _ = w.Write([]byte(`{"assets":[],"layouts":[],"snippets":[],"templates":[]}`))
 		case r.URL.Path == "/pages":
 			_, _ = w.Write([]byte(`[]`))
+		case r.URL.Path == "/settings/consent" && site == "source":
+			_, _ = w.Write([]byte(`{}`))
 		case r.URL.Path == "/menus" && site == "source":
 			_, _ = w.Write([]byte(`[{"slug":"main","items":[{"title":"Home","url":"/"}]}]`))
 		case r.URL.Path == "/menus" && site == "target":
@@ -70,13 +83,15 @@ func TestCopySiteConflictResolverCanSkipAllExistingTypes(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	obs := &recordingCopyObserver{}
 	result, err := CopySite(
-		context.Background(),
+		observer.WithCopyObserver(context.Background(), obs),
 		api.New(srv.URL, "").WithSite("source"),
 		api.New(srv.URL, "").WithSite("target"),
 		SiteRef{Site: "source"},
 		SiteRef{Site: "target"},
 		SiteCopyOptions{
+			AllowErrors: true,
 			ConflictResolver: func(context.Context, ExistingContentPrompt) (ExistingContentDecision, error) {
 				resolverCalls++
 				return ExistingContentDecision{Action: ExistingContentSkip, ApplyToAll: true}, nil
@@ -89,8 +104,8 @@ func TestCopySiteConflictResolverCanSkipAllExistingTypes(t *testing.T) {
 	if resolverCalls != 1 {
 		t.Fatalf("expected one resolver call, got %d", resolverCalls)
 	}
-	if len(writes) != 0 {
-		t.Fatalf("expected no writes after skip-all decision, got %#v", writes)
+	if got := strings.Join(writes, ","); got != "PUT /settings/consent" {
+		t.Fatalf("writes after skip-all decision = %#v, want only consent configuration", writes)
 	}
 	if got := result.Channels.Items[0].Action; got != "skip" {
 		t.Fatalf("channel action = %q, want skip", got)
@@ -104,6 +119,12 @@ func TestCopySiteConflictResolverCanSkipAllExistingTypes(t *testing.T) {
 	if got := result.Menus.Items[0].Action; got != "skip" {
 		t.Fatalf("menu action = %q, want skip", got)
 	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "source products locale=nl fetch failed") {
+		t.Fatalf("site warnings do not include product locale warning: %#v", result.Warnings)
+	}
+	if !strings.Contains(strings.Join(obs.warnings["Products"], "\n"), "source products locale=nl fetch failed") {
+		t.Fatalf("Products stage warnings = %#v", obs.warnings["Products"])
+	}
 }
 
 func TestCopySiteConflictResolverCanReviewExistingChannels(t *testing.T) {
@@ -112,6 +133,10 @@ func TestCopySiteConflictResolverCanReviewExistingChannels(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		site := r.Header.Get("X-Nimbu-Site")
+		if r.Method == http.MethodPut && r.URL.Path == "/settings/consent" {
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
 		if r.Method == http.MethodPatch {
 			patched = append(patched, r.URL.Path)
 			_, _ = w.Write([]byte(`{"id":"target-channel","slug":"articles"}`))
@@ -148,6 +173,8 @@ func TestCopySiteConflictResolverCanReviewExistingChannels(t *testing.T) {
 			_, _ = w.Write([]byte(`[]`))
 		case r.URL.Path == "/products/customizations":
 			_, _ = w.Write([]byte(`[]`))
+		case r.URL.Path == "/sites/source/settings" || r.URL.Path == "/sites/target/settings":
+			_, _ = w.Write([]byte(`{"default_locale":"en","locales":["en"]}`))
 		case r.URL.Path == "/roles":
 			_, _ = w.Write([]byte(`[]`))
 		case r.URL.Path == "/products":
@@ -160,6 +187,8 @@ func TestCopySiteConflictResolverCanReviewExistingChannels(t *testing.T) {
 			_, _ = w.Write([]byte(`{"assets":[],"layouts":[],"snippets":[],"templates":[]}`))
 		case r.URL.Path == "/pages":
 			_, _ = w.Write([]byte(`[]`))
+		case r.URL.Path == "/settings/consent" && site == "source":
+			_, _ = w.Write([]byte(`{}`))
 		case r.URL.Path == "/menus":
 			_, _ = w.Write([]byte(`[]`))
 		case r.URL.Path == "/blogs":

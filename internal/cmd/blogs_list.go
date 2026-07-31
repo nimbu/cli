@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -32,36 +31,42 @@ func (c *BlogsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	opts, err := listRequestOptions(&c.QueryFlags)
+	opts, err := localizedContentListRequestOptions(&c.QueryFlags)
 	if err != nil {
 		return fmt.Errorf("list blogs: %w", err)
 	}
 
-	var blogs []api.Blog
+	var documents []api.Document[api.Blog]
 	var meta listFooterMeta
 
 	if c.All {
-		blogs, err = api.List[api.Blog](ctx, client, "/blogs", opts...)
+		documents, err = api.List[api.Document[api.Blog]](ctx, client, "/blogs", opts...)
 		if err != nil {
 			return fmt.Errorf("list blogs: %w", err)
 		}
-		meta = allListFooterMeta(len(blogs))
+		meta = allListFooterMeta(len(documents))
 	} else {
-		paged, err := api.ListPage[api.Blog](ctx, client, "/blogs", c.Page, c.PerPage, opts...)
+		paged, err := api.ListPage[api.Document[api.Blog]](ctx, client, "/blogs", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list blogs: %w", err)
 		}
-		blogs = paged.Data
-		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(blogs))
+		documents = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(documents))
 		meta.probeTotal(ctx, client, "/blogs/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
-		return output.JSON(ctx, blogs)
+		return output.JSON(ctx, documents)
 	}
 
-	displayBlogs := buildBlogListRows(blogs)
+	displayBlogs, err := localizedDocumentMaps(documents, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project blog locale: %w", err)
+	}
+	for _, blog := range displayBlogs {
+		applyBlogDisplayHandle(blog)
+	}
 
 	plainFields := []string{"id", "handle", "name"}
 	tableFields := []string{"id", "handle", "name"}
@@ -76,24 +81,4 @@ func (c *BlogsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	return writeListFooter(ctx, "blogs", meta)
-}
-
-func buildBlogListRows(blogs []api.Blog) []api.Blog {
-	rows := make([]api.Blog, len(blogs))
-	for i := range blogs {
-		blog := blogs[i]
-		blog.Handle = blogDisplayHandle(blog)
-		rows[i] = blog
-	}
-	return rows
-}
-
-func blogDisplayHandle(blog api.Blog) string {
-	if strings.TrimSpace(blog.Handle) != "" {
-		return blog.Handle
-	}
-	if strings.TrimSpace(blog.ID) != "" {
-		return blog.ID
-	}
-	return "-"
 }

@@ -134,6 +134,55 @@ func TestPagesUpdateInlineDropsEmptyFileMap(t *testing.T) {
 	}
 }
 
+func TestPagesUpdateInlineTranslationsPreserveExistingLocales(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/pages/about":
+			_, _ = w.Write([]byte(`{
+				"id":"p1",
+				"fullpath":"about",
+				"title":"About",
+				"translations":{
+					"en":{"seo_title":"English title"},
+					"nl":{"seo_title":"Oude titel","seo_description":"Blijft behouden"}
+				}
+			}`))
+		case r.Method == http.MethodPatch && r.URL.Path == "/pages/about":
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"id":"p1","fullpath":"about"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	cmd := &PagesUpdateCmd{
+		Page:        "about",
+		Assignments: []string{`translations:={"nl":{"seo_title":"Nieuwe titel"},"fr":{"seo_title":"Titre"}}`},
+	}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run pages update: %v", err)
+	}
+
+	translations := gotBody["translations"].(map[string]any)
+	en := translations["en"].(map[string]any)
+	nl := translations["nl"].(map[string]any)
+	fr := translations["fr"].(map[string]any)
+	if en["seo_title"] != "English title" {
+		t.Fatalf("existing English translation lost: %#v", translations)
+	}
+	if nl["seo_title"] != "Nieuwe titel" || nl["seo_description"] != "Blijft behouden" {
+		t.Fatalf("Dutch translation was not merged: %#v", nl)
+	}
+	if fr["seo_title"] != "Titre" {
+		t.Fatalf("French translation missing: %#v", fr)
+	}
+}
+
 func TestPagesUpdateReplaceRejectsInlineAssignments(t *testing.T) {
 	ctx, _, _ := newContractTestContext(t, "http://127.0.0.1:1", output.Mode{JSON: true})
 	cmd := &PagesUpdateCmd{Page: "about", Replace: true, Assignments: []string{"title=New"}}

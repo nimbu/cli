@@ -10,6 +10,7 @@ import (
 
 // MenusCreateCmd creates a menu.
 type MenusCreateCmd struct {
+	Locale      string   `help:"Content locale for localized menu fields"`
 	File        string   `help:"Read menu JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Main, handle=main)"`
 }
@@ -46,12 +47,16 @@ func (c *MenusCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	submitted := api.MenuStats(body)
 	api.NormalizeMenuDocumentForWrite(body)
 
-	menu, err := api.PostMenuDocument(ctx, client, body)
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	menu, err := api.PostMenuDocument(ctx, client, body, opts...)
 	if err != nil {
 		return fmt.Errorf("create menu: %w", err)
 	}
 
-	if err := verifyMenuNesting(ctx, client, submitted, menu); err != nil {
+	if err := verifyMenuNesting(ctx, client, submitted, menu, opts...); err != nil {
 		return err
 	}
 

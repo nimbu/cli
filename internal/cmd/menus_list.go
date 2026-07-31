@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -31,33 +32,42 @@ func (c *MenusListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	opts, err := listRequestOptions(&c.QueryFlags)
+	opts, err := localizedContentListRequestOptions(&c.QueryFlags)
 	if err != nil {
 		return fmt.Errorf("list menus: %w", err)
 	}
 
-	var menus []api.MenuSummary
+	var documents []api.Document[api.MenuSummary]
 	var meta listFooterMeta
 
 	if c.All {
-		menus, err = api.List[api.MenuSummary](ctx, client, "/menus", opts...)
+		documents, err = api.List[api.Document[api.MenuSummary]](ctx, client, "/menus", opts...)
 		if err != nil {
 			return fmt.Errorf("list menus: %w", err)
 		}
-		meta = allListFooterMeta(len(menus))
+		meta = allListFooterMeta(len(documents))
 	} else {
-		paged, err := api.ListPage[api.MenuSummary](ctx, client, "/menus", c.Page, c.PerPage, opts...)
+		paged, err := api.ListPage[api.Document[api.MenuSummary]](ctx, client, "/menus", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list menus: %w", err)
 		}
-		menus = paged.Data
-		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(menus))
+		documents = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(documents))
 		meta.probeTotal(ctx, client, "/menus/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
-		return output.JSON(ctx, menus)
+		return output.JSON(ctx, documents)
+	}
+	menus, err := localizedDocumentMaps(documents, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project menu locale: %w", err)
+	}
+	for _, menu := range menus {
+		if handle, _ := menu["handle"].(string); strings.TrimSpace(handle) == "" {
+			menu["handle"] = menu["slug"]
+		}
 	}
 
 	plainFields := []string{"id", "handle", "name"}

@@ -24,8 +24,40 @@ Downloads file editables into DIR and rewrites the JSON output to `attachment_pa
 
 Inline assignments (`nimbu pages update --page <fullpath> key=value`) only accept these shallow keys:
 - `title`, `template`, `published`, `locale`
+- one complete top-level `translations` object
 
 Any deeper field (editables, nested content) requires `--file` or stdin. The CLI fetches the current document, merges inline assignments on top, and PATCHes. This is a read-modify-write cycle, not a blind overwrite.
+
+### Locale-specific and multi-locale writes
+
+`--locale` selects content through `content_locale`, so a write updates that
+locale without overwriting the default locale:
+
+```bash
+printf '%s\n' '{"seo_title":"Nederlandse titel"}' |
+  nimbu pages update --page about --locale nl --file=-
+```
+
+To update several locales together, send a top-level `translations` map.
+`--file`/stdin is clearest for complex payloads:
+
+```json
+{
+  "translations": {
+    "nl": {"seo_title": "Nederlandse titel"},
+    "fr": {"seo_title": "Titre français"}
+  }
+}
+```
+
+The equivalent inline form is
+`translations:=@translations.json`. It recursively merges the supplied locale
+and field keys into the fetched translations, preserving omitted locales and
+sibling fields. Other deep page edits remain file-only.
+
+With `--json`, reads and mutations retain the complete API document, including
+all translations. Human/plain output overlays the selected locale recursively
+and falls back to the default value for fields without a translation.
 
 ### update --file / stdin: merge by default, --replace to rebuild
 
@@ -208,9 +240,15 @@ This is equivalent to:
 nimbu translations create key=home.title values.nl=Welkom values.fr=Bienvenue values.en=Welcome
 ```
 
-Reserved keys (`key`, `value`, `values`, `locale`, `url`) are NOT rewritten. Locale keys are normalized: lowercased, underscores become hyphens, validated against `[a-z]{2,3}(-[a-z0-9]{2,8})*`.
+Reserved keys (`key`, `value`, `values`, `locale`, `url`) are NOT rewritten.
+Locale keys are normalized, underscores become hyphens, and the result is
+validated as a strict-lite BCP47 tag.
 
 Duplicate locale assignments (e.g., both `nl=X` and `values.nl=Y`) produce an error.
+
+Canonical casing follows BCP47 conventions (`nl_BE` → `nl-BE`,
+`zh_hant_tw` → `zh-Hant-TW`). `translations create --file` accepts either one
+object or an array of translation objects for batch creation.
 
 ## Notifications (`nimbu notifications`)
 
@@ -265,7 +303,7 @@ Reads local templates, validates locale directories against the site's configure
 
 - `--readonly` -- rejects every mutating operation (create, update, delete, pull, push, copy)
 - `--force` -- required for delete; skips confirmation on copy overwrite
-- `--locale <code>` -- filter by locale on get/update for pages
+- `--locale <code>` -- select `content_locale` for localized content reads and writes
 - `--json` / `--plain` -- output format control
 - `--all` -- fetch all pages (no pagination) for list commands
 - `--page N` / `--per-page N` -- pagination (default: page 1, 25 per page)

@@ -12,6 +12,7 @@ import (
 // CollectionsUpdateCmd updates a collection.
 type CollectionsUpdateCmd struct {
 	Collection  string   `required:"" help:"Collection ID or slug"`
+	Locale      string   `help:"Content locale for localized collection fields"`
 	File        string   `help:"Read collection JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=Summer, slug=summer)"`
 }
@@ -37,14 +38,23 @@ func (c *CollectionsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 
-	var col api.Collection
+	var document api.Document[api.Collection]
 	path := "/collections/" + url.PathEscape(c.Collection)
-	if err := client.Put(ctx, path, body, &col); err != nil {
+	var opts []api.RequestOption
+	if c.Locale != "" {
+		opts = append(opts, api.WithContentLocale(c.Locale))
+	}
+	if err := client.Put(ctx, path, body, &document, opts...); err != nil {
 		return fmt.Errorf("update collection: %w", err)
 	}
+	col := document.Value
+	display, err := localizedDocumentMap(document, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project collection locale: %w", err)
+	}
 
-	return output.Print(ctx, col, []any{col.ID, col.Slug, col.Name}, func() error {
-		_, err := output.Fprintf(ctx, "Updated collection: %s (%s)\n", col.Name, col.ID)
+	return output.Print(ctx, document, []any{display["id"], display["slug"], display["name"]}, func() error {
+		_, err := output.Fprintf(ctx, "Updated collection: %v (%s)\n", display["name"], col.ID)
 		return err
 	})
 }

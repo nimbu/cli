@@ -40,34 +40,54 @@ func (c *ChannelEntriesListCmd) Run(ctx context.Context, flags *RootFlags) error
 		return fmt.Errorf("list entries: %w", err)
 	}
 
-	var entries []api.Entry
+	var documents []api.Document[api.Entry]
 	var meta listFooterMeta
 
 	if c.All {
-		entries, err = api.List[api.Entry](ctx, client, path, opts...)
+		documents, err = api.List[api.Document[api.Entry]](ctx, client, path, opts...)
 		if err != nil {
 			return fmt.Errorf("list entries: %w", err)
 		}
-		meta = allListFooterMeta(len(entries))
+		meta = allListFooterMeta(len(documents))
 	} else {
-		paged, err := api.ListPage[api.Entry](ctx, client, path, c.Page, c.PerPage, opts...)
+		paged, err := api.ListPage[api.Document[api.Entry]](ctx, client, path, c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list entries: %w", err)
 		}
-		entries = paged.Data
-		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(entries))
+		documents = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(documents))
 		meta.probeTotal(ctx, client, "/channels/"+url.PathEscape(c.Channel)+"/entries/count", opts)
 	}
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
-		if entries == nil {
-			entries = []api.Entry{}
+		if documents == nil {
+			documents = []api.Document[api.Entry]{}
 		}
-		return output.JSON(ctx, entries)
+		return output.JSON(ctx, documents)
 	}
 
-	displayEntries := buildChannelEntryListRows(entries)
+	displayEntries, err := localizedDocumentMaps(documents, c.Locale)
+	if err != nil {
+		return fmt.Errorf("project entry locale: %w", err)
+	}
+	for _, entry := range displayEntries {
+		title, _ := entry["title"].(string)
+		if strings.TrimSpace(title) == "" {
+			if fields, ok := entry["fields"].(map[string]any); ok {
+				title, _ = fields["title"].(string)
+			}
+		}
+		if strings.TrimSpace(title) == "" {
+			for _, key := range []string{"title_field_value", "name", "slug", "id"} {
+				if candidate, _ := entry[key].(string); strings.TrimSpace(candidate) != "" {
+					title = candidate
+					break
+				}
+			}
+		}
+		entry["title"] = title
+	}
 
 	plainFields := []string{"id", "slug", "title"}
 	tableFields := []string{"id", "slug", "title", "published"}
@@ -82,58 +102,6 @@ func (c *ChannelEntriesListCmd) Run(ctx context.Context, flags *RootFlags) error
 		return err
 	}
 	return writeListFooter(ctx, "entries", meta)
-}
-
-func buildChannelEntryListRows(entries []api.Entry) []api.Entry {
-	rows := make([]api.Entry, len(entries))
-	for i := range entries {
-		entry := entries[i]
-		entry.Title = entryDisplayTitle(entry)
-		rows[i] = entry
-	}
-	return rows
-}
-
-func entryDisplayTitle(entry api.Entry) string {
-	if strings.TrimSpace(entry.Title) != "" {
-		return entry.Title
-	}
-
-	if entry.Fields != nil {
-		if raw, ok := entry.Fields["title"]; ok {
-			if title, ok := raw.(string); ok {
-				title = strings.TrimSpace(title)
-				if title != "" {
-					return title
-				}
-			}
-		}
-	}
-	if entry.Extra != nil {
-		for _, key := range []string{"title", "title_field_value", "name"} {
-			if title := extraString(entry.Extra, key); title != "" {
-				return title
-			}
-		}
-	}
-
-	if strings.TrimSpace(entry.Slug) != "" {
-		return entry.Slug
-	}
-
-	return entry.ID
-}
-
-func extraString(values map[string]any, key string) string {
-	raw, ok := values[key]
-	if !ok {
-		return ""
-	}
-	text, ok := raw.(string)
-	if !ok {
-		return ""
-	}
-	return strings.TrimSpace(text)
 }
 
 func channelEntryListRequestOptions(flags *QueryFlags, extra ...api.RequestOption) ([]api.RequestOption, error) {

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -35,15 +36,31 @@ func TestParseInlineAssignments(t *testing.T) {
 	want := map[string]any{
 		"name":        "Wine Box",
 		"description": "foo:=bar",
-		"price":       float64(29.9),
+		"price":       json.Number("29.9"),
 		"published":   true,
-		"meta":        map[string]any{"a": float64(1)},
+		"meta":        map[string]any{"a": json.Number("1")},
 		"title":       "hello",
 		"attrs":       map[string]any{"color": "red"},
 	}
 
 	if !reflect.DeepEqual(body, want) {
 		t.Fatalf("unexpected body:\n got: %#v\nwant: %#v", body, want)
+	}
+}
+
+func TestParseInlineAssignmentsPreservesExactJSONNumbers(t *testing.T) {
+	body, err := parseInlineAssignments([]string{
+		"large:=9007199254740993",
+		"precise:=0.12345678901234567890",
+	})
+	if err != nil {
+		t.Fatalf("parseInlineAssignments: %v", err)
+	}
+	if got := body["large"]; got != json.Number("9007199254740993") {
+		t.Fatalf("large = %#v", got)
+	}
+	if got := body["precise"]; got != json.Number("0.12345678901234567890") {
+		t.Fatalf("precise = %#v", got)
 	}
 }
 
@@ -93,7 +110,119 @@ func TestTranslationAssignmentsWithLocaleShorthand(t *testing.T) {
 		t.Fatalf("translationAssignmentsWithLocaleShorthand: %v", err)
 	}
 
-	want := []string{"values.nl-be=Achternaam", "values.fr=Nom", "key=activate.label.lastname", "values.id=Nama"}
+	want := []string{"values.nl-BE=Achternaam", "values.fr=Nom", "key=activate.label.lastname", "values.id=Nama"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected rewrite: %#v", got)
+	}
+}
+
+func TestTranslationAssignmentsCanonicalizeScriptRegionAndLocaleValue(t *testing.T) {
+	got, err := translationAssignmentsWithLocaleShorthand([]string{
+		"values.zh_hant_tw=名稱",
+		"locale= sr_latn_rs ",
+	})
+	if err != nil {
+		t.Fatalf("translationAssignmentsWithLocaleShorthand: %v", err)
+	}
+
+	want := []string{"values.zh-Hant-TW=名稱", "locale=sr-Latn-RS"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected rewrite: %#v", got)
+	}
+}
+
+func TestTranslationAssignmentsKeepExtensionAndPrivateUseSubtagsLowercase(t *testing.T) {
+	got, err := translationAssignmentsWithLocaleShorthand([]string{
+		"en_u_ca_gregory=Calendar",
+		"en_x_us=Private",
+	})
+	if err != nil {
+		t.Fatalf("translationAssignmentsWithLocaleShorthand: %v", err)
+	}
+
+	want := []string{"values.en-u-ca-gregory=Calendar", "values.en-x-us=Private"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected rewrite: %#v", got)
+	}
+}
+
+func TestTranslationLocaleAssignmentCanonicalizesEveryOperator(t *testing.T) {
+	rawPath := filepath.Join(t.TempDir(), "locale.txt")
+	if err := os.WriteFile(rawPath, []byte(" nl_be "), 0o600); err != nil {
+		t.Fatalf("write raw locale: %v", err)
+	}
+	jsonPath := filepath.Join(t.TempDir(), "locale.json")
+	if err := os.WriteFile(jsonPath, []byte(`"zh_hant_tw"`), 0o600); err != nil {
+		t.Fatalf("write JSON locale: %v", err)
+	}
+
+	got, err := translationAssignmentsWithLocaleShorthand([]string{
+		"locale= nl_be ",
+		`locale:="sr_latn_rs"`,
+		"locale=@" + rawPath,
+		"locale:=@" + jsonPath,
+	})
+	if err != nil {
+		t.Fatalf("translationAssignmentsWithLocaleShorthand: %v", err)
+	}
+
+	want := []string{
+		"locale=nl-BE",
+		`locale:="sr-Latn-RS"`,
+		"locale=nl-BE",
+		`locale:="zh-Hant-TW"`,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected rewrite:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestTranslationLocaleAssignmentRejectsNonStringJSON(t *testing.T) {
+	jsonPath := filepath.Join(t.TempDir(), "locale.json")
+	if err := os.WriteFile(jsonPath, []byte(`42`), 0o600); err != nil {
+		t.Fatalf("write JSON locale: %v", err)
+	}
+
+	for _, assignment := range []string{`locale:=42`, "locale:=@" + jsonPath} {
+		t.Run(assignment, func(t *testing.T) {
+			_, err := translationAssignmentsWithLocaleShorthand([]string{assignment})
+			if err == nil || !strings.Contains(err.Error(), "must be a string") {
+				t.Fatalf("expected string validation error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestTranslationAssignmentsRejectIncompleteLocaleExtensions(t *testing.T) {
+	for _, locale := range []string{"en-u", "en-x", "en-a-b"} {
+		t.Run(locale, func(t *testing.T) {
+			_, err := translationAssignmentsWithLocaleShorthand([]string{locale + "=value"})
+			if err == nil || !strings.Contains(err.Error(), "invalid locale") {
+				t.Fatalf("expected invalid locale error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestTranslationAssignmentsRejectDuplicateLocaleAfterCanonicalization(t *testing.T) {
+	_, err := translationAssignmentsWithLocaleShorthand([]string{"nl_BE=Achternaam", "values.nl-BE=Naam"})
+	if err == nil {
+		t.Fatal("expected duplicate locale error")
+	}
+	if !strings.Contains(err.Error(), "duplicate locale") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestTranslationAssignmentsCanonicalizeWholeValuesObjectKeys(t *testing.T) {
+	got, err := translationAssignmentsWithLocaleShorthand([]string{
+		`values:={"nl_BE":"Welkom","zh_hant_tw":"名稱"}`,
+	})
+	if err != nil {
+		t.Fatalf("translationAssignmentsWithLocaleShorthand: %v", err)
+	}
+
+	want := []string{`values:={"nl-BE":"Welkom","zh-Hant-TW":"名稱"}`}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected rewrite: %#v", got)
 	}

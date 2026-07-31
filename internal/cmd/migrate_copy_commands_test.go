@@ -79,6 +79,8 @@ func TestSitesCopyDryRunDoesNotWrite(t *testing.T) {
 			_, _ = w.Write([]byte(`[]`))
 		case r.URL.Path == "/roles":
 			_, _ = w.Write([]byte(`[]`))
+		case r.URL.Path == "/sites/source/settings" || r.URL.Path == "/sites/target/settings":
+			_, _ = w.Write([]byte(`{"default_locale":"en","locales":["en"]}`))
 		case r.URL.Path == "/products":
 			_, _ = w.Write([]byte(`[]`))
 		case r.URL.Path == "/collections":
@@ -89,6 +91,8 @@ func TestSitesCopyDryRunDoesNotWrite(t *testing.T) {
 			_, _ = w.Write([]byte(`{"assets":[],"layouts":[],"snippets":[],"templates":[]}`))
 		case r.URL.Path == "/pages":
 			_, _ = w.Write([]byte(`[]`))
+		case r.URL.Path == "/settings/consent":
+			_, _ = w.Write([]byte(`{}`))
 		case r.URL.Path == "/menus":
 			_, _ = w.Write([]byte(`[]`))
 		case r.URL.Path == "/blogs":

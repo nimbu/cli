@@ -109,3 +109,35 @@ func TestPlainFromStructUnknownField(t *testing.T) {
 		t.Errorf("error should mention the bad field name, got: %v", err)
 	}
 }
+
+func TestPlainFromSliceReadsDynamicMapFields(t *testing.T) {
+	var out, errOut bytes.Buffer
+	ctx := testContextWithMode(&out, &errOut, Mode{Plain: true})
+
+	items := []map[string]any{{
+		"id":          "p1",
+		"custom_code": "limited",
+	}}
+	if err := PlainFromSlice(ctx, items, []string{"id", "custom_code"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); got != "p1\tlimited\n" {
+		t.Fatalf("output = %q", got)
+	}
+}
+
+func TestPlainFromSliceLeavesMissingDynamicMapFieldsBlank(t *testing.T) {
+	var out, errOut bytes.Buffer
+	ctx := testContextWithMode(&out, &errOut, Mode{Plain: true})
+
+	items := []map[string]any{
+		{"id": "p1", "custom_code": "limited"},
+		{"id": "p2"},
+	}
+	if err := PlainFromSlice(ctx, items, []string{"id", "custom_code"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); got != "p1\tlimited\np2\t\n" {
+		t.Fatalf("output = %q", got)
+	}
+}

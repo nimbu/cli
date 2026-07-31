@@ -1,4 +1,4 @@
-# Products, Orders, Customers, Collections & Coupons
+# Products, Shipping Rates, Orders, Customers, Collections & Coupons
 
 Commerce commands for the Nimbu CLI. All examples assume `--json` output.
 
@@ -41,7 +41,8 @@ Manages product custom field definitions (customizations) across sites.
 
 ### products copy
 
-Copies all products from one site to another.
+Copies all products from one site to another, including variants and localized
+built-in/schema fields.
 
 ```bash
 nimbu products copy --from staging --to production --allow-errors --json
@@ -50,6 +51,37 @@ nimbu products copy --from staging --to production --allow-errors --json
 Flags: `--from`, `--to` (required), `--from-host`, `--to-host`, `--allow-errors`.
 
 Required scope: `read_products` (on source).
+
+Both sites must expose an explicit default locale, and the target default locale
+must exist on the source. The target default is populated from that source
+locale; other shared locales are written separately with `content_locale`.
+Ambiguous variant SKUs and optional locale failures become warnings with
+`--allow-errors`.
+
+## Shipping Rates
+
+Subcommands: `list`, `get`, `create`, `update`, `delete`. There is no `count` or
+`copy`.
+
+```bash
+nimbu shipping-rates list --site storefront --json
+nimbu shipping-rates get --site storefront --rate RATE_ID --json
+nimbu shipping-rates create --site storefront name=Standard criteria=weight price:=7.5 region_id=REGION_ID
+nimbu shipping-rates update --site storefront --rate RATE_ID price:=8.5
+nimbu shipping-rates delete --site storefront --rate RATE_ID --force
+```
+
+`name` is localized. The shipping-rates API does not accept a nested
+`translations` payload; create the rate once, then repeat `update --locale`:
+
+```bash
+nimbu shipping-rates update --site storefront --rate RATE_ID --locale nl name="Standaard"
+nimbu shipping-rates update --site storefront --rate RATE_ID --locale fr name="Livraison standard"
+```
+
+JSON remains lossless; human/plain output overlays the selected locale.
+`region_id` is site-specific and intentionally opaque. The CLI does not expose
+regions, product types, or vendors as public resources.
 
 ## Orders
 

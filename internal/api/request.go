@@ -104,7 +104,7 @@ func WithLocale(locale string) RequestOption {
 	}
 }
 
-// WithContentLocale sets the content locale for localized channel-entry fields.
+// WithContentLocale sets the query locale for localized content fields.
 func WithContentLocale(locale string) RequestOption {
 	return func(o *requestOptions) {
 		if o.Query == nil {

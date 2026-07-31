@@ -119,8 +119,24 @@ func validateFieldNames(rt reflect.Type, fields []string) error {
 
 func extractFields(v any, fields []string) ([]any, error) {
 	rv := reflect.ValueOf(v)
+	for rv.Kind() == reflect.Interface {
+		rv = rv.Elem()
+	}
 	if rv.Kind() == reflect.Ptr {
 		rv = rv.Elem()
+	}
+
+	if rv.Kind() == reflect.Map && rv.Type().Key().Kind() == reflect.String {
+		values := make([]any, 0, len(fields))
+		for _, fieldName := range fields {
+			value := rv.MapIndex(reflect.ValueOf(fieldName).Convert(rv.Type().Key()))
+			if !value.IsValid() {
+				values = append(values, "")
+				continue
+			}
+			values = append(values, value.Interface())
+		}
+		return values, nil
 	}
 
 	if rv.Kind() != reflect.Struct {
