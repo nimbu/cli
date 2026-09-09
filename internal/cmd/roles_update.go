@@ -60,21 +60,33 @@ func (c *RolesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		}
 	}
 
-	if err := requireRelationShrinks(flags, c.Role, diffs); err != nil {
-		return err
-	}
-
 	if c.DryRun {
 		return printRoleUpdateDryRun(ctx, body, diffs)
 	}
 
-	var role api.Role
-	if err := client.Put(ctx, rolePath(c.Role), body, &role); err != nil {
+	if err := requireExpandedReplacements(current, body); err != nil {
 		return fmt.Errorf("update role: %w", err)
+	}
+
+	if err := requireRelationShrinks(flags, c.Role, diffs); err != nil {
+		return err
+	}
+
+	var (
+		role   api.Role
+		putErr error
+	)
+	if putErr = client.Put(ctx, rolePath(c.Role), body, &role); putErr != nil {
+		if !isResponseDecodeError(putErr) {
+			return fmt.Errorf("update role: %w", putErr)
+		}
 	}
 
 	verified, err := getRole(ctx, client, c.Role)
 	if err != nil {
+		if putErr != nil {
+			return fmt.Errorf("update role: %w", putErr)
+		}
 		return fmt.Errorf("verify role: %w", err)
 	}
 
@@ -84,10 +96,16 @@ func (c *RolesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		}
 	}
 
-	return output.Print(ctx, verified, []any{verified.ID, verified.Name}, func() error {
+	if err := output.Print(ctx, verified, []any{verified.ID, verified.Name}, func() error {
 		_, err := output.Fprintf(ctx, "Updated role: %s (%s)\n", verified.Name, verified.ID)
 		return err
-	})
+	}); err != nil {
+		return err
+	}
+	if putErr != nil {
+		return fmt.Errorf("update role: %w", putErr)
+	}
+	return nil
 }
 
 func printRoleUpdateDryRun(ctx context.Context, body map[string]any, diffs []roleRelationDiff) error {

@@ -41,6 +41,11 @@ func TestRelationIDsUnmarshalShapes(t *testing.T) {
 			want:  RelationIDs{"plain", "obj"},
 		},
 		{
+			name:  "legacy objectId",
+			input: `[{"objectId":"legacy"}]`,
+			want:  RelationIDs{"legacy"},
+		},
+		{
 			name:  "relation wrapper with objects",
 			input: `{"__type":"Relation","className":"customer","objects":[{"__type":"Reference","className":"customer","id":"c1"}]}`,
 			want:  RelationIDs{"c1"},
@@ -138,6 +143,9 @@ func TestRoleUnmarshalRelationAndPlainMembers(t *testing.T) {
 			if !slices.Equal(role.Customers, tc.want) {
 				t.Fatalf("customers = %#v, want %#v", role.Customers, tc.want)
 			}
+			if !role.CustomersExpanded {
+				t.Fatal("expected customers to be expanded")
+			}
 			if tc.name == "relation customers" {
 				if !slices.Equal(role.Children, RelationIDs{"child"}) {
 					t.Fatalf("children = %#v", role.Children)
@@ -147,5 +155,24 @@ func TestRoleUnmarshalRelationAndPlainMembers(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRoleUnmarshalMarksUnexpandedRelation(t *testing.T) {
+	t.Parallel()
+
+	var role Role
+	err := json.Unmarshal([]byte(`{"id":"bingo","name":"bingo","customers":{"__type":"Relation","className":"customer"},"children":{"__type":"Relation","className":"role","objects":[]}}`), &role)
+	if err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if role.CustomersExpanded {
+		t.Fatal("pointer-only customers relation must not look expanded")
+	}
+	if len(role.Customers) != 0 {
+		t.Fatalf("customers = %#v", role.Customers)
+	}
+	if !role.ChildrenExpanded {
+		t.Fatal("children with objects:[] is expanded")
 	}
 }

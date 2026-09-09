@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // RelationIDs is a list of related object IDs.
@@ -94,5 +95,45 @@ func relationObjectID(obj map[string]any) string {
 	if id, ok := obj["id"].(string); ok && id != "" {
 		return id
 	}
+	if id, ok := obj["objectId"].(string); ok && id != "" {
+		return id
+	}
 	return ""
+}
+
+// UnmarshalJSON decodes a role and records whether each relation field was
+// expanded. A Relation pointer without an objects key is not an empty list.
+func (r *Role) UnmarshalJSON(data []byte) error {
+	type roleJSON Role
+	var decoded roleJSON
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*r = Role(decoded)
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	r.CustomersExpanded = relationJSONExpanded(raw["customers"])
+	r.ChildrenExpanded = relationJSONExpanded(raw["children"])
+	r.ParentsExpanded = relationJSONExpanded(raw["parents"])
+	return nil
+}
+
+func relationJSONExpanded(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return true
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(trimmed, &obj); err != nil {
+		return true
+	}
+	typeName, _ := obj["__type"].(string)
+	if !strings.EqualFold(typeName, "Relation") {
+		return true
+	}
+	_, hasObjects := obj["objects"]
+	return hasObjects
 }

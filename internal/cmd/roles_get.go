@@ -36,8 +36,8 @@ func (c *RolesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		output.FAlways("ID", role.ID),
 		output.FAlways("Name", role.Name),
 		output.F("Description", role.Description),
-		output.FAlways("Customers", len(role.Customers)),
-		output.FAlways("Children", len(role.Children)),
-		output.FAlways("Parents", len(role.Parents)),
+		output.FAlways("Customers", relationMemberCount(role.Customers, role.CustomersExpanded)),
+		output.FAlways("Children", relationMemberCount(role.Children, role.ChildrenExpanded)),
+		output.FAlways("Parents", relationMemberCount(role.Parents, role.ParentsExpanded)),
 	})
 }

@@ -591,6 +591,13 @@ type Role struct {
 	Owner       string         `json:"_owner,omitempty"`
 	CreatedAt   *time.Time     `json:"created_at,omitempty"`
 	UpdatedAt   *time.Time     `json:"updated_at,omitempty"`
+
+	// Expanded is false when the API returned a Relation pointer without
+	// an objects array, so the ID list is not known and must not be
+	// treated as empty.
+	CustomersExpanded bool `json:"-"`
+	ChildrenExpanded  bool `json:"-"`
+	ParentsExpanded   bool `json:"-"`
 }
 
 // Redirect represents a redirect rule.

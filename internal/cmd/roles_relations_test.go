@@ -50,9 +50,12 @@ func TestProjectRelationIDs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := projectRelationIDs(current, tc.raw)
+			got, projected, err := projectRelationIDs(current, tc.raw)
 			if err != nil {
 				t.Fatalf("project: %v", err)
+			}
+			if !projected {
+				t.Fatal("expected projection")
 			}
 			if !slices.Equal(got, tc.want) {
 				t.Fatalf("got %#v, want %#v", got, tc.want)
@@ -75,5 +78,20 @@ func TestRelationShrinksOverHalf(t *testing.T) {
 	}
 	if relationShrinksOverHalf(0, 0) {
 		t.Fatal("empty should not refuse")
+	}
+}
+
+func TestProjectRelationIDsUnknownOpPassesThrough(t *testing.T) {
+	t.Parallel()
+
+	got, projected, err := projectRelationIDs([]string{"a"}, map[string]any{
+		"__op":    "AddUnique",
+		"objects": []any{map[string]any{"id": "b"}},
+	})
+	if err != nil {
+		t.Fatalf("project: %v", err)
+	}
+	if projected {
+		t.Fatalf("unknown op should not project, got %#v", got)
 	}
 }

@@ -72,6 +72,10 @@ func mutateRoleCustomers(ctx context.Context, flags *RootFlags, roleID string, n
 		return err
 	}
 
+	if !current.CustomersExpanded {
+		return fmt.Errorf("role %s customers relation was not expanded; refusing to replace members", roleID)
+	}
+
 	before := slices.Clone(current.Customers)
 	next := nextFn(before)
 	if err := requireRelationShrinks(flags, roleID, []roleRelationDiff{{
@@ -89,13 +93,21 @@ func mutateRoleCustomers(ctx context.Context, flags *RootFlags, roleID string, n
 		}
 	}
 
-	var updated api.Role
-	if err := client.Put(ctx, rolePath(roleID), map[string]any{"customers": next}, &updated); err != nil {
-		return fmt.Errorf("update role customers: %w", err)
+	var (
+		updated api.Role
+		putErr  error
+	)
+	if putErr = client.Put(ctx, rolePath(roleID), map[string]any{"customers": next}, &updated); putErr != nil {
+		if !isResponseDecodeError(putErr) {
+			return fmt.Errorf("update role customers: %w", putErr)
+		}
 	}
 
 	verified, err := getRole(ctx, client, roleID)
 	if err != nil {
+		if putErr != nil {
+			return fmt.Errorf("update role customers: %w", putErr)
+		}
 		return fmt.Errorf("verify role customers: %w", err)
 	}
 	actual := uniqueStrings(verified.Customers)
@@ -103,8 +115,14 @@ func mutateRoleCustomers(ctx context.Context, flags *RootFlags, roleID string, n
 		return fmt.Errorf("role customers verification failed: requested %v, got %v", next, actual)
 	}
 
-	return output.Print(ctx, verified, []any{verified.ID, verified.Name, len(verified.Customers)}, func() error {
+	if err := output.Print(ctx, verified, []any{verified.ID, verified.Name, len(verified.Customers)}, func() error {
 		_, err := output.Fprintf(ctx, "Updated role customers: %s (%s)\n", verified.Name, verified.ID)
 		return err
-	})
+	}); err != nil {
+		return err
+	}
+	if putErr != nil {
+		return fmt.Errorf("update role customers: %w", putErr)
+	}
+	return nil
 }

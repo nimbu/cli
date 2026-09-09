@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"slices"
@@ -10,6 +11,11 @@ import (
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
 )
+
+func isResponseDecodeError(err error) bool {
+	var decodeErr *api.ResponseDecodeError
+	return errors.As(err, &decodeErr)
+}
 
 var roleRelationFields = []string{"customers", "children", "parents"}
 
@@ -49,52 +55,59 @@ func roleRelationDiffs(role api.Role, body map[string]any) ([]roleRelationDiff, 
 		if !ok {
 			continue
 		}
-		next, err := projectRelationIDs(current[field], raw)
+		next, projected, err := projectRelationIDs(current[field], raw)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", field, err)
+		}
+		after := len(current[field])
+		if projected {
+			after = len(next)
 		}
 		diffs = append(diffs, roleRelationDiff{
 			Field:     field,
 			Before:    len(current[field]),
-			After:     len(next),
+			After:     after,
 			IDs:       next,
-			Projected: true,
+			Projected: projected,
 		})
 	}
 	return diffs, nil
 }
 
-func projectRelationIDs(current []string, raw any) ([]string, error) {
+func projectRelationIDs(current []string, raw any) ([]string, bool, error) {
 	if raw == nil {
-		return slices.Clone(current), nil
+		return slices.Clone(current), true, nil
 	}
 
 	obj, ok := raw.(map[string]any)
 	if !ok {
-		return api.ParseRelationIDs(raw), nil
+		return api.ParseRelationIDs(raw), true, nil
 	}
 
 	op, _ := obj["__op"].(string)
 	switch strings.ToLower(strings.TrimSpace(op)) {
 	case "", "set":
-		return api.ParseRelationIDs(obj), nil
+		return api.ParseRelationIDs(obj), true, nil
 	case "addrelation", "addreference":
-		return uniqueStrings(append(slices.Clone(current), api.ParseRelationIDs(obj)...)), nil
+		return uniqueStrings(append(slices.Clone(current), api.ParseRelationIDs(obj)...)), true, nil
 	case "removerelation", "removereference":
-		return subtractIDs(current, api.ParseRelationIDs(obj)), nil
+		return subtractIDs(current, api.ParseRelationIDs(obj)), true, nil
 	case "batch":
 		next := slices.Clone(current)
 		ops, _ := obj["ops"].([]any)
 		for i, step := range ops {
-			var err error
-			next, err = projectRelationIDs(next, step)
+			ids, projected, err := projectRelationIDs(next, step)
 			if err != nil {
-				return nil, fmt.Errorf("batch op %d: %w", i, err)
+				return nil, false, fmt.Errorf("batch op %d: %w", i, err)
 			}
+			if !projected {
+				return nil, false, nil
+			}
+			next = ids
 		}
-		return uniqueStrings(next), nil
+		return uniqueStrings(next), true, nil
 	default:
-		return nil, fmt.Errorf("unknown relation op %q", op)
+		return nil, false, nil
 	}
 }
 
@@ -122,12 +135,12 @@ func relationShrinksOverHalf(before, after int) bool {
 
 func requireRelationShrinks(flags *RootFlags, roleID string, diffs []roleRelationDiff) error {
 	for _, diff := range diffs {
-		if !relationShrinksOverHalf(diff.Before, diff.After) {
+		if !diff.Projected || !relationShrinksOverHalf(diff.Before, diff.After) {
 			continue
 		}
-		target := fmt.Sprintf("more than half of the %s relation on role %s (%d → %d)", diff.Field, roleID, diff.Before, diff.After)
-		if err := requireForce(flags, target); err != nil {
-			return err
+		action := fmt.Sprintf("replace more than half of the %s relation on role %s (%d → %d)", diff.Field, roleID, diff.Before, diff.After)
+		if flags != nil && !flags.Force {
+			return fmt.Errorf("use --force to %s", action)
 		}
 	}
 	return nil
@@ -135,7 +148,11 @@ func requireRelationShrinks(flags *RootFlags, roleID string, diffs []roleRelatio
 
 func printRoleRelationDiffs(ctx context.Context, diffs []roleRelationDiff) error {
 	for _, diff := range diffs {
-		if _, err := output.Fprintf(ctx, "%s: %d → %d\n", diff.Field, diff.Before, diff.After); err != nil {
+		line := fmt.Sprintf("%s: %d → %d\n", diff.Field, diff.Before, diff.After)
+		if !diff.Projected {
+			line = fmt.Sprintf("%s: %d → ? (__op passed through)\n", diff.Field, diff.Before)
+		}
+		if _, err := output.Fprintf(ctx, "%s", line); err != nil {
 			return err
 		}
 	}
@@ -143,8 +160,56 @@ func printRoleRelationDiffs(ctx context.Context, diffs []roleRelationDiff) error
 }
 
 func printRoleMemberCounts(ctx context.Context, role api.Role) error {
-	_, err := output.Fprintf(ctx, "customers: %d, children: %d, parents: %d\n", len(role.Customers), len(role.Children), len(role.Parents))
+	_, err := output.Fprintf(ctx, "customers: %s, children: %s, parents: %s\n",
+		relationMemberCount(role.Customers, role.CustomersExpanded),
+		relationMemberCount(role.Children, role.ChildrenExpanded),
+		relationMemberCount(role.Parents, role.ParentsExpanded),
+	)
 	return err
+}
+
+func relationMemberCount(ids api.RelationIDs, expanded bool) any {
+	if !expanded {
+		return "unknown"
+	}
+	return len(ids)
+}
+
+func requireExpandedReplacements(role api.Role, body map[string]any) error {
+	expanded := map[string]bool{
+		"customers": role.CustomersExpanded,
+		"children":  role.ChildrenExpanded,
+		"parents":   role.ParentsExpanded,
+	}
+	for _, field := range roleRelationFields {
+		raw, ok := body[field]
+		if !ok || !relationPayloadReplaces(raw) {
+			continue
+		}
+		if expanded[field] {
+			continue
+		}
+		id := role.ID
+		if id == "" {
+			id = role.Name
+		}
+		return fmt.Errorf("role %s %s relation was not expanded; refusing to replace members", id, field)
+	}
+	return nil
+}
+
+func relationPayloadReplaces(raw any) bool {
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return true
+	}
+	op, _ := obj["__op"].(string)
+	switch strings.ToLower(strings.TrimSpace(op)) {
+	case "", "set":
+		return true
+	default:
+		return false
+	}
 }
 
 func humanOutput(ctx context.Context) bool {

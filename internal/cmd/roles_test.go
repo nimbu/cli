@@ -294,6 +294,96 @@ func TestRolesUpdateSurfacesSuccessfulDecodeError(t *testing.T) {
 	}
 }
 
+func TestRolesUpdateDryRunAllowsShrinkPreviewWithoutForce(t *testing.T) {
+	var put bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/roles/bingo":
+			_, _ = w.Write(relationRoleJSON("bingo", "bingo", []string{"c1", "c2", "c3", "c4"}))
+		case r.Method == http.MethodPut:
+			put = true
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	file := filepath.Join(t.TempDir(), "patch.json")
+	if err := os.WriteFile(file, []byte(`{"customers":["c1"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, out, _ := newAdminWorkflowTestContext(t, server.URL, output.Mode{})
+	err := (&RolesUpdateCmd{Role: "bingo", File: file, DryRun: true}).Run(ctx, &RootFlags{})
+	if err != nil {
+		t.Fatalf("dry-run shrink preview: %v", err)
+	}
+	if put {
+		t.Fatal("dry-run must not write")
+	}
+	if !strings.Contains(out.String(), "4 → 1") || !strings.Contains(out.String(), `"customers"`) {
+		t.Fatalf("output = %s", out.String())
+	}
+}
+
+func TestRolesUpdatePassesUnknownRelationOpThrough(t *testing.T) {
+	var putBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/roles/bingo":
+			_, _ = w.Write(relationRoleJSON("bingo", "bingo", []string{"c1", "c2"}))
+		case r.Method == http.MethodPut && r.URL.Path == "/roles/bingo":
+			if err := json.NewDecoder(r.Body).Decode(&putBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write(relationRoleJSON("bingo", "bingo", []string{"c1", "c2"}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	file := filepath.Join(t.TempDir(), "patch.json")
+	if err := os.WriteFile(file, []byte(`{"customers":{"__op":"AddUnique","objects":[{"id":"c3"}]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, _, _ := newAdminWorkflowTestContext(t, server.URL, output.Mode{})
+	if err := (&RolesUpdateCmd{Role: "bingo", File: file}).Run(ctx, &RootFlags{}); err != nil {
+		t.Fatalf("unknown op update: %v", err)
+	}
+	op, _ := putBody["customers"].(map[string]any)
+	if op["__op"] != "AddUnique" {
+		t.Fatalf("put body = %#v", putBody)
+	}
+}
+
+func TestRolesCustomersAddRefusesUnexpandedRelation(t *testing.T) {
+	var put bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/roles/bingo":
+			_, _ = w.Write([]byte(`{"id":"bingo","name":"bingo","customers":{"__type":"Relation","className":"customer"}}`))
+		case r.Method == http.MethodPut:
+			put = true
+			_, _ = w.Write([]byte(`{"id":"bingo"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	ctx, _, _ := newAdminWorkflowTestContext(t, server.URL, output.Mode{})
+	err := (&RolesCustomersAddCmd{Role: "bingo", Customers: []string{"c1"}}).Run(ctx, &RootFlags{})
+	if err == nil || !strings.Contains(err.Error(), "not expanded") {
+		t.Fatalf("expected unexpanded error, got %v", err)
+	}
+	if put {
+		t.Fatal("must not replace an unexpanded relation")
+	}
+}
+
 func TestRolesCustomersSetRefusesOverHalfShrinkWithoutForce(t *testing.T) {
 	members := []string{"c1", "c2", "c3", "c4"}
 	var put bool
