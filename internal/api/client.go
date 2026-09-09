@@ -261,6 +261,9 @@ func (c *Client) do(req *http.Request, result any) error {
 	// Decode response
 	if result != nil && len(body) > 0 {
 		if err := json.Unmarshal(body, result); err != nil {
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				return &ResponseDecodeError{StatusCode: resp.StatusCode, Body: body, Err: err}
+			}
 			return fmt.Errorf("decode response: %w", err)
 		}
 	}

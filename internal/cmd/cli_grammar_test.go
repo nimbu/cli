@@ -70,6 +70,8 @@ func TestFlagFirstSyntaxParsesRepresentativeCommands(t *testing.T) {
 		{"themes", "sync", "--only=assets/app.css,layouts/theme.liquid"},
 		{"apps", "push", "--only=code/main.js,code/hooks.js"},
 		{"sites", "settings", "--site=staging"},
+		{"roles", "customers", "add", "--role=bingo", "--customer=c1"},
+		{"roles", "customers", "set", "--role=bingo", "--customer=c1", "--customer=c2"},
 	}
 
 	for _, args := range tests {

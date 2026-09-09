@@ -25,6 +25,22 @@ type ValidationError struct {
 	Code    string `json:"code,omitempty"`
 }
 
+// ResponseDecodeError is returned when a 2xx response body cannot be decoded.
+// The request itself succeeded; only the typed response mapping failed.
+type ResponseDecodeError struct {
+	StatusCode int
+	Body       []byte
+	Err        error
+}
+
+func (e *ResponseDecodeError) Error() string {
+	return fmt.Sprintf("request succeeded (HTTP %d) but the response could not be decoded: %v", e.StatusCode, e.Err)
+}
+
+func (e *ResponseDecodeError) Unwrap() error {
+	return e.Err
+}
+
 // ReadonlyError is returned before a mutating request is sent by a readonly client.
 type ReadonlyError struct {
 	Method string
