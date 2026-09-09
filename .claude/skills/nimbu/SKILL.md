@@ -213,7 +213,7 @@ nimbu pages update --page about --file payload.json
 | `uploads` | list, get, create, download, delete, count | File uploads and exact-byte downloads |
 | `webhooks` | list, get, create, update, delete, count | Webhook management |
 | `redirects` | list, get, create, update, delete, copy | URL redirects |
-| `roles` | list, get, create, update, delete, count, copy | Permission roles |
+| `roles` | list, get, create, update, delete, copy, customers | Permission roles. `update` replaces array fields; use `roles customers add|remove|set` to edit members |
 | `announcements` | list, get, create, update, delete | HQ announcement management |
 | `domain-registrations` | list, get, count, upsert, update | HQ domain registration management |
 | `settings` | get, update, consent | Includes whole consent config get/update/replace/copy |
@@ -365,6 +365,16 @@ Three resource types have special contracts beyond standard CRUD:
 
 11. **Internal resources stay internal**: Accounts, regions, product types, and
     vendors are not public CLI commands. Do not replace them with raw API calls.
+
+12. **Role membership is a full replace**: `roles update` with a
+    `customers`/`children`/`parents` array replaces the whole relation. A
+    payload that would drop more than half the members needs `--force`.
+    Prefer `roles customers add|remove|set`, which compute the full ID list
+    in the CLI and verify it after the write. `__op` envelopes
+    (`AddReference`, `RemoveReference`, `Batch`, plus `AddRelation` /
+    `RemoveRelation` aliases) are a server-side feature; the CLI sends them
+    through verbatim. Use `--dry-run` on `roles update` to print the body
+    and projected counts without writing.
 
 ## Common Workflows
 

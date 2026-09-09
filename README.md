@@ -344,6 +344,13 @@ nimbu shipping-rates create --site my-site name=Standard criteria=weight price:=
 nimbu shipping-rates update --site my-site --rate RATE_ID --locale nl name="Standaard"
 nimbu shipping-rates delete --site my-site --rate RATE_ID --force
 
+# Role membership. Prefer add/remove/set over a raw customers array.
+nimbu roles customers add --role bingo --site my-site --customer 6aa173bcac852eb6438192f1
+nimbu roles customers remove --role bingo --site my-site --customer 6aa173bcac852eb6438192f1
+nimbu roles customers set --role bingo --site my-site --customer 6aa173bcac852eb6438192f1
+nimbu roles update --role bingo --site my-site --dry-run --file role.json
+nimbu roles update --role bingo --site my-site --force --file role.json
+
 # Media and version history
 nimbu products attachments download --product PRODUCT --attachment ATTACHMENT --output manual.pdf
 nimbu pages versions list --page about --site my-site
@@ -360,6 +367,16 @@ no `count` or `copy`. The API does not accept a nested `translations` payload
 for this resource, so create once and repeat `update --locale` for each language.
 `region_id` is intentionally opaque: regions are site-specific and are not
 exposed as a public CLI resource.
+
+`roles update` treats `customers`, `children`, and `parents` as a full replace
+when you send a JSON array. Shrinking any of those relations by more than half
+requires `--force`. `--dry-run` prints the request body and the projected
+member counts without writing. Prefer `roles customers add|remove|set`: those
+commands GET the role, PUT the full customer ID list, then GET again to verify.
+
+Relation `__op` envelopes (`AddReference`, `RemoveReference`, `Batch`, and the
+`AddRelation` / `RemoveRelation` aliases) are a server-side feature. The CLI
+sends them through verbatim and does not rewrite them into a local patch.
 
 Accounts, regions, product types, and vendors are internal API resources and
 are intentionally not exposed as public CLI commands.
