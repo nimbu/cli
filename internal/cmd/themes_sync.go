@@ -257,14 +257,14 @@ func resolveThemeProjectConfig() (string, config.ProjectConfig, []string, error)
 func writeThemeTransferResult(ctx context.Context, result themes.Result) error {
 	writeThemeTransferNotes(ctx, result)
 	mode := output.FromContext(ctx)
+	if mode.JSON {
+		return output.JSON(ctx, result)
+	}
 	if result.TimelineRendered {
-		if result.DryRun && !mode.JSON && !mode.Plain {
+		if result.DryRun && !mode.Plain {
 			return writeThemeTransferHumanList(ctx, result, false)
 		}
 		return nil
-	}
-	if mode.JSON {
-		return output.JSON(ctx, result)
 	}
 	if mode.Plain {
 		return writeThemeTransferPlainList(ctx, result)

@@ -127,6 +127,68 @@ func TestWriteThemeTransferResultMarksDryRunDependencies(t *testing.T) {
 	}
 }
 
+func TestWriteThemeTransferResultDryRunTimelineListsDependenciesOnce(t *testing.T) {
+	ctx, out, errOut := newContractTestContext(t, "http://example.test", output.Mode{})
+	err := writeThemeTransferResult(ctx, themes.Result{
+		Mode:             "push",
+		DryRun:           true,
+		TimelineRendered: true,
+		AddedDependencies: []themes.AddedDependency{
+			{Path: "snippets/svg/a.liquid", ReferencedBy: "templates/page.liquid"},
+		},
+		Uploaded: []themes.Action{
+			{DisplayPath: "snippets/svg/a.liquid", Dependency: true},
+			{DisplayPath: "templates/page.liquid"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("write result: %v", err)
+	}
+	got := out.String()
+	if strings.Count(got, "[dry-run] upload snippets/svg/a.liquid (dependency)") != 1 {
+		t.Fatalf("dependency list should appear once, stdout = %q", got)
+	}
+	if strings.Contains(got, "push complete") {
+		t.Fatalf("timeline dry-run should not reprint the summary: %q", got)
+	}
+	if !strings.Contains(errOut.String(), "adding dependency snippets/svg/a.liquid (referenced by templates/page.liquid)") {
+		t.Fatalf("stderr = %q", errOut.String())
+	}
+}
+
+func TestWriteThemeTransferResultJSONWithTimelineStaysJSONOnStdout(t *testing.T) {
+	ctx, out, errOut := newContractTestContext(t, "http://example.test", output.Mode{JSON: true})
+	err := writeThemeTransferResult(ctx, themes.Result{
+		Mode:             "push",
+		DryRun:           true,
+		TimelineRendered: true,
+		AddedDependencies: []themes.AddedDependency{
+			{Path: "snippets/svg/a.liquid", ReferencedBy: "templates/page.liquid"},
+		},
+		Uploaded: []themes.Action{
+			{DisplayPath: "snippets/svg/a.liquid", Dependency: true},
+			{DisplayPath: "templates/page.liquid"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("write result: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("stdout is not a single JSON object: %v\n%s", err, out)
+	}
+	if _, ok := payload["added_dependencies"]; !ok {
+		t.Fatalf("stdout = %s", out)
+	}
+	stderr := errOut.String()
+	if !strings.Contains(stderr, "adding dependency snippets/svg/a.liquid (referenced by templates/page.liquid)") {
+		t.Fatalf("stderr = %q", stderr)
+	}
+	if strings.Contains(out.String(), "adding dependency") {
+		t.Fatalf("notes leaked onto stdout: %s", out)
+	}
+}
+
 func writeThemeProject(t *testing.T, root string, files map[string]string) {
 	t.Helper()
 	for rel, content := range files {
