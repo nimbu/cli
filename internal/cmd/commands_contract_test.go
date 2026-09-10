@@ -67,6 +67,26 @@ func TestCommandContractDoesNotExposeInternalAccountWorkflows(t *testing.T) {
 	}
 }
 
+func TestSiteFlagHelpMentionsProjectResolution(t *testing.T) {
+	parser, _, err := newParser()
+	if err != nil {
+		t.Fatalf("new parser: %v", err)
+	}
+	for _, flag := range buildCommandContract(parser.Model).GlobalFlags {
+		if flag.Name != "site" {
+			continue
+		}
+		help := strings.ToLower(flag.Help)
+		for _, needle := range []string{"--site", "nimbu_site", "nimbu_project_dir", "git"} {
+			if !strings.Contains(help, needle) {
+				t.Fatalf("site flag help %q, missing %q", flag.Help, needle)
+			}
+		}
+		return
+	}
+	t.Fatal("global --site flag missing from command contract")
+}
+
 func TestLocalizedListContractExplainsContentLocale(t *testing.T) {
 	parser, _, err := newParser()
 	if err != nil {

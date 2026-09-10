@@ -3,13 +3,17 @@ package config
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-const ProjectFileName = "nimbu.yml"
+const (
+	ProjectFileName = "nimbu.yml"
+	ProjectDirEnv   = "NIMBU_PROJECT_DIR"
+)
 
 // ProjectConfig holds project-specific configuration.
 type ProjectConfig struct {
@@ -90,14 +94,69 @@ type SyncRootsConfig struct {
 	Templates []string `json:"templates,omitempty" yaml:"templates,omitempty"`
 }
 
-// FindProjectFile walks up from the current directory to find nimbu.yml.
+// FindProjectFile locates nimbu.yml. Precedence:
+//  1. Walk up from NIMBU_PROJECT_DIR, if set (error if nothing is found).
+//  2. Walk up from the current working directory.
+//  3. If still missing, try the git top-level directory as an extra candidate.
+//
+// The CWD walk is unbounded (it continues until the filesystem root), so the
+// git fallback only matters when that walk cannot see the repo root.
 func FindProjectFile() (string, error) {
+	if raw := strings.TrimSpace(os.Getenv(ProjectDirEnv)); raw != "" {
+		dir, err := filepath.Abs(raw)
+		if err != nil {
+			return "", fmt.Errorf("resolve %s=%q: %w", ProjectDirEnv, raw, err)
+		}
+		path, err := findProjectFileFrom(dir)
+		if err != nil {
+			return "", fmt.Errorf("%s not found from %s=%s", ProjectFileName, ProjectDirEnv, dir)
+		}
+		return path, nil
+	}
+
 	dir, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
+	if path, err := findProjectFileFrom(dir); err == nil {
+		return path, nil
+	}
 
-	return findProjectFileFrom(dir)
+	if top, ok := gitShowToplevel(dir); ok {
+		if path, err := findProjectFileFrom(top); err == nil {
+			return path, nil
+		}
+	}
+
+	return "", ErrNotFound
+}
+
+func gitShowToplevel(dir string) (string, bool) {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd.Dir = dir
+	cmd.Env = withoutGitDirEnv(os.Environ())
+	out, err := cmd.Output()
+	if err != nil {
+		return "", false
+	}
+	top := strings.TrimSpace(string(out))
+	if top == "" {
+		return "", false
+	}
+	return top, true
+}
+
+func withoutGitDirEnv(env []string) []string {
+	filtered := make([]string, 0, len(env))
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "GIT_DIR=") ||
+			strings.HasPrefix(kv, "GIT_WORK_TREE=") ||
+			strings.HasPrefix(kv, "GIT_INDEX_FILE=") {
+			continue
+		}
+		filtered = append(filtered, kv)
+	}
+	return filtered
 }
 
 func findProjectFileFrom(startDir string) (string, error) {
