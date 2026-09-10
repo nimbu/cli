@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -112,15 +113,22 @@ func ListPage[T any](ctx context.Context, c *Client, path string, page, perPage 
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
 	if resp.StatusCode >= 400 {
-		body := make([]byte, 4096)
-		n, _ := resp.Body.Read(body)
-		return nil, parseError(resp.StatusCode, body[:n])
+		return nil, parseError(resp.StatusCode, body)
 	}
 
 	var data []T
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &data); err != nil {
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				return nil, &ResponseDecodeError{StatusCode: resp.StatusCode, Body: body, Err: err}
+			}
+			return nil, fmt.Errorf("decode response: %w", err)
+		}
 	}
 
 	links := ParseLinks(resp.Header.Get("Link"))

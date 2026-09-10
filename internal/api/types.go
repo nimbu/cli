@@ -584,13 +584,20 @@ type Role struct {
 	ID          string         `json:"id"`
 	Name        string         `json:"name"`
 	Description string         `json:"description,omitempty"`
-	Customers   []string       `json:"customers,omitempty"`
-	Children    []string       `json:"children,omitempty"`
-	Parents     []string       `json:"parents,omitempty"`
+	Customers   RelationIDs    `json:"customers,omitempty"`
+	Children    RelationIDs    `json:"children,omitempty"`
+	Parents     RelationIDs    `json:"parents,omitempty"`
 	ACL         map[string]any `json:"_acl,omitempty"`
 	Owner       string         `json:"_owner,omitempty"`
 	CreatedAt   *time.Time     `json:"created_at,omitempty"`
 	UpdatedAt   *time.Time     `json:"updated_at,omitempty"`
+
+	// Expanded is false when the API returned a Relation pointer without
+	// an objects array, so the ID list is not known and must not be
+	// treated as empty.
+	CustomersExpanded bool `json:"-"`
+	ChildrenExpanded  bool `json:"-"`
+	ParentsExpanded   bool `json:"-"`
 }
 
 // Redirect represents a redirect rule.

@@ -134,7 +134,10 @@ _nimbu_completions() {
             orders)
                 COMPREPLY=($(compgen -W "list get update count pay finish cancel reopen archive" -- "${cur}"))
                 ;;
-            roles|redirects)
+            roles)
+                COMPREPLY=($(compgen -W "list get create update delete copy customers" -- "${cur}"))
+                ;;
+            redirects)
                 COMPREPLY=($(compgen -W "list get create update delete copy" -- "${cur}"))
                 ;;
             domains)
@@ -210,6 +213,8 @@ _nimbu_completions() {
         COMPREPLY=($(compgen -W "list get create update delete count copy gallery" -- "${cur}"))
     elif [[ ${COMP_WORDS[1]} == "channels" && ${COMP_WORDS[2]} == "fields" ]]; then
         COMPREPLY=($(compgen -W "list add update delete apply replace diff" -- "${cur}"))
+    elif [[ ${COMP_WORDS[1]} == "roles" && ${COMP_WORDS[2]} == "customers" ]]; then
+        COMPREPLY=($(compgen -W "add remove set" -- "${cur}"))
     elif [[ ${COMP_WORDS[1]} == "customers" && ${COMP_WORDS[2]} == "config" ]]; then
         COMPREPLY=($(compgen -W "copy diff" -- "${cur}"))
     elif [[ ${COMP_WORDS[1]} == "products" && ${COMP_WORDS[2]} == "config" ]]; then
@@ -393,6 +398,15 @@ _nimbu() {
                     'diff:Diff channel fields between sites'
                 )
                 _describe -t channel-field-commands 'channel field command' channel_field_commands
+                ;;
+            "roles customers")
+                local -a role_customer_commands
+                role_customer_commands=(
+                    'add:Add customers to a role'
+                    'remove:Remove customers from a role'
+                    'set:Replace the customers on a role'
+                )
+                _describe -t role-customer-commands 'role customers command' role_customer_commands
                 ;;
             "customers config"|"products config")
                 local -a config_copy_commands
@@ -654,6 +668,19 @@ _nimbu() {
             )
             _describe -t domains-commands 'domains command' domains_commands
             ;;
+        roles)
+            local -a roles_commands
+            roles_commands=(
+                'list:List roles'
+                'get:Get role details'
+                'create:Create role from JSON'
+                'update:Update a role'
+                'delete:Delete role'
+                'copy:Copy roles between sites'
+                'customers:Add, remove, or replace role customers'
+            )
+            _describe -t roles-commands 'roles command' roles_commands
+            ;;
         senders)
             local -a senders_commands
             senders_commands=(
@@ -791,7 +818,8 @@ complete -c nimbu -n "__fish_seen_subcommand_from collections" -a "list get crea
 complete -c nimbu -n "__fish_seen_subcommand_from coupons" -a "list get create update delete count" -d "Coupon commands"
 complete -c nimbu -n "__fish_seen_subcommand_from domains" -a "list get create update delete make-primary" -d "Domain commands"
 complete -c nimbu -n "__fish_seen_subcommand_from orders" -a "list get update count pay finish cancel reopen archive" -d "Order commands"
-complete -c nimbu -n "__fish_seen_subcommand_from roles" -a "list get create update delete copy" -d "Role commands"
+complete -c nimbu -n "__fish_seen_subcommand_from roles; and not __fish_seen_subcommand_from list get create update delete copy customers" -a "list get create update delete copy customers" -d "Role commands"
+complete -c nimbu -n "__fish_seen_subcommand_from roles; and __fish_seen_subcommand_from customers; and not __fish_seen_subcommand_from add remove set" -a "add remove set" -d "Role customer commands"
 complete -c nimbu -n "__fish_seen_subcommand_from redirects" -a "list get create update delete copy" -d "Redirect commands"
 complete -c nimbu -n "__fish_seen_subcommand_from functions" -a "run" -d "Run function"
 complete -c nimbu -n "__fish_seen_subcommand_from jobs" -a "run" -d "Run job"

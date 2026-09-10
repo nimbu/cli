@@ -73,27 +73,7 @@ func refSourceID(value any) string {
 // refSourceIDs extracts source IDs from a belongs_to_many value.
 // Handles plain []string/[]any (API default) and rich Relation object (client-version 2).
 func refSourceIDs(value any) []string {
-	switch v := value.(type) {
-	case []any:
-		ids := make([]string, 0, len(v))
-		for _, item := range v {
-			switch it := item.(type) {
-			case string:
-				ids = append(ids, it)
-			case map[string]any:
-				if id := stringValue(it["id"]); id != "" {
-					ids = append(ids, id)
-				}
-			}
-		}
-		return ids
-	case map[string]any:
-		// Relation wrapper: {__type: "Relation", objects: [...]}
-		if objs, ok := v["objects"].([]any); ok {
-			return refSourceIDs(objs)
-		}
-	}
-	return nil
+	return api.ParseRelationIDs(value)
 }
 
 func (c *recordCopier) trackUnresolved(channel, identifier, targetID string, field api.CustomField, sourceRefID string) {

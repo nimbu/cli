@@ -40,6 +40,7 @@ func TestCommandContractContainsAuditedNativeWorkflows(t *testing.T) {
 		"nimbu products attachments list", "nimbu products attachments download",
 		"nimbu pages versions list", "nimbu pages versions restore",
 		"nimbu customers roles list", "nimbu customers roles set",
+		"nimbu roles customers add", "nimbu roles customers remove", "nimbu roles customers set",
 		"nimbu announcements list", "nimbu announcements create",
 		"nimbu domain-registrations list", "nimbu domain-registrations upsert",
 		"nimbu settings get", "nimbu settings consent list",

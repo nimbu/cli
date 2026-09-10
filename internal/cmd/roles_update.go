@@ -2,24 +2,31 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"net/url"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
 )
 
 // RolesUpdateCmd updates a role.
+//
+// Array fields (customers, children, parents) replace the whole relation.
+// Server-side __op envelopes (AddReference/RemoveReference/Batch, plus
+// AddRelation/RemoveRelation aliases) are sent verbatim.
 type RolesUpdateCmd struct {
 	Role        string   `required:"" help:"Role ID"`
 	File        string   `help:"Read role JSON from file (use - for stdin)"`
+	DryRun      bool     `name:"dry-run" help:"Print the request body and relation diff without writing"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. name=VIP)"`
 }
 
 // Run executes the update command.
 func (c *RolesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if err := requireWrite(flags, "update role"); err != nil {
-		return err
+	if !c.DryRun {
+		if err := requireWrite(flags, "update role"); err != nil {
+			return err
+		}
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -37,14 +44,82 @@ func (c *RolesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	var role api.Role
-	path := "/roles/" + url.PathEscape(c.Role)
-	if err := client.Put(ctx, path, body, &role); err != nil {
+	current, err := getRole(ctx, client, c.Role)
+	if err != nil {
+		return err
+	}
+
+	diffs, err := roleRelationDiffs(current, body)
+	if err != nil {
 		return fmt.Errorf("update role: %w", err)
 	}
 
-	return output.Print(ctx, role, []any{role.ID, role.Name}, func() error {
-		_, err := output.Fprintf(ctx, "Updated role: %s (%s)\n", role.Name, role.ID)
+	if output.IsHuman(ctx) {
+		if err := printRoleRelationDiffs(ctx, diffs); err != nil {
+			return err
+		}
+	}
+
+	if c.DryRun {
+		return printRoleUpdateDryRun(ctx, body, diffs)
+	}
+
+	if err := requireExpandedReplacements(current, body); err != nil {
+		return fmt.Errorf("update role: %w", err)
+	}
+
+	if err := requireRelationShrinks(flags, c.Role, diffs); err != nil {
+		return err
+	}
+
+	var (
+		role   api.Role
+		putErr error
+	)
+	if putErr = client.Put(ctx, rolePath(c.Role), body, &role); putErr != nil {
+		if !isResponseDecodeError(putErr) {
+			return fmt.Errorf("update role: %w", putErr)
+		}
+	}
+
+	verified, err := getRole(ctx, client, c.Role)
+	if err != nil {
+		if putErr != nil {
+			return fmt.Errorf("update role: %w", putErr)
+		}
+		return fmt.Errorf("verify role: %w", err)
+	}
+
+	if putErr != nil {
+		_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Err, "warning: %s\n", putErr)
+	}
+
+	if output.IsHuman(ctx) {
+		if err := printRoleMemberCounts(ctx, verified); err != nil {
+			return err
+		}
+	}
+
+	return output.Print(ctx, verified, []any{verified.ID, verified.Name}, func() error {
+		_, err := output.Fprintf(ctx, "Updated role: %s (%s)\n", verified.Name, verified.ID)
 		return err
 	})
+}
+
+func printRoleUpdateDryRun(ctx context.Context, body map[string]any, diffs []roleRelationDiff) error {
+	mode := output.FromContext(ctx)
+	if mode.JSON {
+		return output.JSON(ctx, map[string]any{
+			"dry_run":   true,
+			"body":      body,
+			"relations": diffs,
+		})
+	}
+
+	encoded, err := json.MarshalIndent(body, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode dry-run body: %w", err)
+	}
+	_, err = output.Fprintf(ctx, "%s\n", encoded)
+	return err
 }
