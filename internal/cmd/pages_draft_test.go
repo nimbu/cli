@@ -178,12 +178,18 @@ func TestPagesDraftPublishConfirmAndConflictHint(t *testing.T) {
 		if !strings.Contains(err.Error(), "Live page changed after this draft was based on it") {
 			t.Fatalf("err = %v", err)
 		}
-		if !strings.Contains(err.Error(), "re-run with --confirm") || !strings.Contains(err.Error(), "nimbu pages draft discard --page about --force") {
-			t.Fatalf("missing hint: %v", err)
+		if strings.Contains(err.Error(), "re-run with --confirm") || strings.Contains(err.Error(), "nimbu pages draft discard") {
+			t.Fatalf("hint must not be embedded in the message: %v", err)
 		}
 		desc := classifyError(err)
 		if desc.Code != errorConflict {
 			t.Fatalf("code = %s", desc.Code)
+		}
+		if desc.Message != "Live page changed after this draft was based on it; confirm publish to replace live content." {
+			t.Fatalf("message = %q", desc.Message)
+		}
+		if !strings.Contains(desc.Hint, "re-run with --confirm") || !strings.Contains(desc.Hint, "nimbu pages draft discard --page about --force") {
+			t.Fatalf("hint = %q", desc.Hint)
 		}
 	})
 

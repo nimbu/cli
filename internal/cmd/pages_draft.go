@@ -243,7 +243,7 @@ func draftAPIError(err error, page string) error {
 	}
 	if apiErr.StatusCode == 409 && apiErr.Code == "draft_base_changed" {
 		hint := fmt.Sprintf("re-run with --confirm to replace the live content, or nimbu pages draft discard --page %s --force to drop the draft", page)
-		return newHintedError(fmt.Errorf("%s; %s", apiErr.Message, hint), errorConflict, ExitValidation, hint)
+		return newHintedError(apiErr, errorConflict, ExitValidation, hint)
 	}
 	return err
 }
