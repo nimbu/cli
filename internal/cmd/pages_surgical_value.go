@@ -112,7 +112,7 @@ func expandInsertFileValue(session *surgicalSession, raw any) (any, error) {
 		return map[string]any{"__type": "FileRef", "source": source}, nil
 	}
 	if session == nil {
-		return map[string]any{"url": source}, nil
+		return map[string]any{"__type": "FileRef", "source": source}, nil
 	}
 	payload, warning, err := session.fileRefs().NormalizeURL(session.ctx, source)
 	if err != nil {

@@ -16,7 +16,7 @@ const (
 
 // FileRefNormalizer turns remote file URLs into write payloads.
 // Same-site CDN URLs become nimbu:// upload references; everything else is
-// passed through as {"url": ...} so the server copies the asset.
+// passed through as {"__type":"FileRef","source":"<url>"} so the server copies the asset.
 type FileRefNormalizer struct {
 	Client      *Client
 	SiteShortID string
@@ -196,5 +196,5 @@ func nimbuFileRef(source string) map[string]any {
 }
 
 func copyFileRef(rawURL string) map[string]any {
-	return map[string]any{"url": rawURL}
+	return nimbuFileRef(rawURL)
 }

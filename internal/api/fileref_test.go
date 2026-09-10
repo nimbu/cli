@@ -70,12 +70,7 @@ func TestNormalizeFileRefURLOtherSiteCDNPassthroughWarns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NormalizeURL: %v", err)
 	}
-	if got["url"] != otherURL {
-		t.Fatalf("payload = %#v", got)
-	}
-	if got["source"] != nil {
-		t.Fatalf("source should be omitted on passthrough: %#v", got)
-	}
+	assertFileRefSource(t, got, otherURL)
 	if !strings.Contains(warning, otherURL) || !strings.Contains(warning, "is not an upload of this site; the server will copy it") {
 		t.Fatalf("warning = %q", warning)
 	}
@@ -100,14 +95,29 @@ func TestNormalizeFileRefURLLookupMissPassthroughWarns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NormalizeURL: %v", err)
 	}
-	if got["url"] != cdnURL {
-		t.Fatalf("payload = %#v", got)
-	}
-	if got["source"] != nil {
-		t.Fatalf("source should be omitted on passthrough: %#v", got)
-	}
+	assertFileRefSource(t, got, cdnURL)
 	if !strings.Contains(warning, cdnURL) || !strings.Contains(warning, "is not an upload of this site; the server will copy it") {
 		t.Fatalf("warning = %q", warning)
+	}
+}
+
+func TestNormalizeFileRefURLNonCDNPassthroughNoWarning(t *testing.T) {
+	t.Parallel()
+
+	const remote = "https://nimbu.io/favicon.ico"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("non-CDN URL must not look up uploads, got %s", r.URL.Path)
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	got, warning, err := newTestFileRefNormalizer(server.URL, "oa8td8r").NormalizeURL(context.Background(), remote)
+	if err != nil {
+		t.Fatalf("NormalizeURL: %v", err)
+	}
+	assertFileRefSource(t, got, remote)
+	if warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
 	}
 }
 
@@ -115,5 +125,18 @@ func newTestFileRefNormalizer(baseURL, siteShortID string) *FileRefNormalizer {
 	return &FileRefNormalizer{
 		Client:      New(baseURL, "token"),
 		SiteShortID: siteShortID,
+	}
+}
+
+func assertFileRefSource(t *testing.T, got map[string]any, want string) {
+	t.Helper()
+	if got["__type"] != "FileRef" {
+		t.Fatalf("__type = %#v, want FileRef", got["__type"])
+	}
+	if got["source"] != want {
+		t.Fatalf("source = %#v, want %q", got["source"], want)
+	}
+	if _, ok := got["url"]; ok {
+		t.Fatalf("url should be omitted on FileRef source passthrough: %#v", got)
 	}
 }
