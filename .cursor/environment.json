@@ -1,0 +1,5 @@
+{
+  "name": "nimbu CLI",
+  "user": "ubuntu",
+  "install": "go mod download && make tools && make build"
+}
