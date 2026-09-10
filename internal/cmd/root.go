@@ -50,7 +50,7 @@ type CountQueryFlags struct {
 // RootFlags contains global flags available to all commands.
 type RootFlags struct {
 	// Essential (ungrouped — always visible in help)
-	Site    string `help:"Site ID or subdomain. Precedence: --site > NIMBU_SITE > project config (NIMBU_PROJECT_DIR, CWD walk-up, or git top-level)" env:"NIMBU_SITE"`
+	Site    string `help:"Site ID or subdomain, else nimbu.yml site" env:"NIMBU_SITE"`
 	JSON    bool   `help:"Output JSON to stdout" default:"${json}" env:"NIMBU_JSON"`
 	Plain   bool   `help:"Output stable TSV to stdout" default:"${plain}" env:"NIMBU_PLAIN"`
 	Verbose bool   `help:"Enable verbose logging"`
