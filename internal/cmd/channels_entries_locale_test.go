@@ -127,9 +127,9 @@ func TestChannelEntriesGetLocaleSendsContentLocaleAndKeepsRawJSON(t *testing.T) 
 
 	ctx, out, _ := newAdminWorkflowTestContext(t, server.URL, output.Mode{JSON: true})
 	cmd := &ChannelEntriesGetCmd{
-		Channel: "c",
-		Entry:   "id",
-		Locale:  "en",
+		QueryFlags: QueryFlags{Locale: "en"},
+		Channel:    "c",
+		Entry:      "id",
 	}
 	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
 		t.Fatalf("get entry: %v", err)
@@ -181,41 +181,64 @@ func TestChannelEntriesLocaleFlagHelpExplainsPerLocaleReads(t *testing.T) {
 		t.Fatalf("new parser: %v", err)
 	}
 
-	want := map[string][]string{
-		"nimbu channels entries get": {
-			"per-locale",
-			"translations map",
-			"non-localized",
-		},
-		"nimbu channels entries update": {
-			"per-locale",
-			"translations map",
-			"non-localized",
-		},
+	needles := []string{"per-locale", "translations map", "non-localized"}
+	getHelp := strings.ToLower((ChannelEntriesGetCmd{}).Help())
+	for _, needle := range needles {
+		if !strings.Contains(getHelp, needle) {
+			t.Errorf("entries get long help = %q, want %q", (ChannelEntriesGetCmd{}).Help(), needle)
+		}
 	}
-
-	found := map[string]string{}
-	for _, command := range buildCommandContract(parser.Model).Commands {
-		needles, ok := want[command.Path]
-		if !ok {
+	var getDetail string
+	for _, node := range parser.Model.Leaves(false) {
+		if node.Name != "get" || !strings.Contains(node.FullPath(), "channels entries get") {
 			continue
 		}
-		for _, flag := range command.Flags {
-			if flag.Name != "locale" {
-				continue
+		getDetail = strings.ToLower(node.Detail)
+	}
+	if getDetail == "" {
+		t.Fatal("entries get long help was not attached to the command contract")
+	}
+	for _, needle := range needles {
+		if !strings.Contains(getDetail, needle) {
+			t.Errorf("entries get command detail = %q, want %q", getDetail, needle)
+		}
+	}
+
+	var getFlags []string
+	var updateLocaleHelp string
+	for _, command := range buildCommandContract(parser.Model).Commands {
+		switch command.Path {
+		case "nimbu channels entries get":
+			for _, flag := range command.Flags {
+				getFlags = append(getFlags, flag.Name)
 			}
-			help := strings.ToLower(flag.Help)
-			found[command.Path] = flag.Help
-			for _, needle := range needles {
-				if !strings.Contains(help, needle) {
-					t.Errorf("%s --locale help = %q, want %q", command.Path, flag.Help, needle)
+		case "nimbu channels entries update":
+			for _, flag := range command.Flags {
+				if flag.Name == "locale" {
+					updateLocaleHelp = flag.Help
 				}
 			}
 		}
 	}
-	for path := range want {
-		if _, ok := found[path]; !ok {
-			t.Errorf("%s --locale missing from command contract", path)
+	for _, name := range []string{"fields", "include", "sort", "filters", "locale"} {
+		found := false
+		for _, flag := range getFlags {
+			if flag == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("entries get missing --%s", name)
+		}
+	}
+	if updateLocaleHelp == "" {
+		t.Fatal("entries update --locale missing from command contract")
+	}
+	help := strings.ToLower(updateLocaleHelp)
+	for _, needle := range needles {
+		if !strings.Contains(help, needle) {
+			t.Errorf("entries update --locale help = %q, want %q", updateLocaleHelp, needle)
 		}
 	}
 }
