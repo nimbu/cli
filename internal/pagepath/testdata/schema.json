@@ -1,0 +1,66 @@
+{
+  "template": {
+    "id": "0000000000000000000000bb",
+    "name": "home"
+  },
+  "available_blocks": {
+    "Blokken": [
+      {
+        "slug": "hero_stage",
+        "label": "Hero",
+        "fields": [
+          {"slug": "CTA", "label": "Call to action", "type": "field"},
+          {"slug": "Eyebrow", "label": "Eyebrow", "type": "field"},
+          {"slug": "Footnote", "label": "Footnote", "type": "field"},
+          {"slug": "Layout", "label": "Layout", "type": "select"},
+          {"slug": "Left Button - Link", "label": "Left button", "type": "field"},
+          {"slug": "Swoosh Bottom (hero)", "label": "Swoosh", "type": "file"},
+          {"slug": "Title", "label": "Title", "type": "text"}
+        ]
+      },
+      {
+        "slug": "proof_strip",
+        "label": "Proof",
+        "fields": [
+          {"slug": "Quote", "label": "Quote", "type": "text"}
+        ]
+      },
+      {
+        "slug": "case_cards",
+        "label": "Cases",
+        "fields": [
+          {"slug": "Title", "label": "Title", "type": "text"},
+          {
+            "slug": "Photos",
+            "label": "Photos",
+            "type": "canvas",
+            "available_blocks": {
+              "Photos": [
+                {
+                  "slug": "image",
+                  "label": "Image",
+                  "fields": [
+                    {"slug": "Image", "label": "Image", "type": "file"}
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "select_options": {
+    "Theme": [
+      {"label": "Dark", "value": "dark"},
+      {"label": "Light", "value": "light"}
+    ],
+    "Blokken.hero_stage.Layout": [
+      {"label": "Wide", "value": "wide"},
+      {"label": "Narrow", "value": "narrow"}
+    ]
+  },
+  "current_structure": {
+    "Blokken": ["hero_stage"]
+  }
+}
