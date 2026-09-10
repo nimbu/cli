@@ -4,7 +4,9 @@ Quick-reference for content management commands. Covers gotchas that `--help` do
 
 ## Pages (`nimbu pages`)
 
-Subcommands: `list`, `get`, `create`, `update`, `delete`, `count`, `copy`.
+Subcommands: `list`, `get`, `create`, `update`, `delete`, `set`, `insert`, `delete-block`, `move`, `batch`, `draft`, `items`, `schema`, `count`, `copy`, `versions`.
+
+Page versions are listed, fetched, and restored with `nimbu pages versions list|get|restore --page <id-or-path>`; `get` and `restore` also take `--page-version <id>`.
 
 ### Parent field gotcha
 
@@ -125,15 +127,19 @@ If combined with `--download-assets`, `--shape` wins and the CLI warns on stderr
 
 ### File editable write shapes
 
-A file editable is `{ "type": "file", "file": { ... } }`. The `file` object accepts three write shapes — pick one:
+A file editable is `{ "type": "file", "file": { ... } }`. Pick one FileRef / file form for the `file` object (or for a surgical `pages set` / `insert` / `batch` value). Omit `file` (or the whole editable) to leave the existing asset unchanged.
 
-1. **Base64 inline** — `{ "__type": "File", "attachment": "<base64>", "filename": "logo.png" }`. The `__type: "File"` marker is required (without it the server drops the upload). The CLI builds this for you: set `"attachment_path": "./logo.png"` in the file object and it reads the file, base64-encodes it, marks `__type` and sets `filename`.
-2. **URL-populate (FileRef)** — `{ "__type": "FileRef", "source": "https://cdn.example.com/x.png" }`. The server copies the asset from that URL. You can send this shape directly, or use the CLI convention `"attachment_url": "https://..."` in the file object; the CLI rewrites it to the `FileRef` shape on write.
-3. **Leave unchanged** — omit the `file` object entirely (or omit that editable). The existing asset is untouched.
+| Form | Example | When to use | Notes |
+|------|---------|-------------|-------|
+| `attachment_path` | `{"attachment_path":"./logo.png"}` | Local file on disk | CLI reads the file, base64-encodes it, sets `__type: File` and `filename`. Surgical `--from-file` uses the equivalent `{data, filename, content_type}` shape. |
+| `attachment_url` | `{"attachment_url":"https://cdn.nimbu.io/s/oa8td8r/assets/…/logo.png"}` | Remote URL, including a CDN link copied from `uploads list` or a page document | Same-site `https://cdn.nimbu.io/s/<siteShortId>/…` URLs are looked up in `GET /uploads` and rewritten to `nimbu://<siteShortId>/uploads/<id>` so the server references the existing upload. Another site's CDN URL, or a lookup miss, is sent as `{"url":"…"}` and the CLI warns `warning: <url> is not an upload of this site; the server will copy it`. |
+| `nimbu://` source | `{"__type":"FileRef","source":"nimbu://oa8td8r/uploads/507f1f77bcf86cd799439014"}` | Reuse an upload you already know by id | Does not duplicate the asset. Site short id is the `/s/<id>/` segment of the site's CDN root (also `site_short_id` on `GET /themes/<id>/info`). |
+| `__type: FileRef` | `{"__type":"FileRef","source":"https://cdn.example.com/x.png"}` | Send a FileRef object directly | `source` or `url` on this object go through the same CDN rewrite as `attachment_url`. |
+| `__type: File` + `attachment` | `{"__type":"File","attachment":"<base64>","filename":"logo.png"}` | Inline base64 bytes | `__type: File` is required; without it the server drops the upload. |
+| `data` | `{"data":"<base64>","filename":"logo.png","content_type":"image/png"}` | Surgical set/insert of raw bytes | Produced by `pages set --from-file`. |
+| read-only `url` | `items.<name>.file.url` | Do not write this | On *read*, the public CDN link. A bare `url` is not a write payload. Copy it into `attachment_url` to re-point the editable. |
 
-A file editable that ends up with none of attachment / `attachment_path` / `attachment_url` / `source` is an **error** — the CLI refuses to write it rather than silently clearing the asset. A read-only `url` by itself does **not** count as a write payload. In default merge mode, the CLI drops URL-only file objects from the write payload so the existing asset is left unchanged; under `--replace`, provide a real write shape. To intentionally clear a file editable, pass `--allow-empty-file`.
-
-> **Read vs write asymmetry.** On *read*, the public CDN link is in the `url` key (`items.<name>.file.url`). That `url` is a read-only convenience; it is NOT a write shape. To re-point a file editable at that URL, copy it into `attachment_url` (FileRef), don't leave it as `url`.
+A file editable that ends up with none of attachment / `attachment_path` / `attachment_url` / `source` is an **error** — the CLI refuses to write it rather than silently clearing the asset. In default merge mode, the CLI drops URL-only file objects from the write payload so the existing asset is left unchanged; under `--replace`, provide a real write shape. To intentionally clear a file editable, pass `--allow-empty-file`.
 
 ### create
 
