@@ -102,6 +102,71 @@ func TestLocalizedCreateLocaleFlagParsesIntoCommand(t *testing.T) {
 	}
 }
 
+func TestThemeResourceGetAliasesParseToSameValue(t *testing.T) {
+	tests := []struct {
+		name string
+		args [][]string
+		got  func(*CLI) string
+		want string
+	}{
+		{
+			name: "templates",
+			args: [][]string{
+				{"themes", "templates", "get", "--theme=t", "--name=page.liquid"},
+				{"themes", "templates", "get", "--theme=t", "--template=page.liquid"},
+			},
+			got:  func(cli *CLI) string { return cli.Themes.Templates.Get.Name },
+			want: "page.liquid",
+		},
+		{
+			name: "snippets",
+			args: [][]string{
+				{"themes", "snippets", "get", "--theme=t", "--name=header.liquid"},
+				{"themes", "snippets", "get", "--theme=t", "--snippet=header.liquid"},
+			},
+			got:  func(cli *CLI) string { return cli.Themes.Snippets.Get.Name },
+			want: "header.liquid",
+		},
+		{
+			name: "layouts",
+			args: [][]string{
+				{"themes", "layouts", "get", "--theme=t", "--name=theme.liquid"},
+				{"themes", "layouts", "get", "--theme=t", "--layout=theme.liquid"},
+			},
+			got:  func(cli *CLI) string { return cli.Themes.Layouts.Get.Name },
+			want: "theme.liquid",
+		},
+		{
+			name: "assets",
+			args: [][]string{
+				{"themes", "assets", "get", "--theme=t", "--path=assets/app.css"},
+				{"themes", "assets", "get", "--theme=t", "--asset=assets/app.css"},
+			},
+			got:  func(cli *CLI) string { return cli.Themes.Assets.Get.Path },
+			want: "assets/app.css",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var values []string
+			for _, args := range test.args {
+				parser, cli, err := newParser()
+				if err != nil {
+					t.Fatalf("newParser: %v", err)
+				}
+				if _, err := parser.Parse(args); err != nil {
+					t.Fatalf("parse %q: %v", strings.Join(args, " "), err)
+				}
+				values = append(values, test.got(cli))
+			}
+			if values[0] != test.want || values[1] != test.want {
+				t.Fatalf("parsed values = %q, want both %q", values, test.want)
+			}
+		})
+	}
+}
+
 func TestOldPositionalIdentitySyntaxFails(t *testing.T) {
 	parser, _, err := newParser()
 	if err != nil {

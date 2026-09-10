@@ -12,7 +12,7 @@ import (
 // ThemeTemplatesGetCmd gets a template.
 type ThemeTemplatesGetCmd struct {
 	Theme string `required:"" help:"Theme ID"`
-	Name  string `required:"" help:"Template name including extension"`
+	Name  string `required:"" aliases:"template" help:"Template name including extension"`
 }
 
 // Run executes the get command.

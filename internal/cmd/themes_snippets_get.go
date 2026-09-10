@@ -12,7 +12,7 @@ import (
 // ThemeSnippetsGetCmd gets a snippet.
 type ThemeSnippetsGetCmd struct {
 	Theme string `required:"" help:"Theme ID"`
-	Name  string `required:"" help:"Snippet name including extension"`
+	Name  string `required:"" aliases:"snippet" help:"Snippet name including extension"`
 }
 
 // Run executes the get command.

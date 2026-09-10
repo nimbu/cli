@@ -174,6 +174,21 @@ _nimbu_completions() {
                 COMPREPLY=($(compgen -W "--shell" -- "${cur}"))
                 ;;
         esac
+    elif [[ ${COMP_WORDS[1]} == "themes" && ${COMP_WORDS[3]} == "get" ]]; then
+        case "${COMP_WORDS[2]}" in
+            templates)
+                COMPREPLY=($(compgen -W "--theme --name --template" -- "${cur}"))
+                ;;
+            snippets)
+                COMPREPLY=($(compgen -W "--theme --name --snippet" -- "${cur}"))
+                ;;
+            layouts)
+                COMPREPLY=($(compgen -W "--theme --name --layout" -- "${cur}"))
+                ;;
+            assets)
+                COMPREPLY=($(compgen -W "--theme --path --asset" -- "${cur}"))
+                ;;
+        esac
     elif [[ ${COMP_WORDS[1]} == "themes" ]]; then
         case "${COMP_WORDS[2]}" in
             pull)
@@ -831,6 +846,18 @@ complete -c nimbu -n "__fish_seen_subcommand_from layouts" -a "list get create d
 complete -c nimbu -n "__fish_seen_subcommand_from templates" -a "list get create delete" -d "Manage templates"
 complete -c nimbu -n "__fish_seen_subcommand_from snippets" -a "list get create delete" -d "Manage snippets"
 complete -c nimbu -n "__fish_seen_subcommand_from assets" -a "list get create delete" -d "Manage assets"
+complete -c nimbu -n "__fish_seen_subcommand_from themes; and __fish_seen_subcommand_from templates; and __fish_seen_subcommand_from get" -l theme -d "Theme ID"
+complete -c nimbu -n "__fish_seen_subcommand_from themes; and __fish_seen_subcommand_from templates; and __fish_seen_subcommand_from get" -l name -d "Template name"
+complete -c nimbu -n "__fish_seen_subcommand_from themes; and __fish_seen_subcommand_from templates; and __fish_seen_subcommand_from get" -l template -d "Template name"
+complete -c nimbu -n "__fish_seen_subcommand_from themes; and __fish_seen_subcommand_from snippets; and __fish_seen_subcommand_from get" -l theme -d "Theme ID"
+complete -c nimbu -n "__fish_seen_subcommand_from themes; and __fish_seen_subcommand_from snippets; and __fish_seen_subcommand_from get" -l name -d "Snippet name"
+complete -c nimbu -n "__fish_seen_subcommand_from themes; and __fish_seen_subcommand_from snippets; and __fish_seen_subcommand_from get" -l snippet -d "Snippet name"
+complete -c nimbu -n "__fish_seen_subcommand_from themes; and __fish_seen_subcommand_from layouts; and __fish_seen_subcommand_from get" -l theme -d "Theme ID"
+complete -c nimbu -n "__fish_seen_subcommand_from themes; and __fish_seen_subcommand_from layouts; and __fish_seen_subcommand_from get" -l name -d "Layout name"
+complete -c nimbu -n "__fish_seen_subcommand_from themes; and __fish_seen_subcommand_from layouts; and __fish_seen_subcommand_from get" -l layout -d "Layout name"
+complete -c nimbu -n "__fish_seen_subcommand_from themes; and __fish_seen_subcommand_from assets; and __fish_seen_subcommand_from get" -l theme -d "Theme ID"
+complete -c nimbu -n "__fish_seen_subcommand_from themes; and __fish_seen_subcommand_from assets; and __fish_seen_subcommand_from get" -l path -d "Asset path"
+complete -c nimbu -n "__fish_seen_subcommand_from themes; and __fish_seen_subcommand_from assets; and __fish_seen_subcommand_from get" -l asset -d "Asset path"
 complete -c nimbu -n "__fish_seen_subcommand_from files" -a "list get put delete" -d "Manage theme files"
 complete -c nimbu -n "__fish_seen_subcommand_from apps; and __fish_seen_subcommand_from code; and not __fish_seen_subcommand_from list create pull" -a "list create pull" -d "Manage app code files"
 
