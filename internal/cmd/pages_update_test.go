@@ -415,11 +415,22 @@ func TestPagesUpdateDryRunPrintsBodyWithoutPatch(t *testing.T) {
 	if patched {
 		t.Fatal("dry-run must not PATCH")
 	}
-	if !strings.Contains(out.String(), `"title": "New"`) {
-		t.Fatalf("stdout = %q", out.String())
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("stdout is not a single JSON object: %v\n%s", err, out)
+	}
+	if payload["dry_run"] != true {
+		t.Fatalf("stdout = %s", out)
+	}
+	body, _ := payload["body"].(map[string]any)
+	if body["title"] != "New" {
+		t.Fatalf("body = %#v", payload["body"])
 	}
 	if !strings.Contains(errOut.String(), "dry-run: no request sent (the API has no validation endpoint yet)") {
 		t.Fatalf("stderr = %q", errOut.String())
+	}
+	if strings.Contains(out.String(), "dry-run: no request sent") {
+		t.Fatalf("stderr note leaked onto stdout: %s", out)
 	}
 }
 
