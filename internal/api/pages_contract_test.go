@@ -345,6 +345,7 @@ func TestPageShape(t *testing.T) {
 				"type": "canvas",
 				"repeatables": []any{
 					map[string]any{
+						"id":   "rep1",
 						"slug": "text_block",
 						"items": map[string]any{
 							"body": map[string]any{"type": "text"},
@@ -376,6 +377,12 @@ func TestPageShape(t *testing.T) {
 	rep := reps[0].(map[string]any)
 	if rep["slug"] != "text_block" {
 		t.Fatalf("unexpected slug: %#v", rep["slug"])
+	}
+	if rep["id"] != "rep1" {
+		t.Fatalf("unexpected id: %#v", rep["id"])
+	}
+	if rep["position"] != 0 {
+		t.Fatalf("unexpected position: %#v", rep["position"])
 	}
 	nested := rep["items"].(map[string]any)["body"].(map[string]any)
 	if nested["type"] != "text" {

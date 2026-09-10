@@ -11,6 +11,7 @@ type Schema struct {
 	AvailableBlocks  map[string][]BlockDef
 	SelectOptions    map[string][]Option
 	CurrentStructure json.RawMessage
+	raw              json.RawMessage
 }
 
 // Template identifies the page template.
@@ -43,8 +44,18 @@ type Option struct {
 	Value string `json:"value"`
 }
 
+// MarshalJSON returns the original API body when it was captured.
+func (s Schema) MarshalJSON() ([]byte, error) {
+	if len(s.raw) > 0 {
+		return bytes.Clone(s.raw), nil
+	}
+	type alias Schema
+	return json.Marshal(alias(s))
+}
+
 // UnmarshalJSON accepts the real object-shaped schema and the empty/array stubs.
 func (s *Schema) UnmarshalJSON(data []byte) error {
+	s.raw = bytes.Clone(data)
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -76,17 +87,32 @@ func objectOrEmpty[T any](raw json.RawMessage) T {
 	return out
 }
 
-// BlockSlugs returns available repeatable slugs for a canvas, in schema order.
-func (s *Schema) BlockSlugs(canvas string) []string {
+// Blocks returns available block definitions for a canvas, in schema order.
+func (s *Schema) Blocks(canvas string) []BlockDef {
 	if s == nil {
 		return nil
 	}
-	blocks := s.AvailableBlocks[canvas]
+	return s.AvailableBlocks[canvas]
+}
+
+// BlockSlugs returns available repeatable slugs for a canvas, in schema order.
+func (s *Schema) BlockSlugs(canvas string) []string {
+	blocks := s.Blocks(canvas)
 	out := make([]string, 0, len(blocks))
 	for _, block := range blocks {
 		out = append(out, block.Slug)
 	}
 	return out
+}
+
+// FieldType returns the schema type for a field inside a block, or "".
+func (s *Schema) FieldType(canvas, slug, field string) string {
+	for _, f := range s.fieldsFor(canvas, slug) {
+		if f.Slug == field {
+			return f.Type
+		}
+	}
+	return ""
 }
 
 // OptionsFor returns select options for a field.

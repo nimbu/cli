@@ -152,50 +152,6 @@ func pageCanvasRepeatableInstanceCounts(items map[string]any, prefix string, cou
 	}
 }
 
-// PageShape returns a skeleton of the page's editables: editable name -> type,
-// and for canvases the list of repeatables with their slug and nested skeleton.
-func PageShape(doc PageDocument) any {
-	items, ok := mapValue(doc["items"])
-	if !ok {
-		return map[string]any{}
-	}
-	return pageShapeItems(items)
-}
-
-func pageShapeItems(items map[string]any) map[string]any {
-	shape := map[string]any{}
-	for name, rawEditable := range items {
-		editable, ok := mapValue(rawEditable)
-		if !ok {
-			continue
-		}
-		entry := map[string]any{
-			"type": stringValue(editable["type"]),
-		}
-		if repeatables, ok := sliceValue(editable["repeatables"]); ok {
-			reps := make([]any, 0, len(repeatables))
-			for _, rawRepeatable := range repeatables {
-				repeatable, ok := mapValue(rawRepeatable)
-				if !ok {
-					continue
-				}
-				rep := map[string]any{
-					"slug": stringValue(repeatable["slug"]),
-				}
-				if childItems, ok := mapValue(repeatable["items"]); ok {
-					rep["items"] = pageShapeItems(childItems)
-				} else {
-					rep["items"] = map[string]any{}
-				}
-				reps = append(reps, rep)
-			}
-			entry["repeatables"] = reps
-		}
-		shape[name] = entry
-	}
-	return shape
-}
-
 // NormalizePageFullpath strips leading slashes and whitespace from a page fullpath.
 func NormalizePageFullpath(fullpath string) string {
 	fullpath = strings.TrimSpace(fullpath)

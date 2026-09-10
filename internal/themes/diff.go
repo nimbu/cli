@@ -8,9 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/aymanbagabas/go-udiff"
-
 	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/output"
 )
 
 // DiffEntry reports one local-vs-remote mismatch.
@@ -113,14 +112,5 @@ func normalizeDiffText(value string) string {
 // version of a theme file. Line endings are normalized and a trailing newline
 // is enforced so the diff matches the CLI's lenient change detection.
 func unifiedDiff(path, remote, local string) string {
-	return udiff.Unified("remote/"+path, "local/"+path, diffContent(remote), diffContent(local))
-}
-
-func diffContent(value string) string {
-	value = strings.ReplaceAll(value, "\r\n", "\n")
-	value = strings.ReplaceAll(value, "\r", "\n")
-	if value != "" && !strings.HasSuffix(value, "\n") {
-		value += "\n"
-	}
-	return value
+	return output.Unified("remote/"+path, "local/"+path, remote, local)
 }

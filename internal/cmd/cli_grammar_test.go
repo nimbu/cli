@@ -30,6 +30,10 @@ func TestPublicCommandsUseFlagsForIdentity(t *testing.T) {
 			if strings.Contains(compactLine, "Assignments []string") || strings.Contains(compactLine, "Words []string") {
 				continue
 			}
+			// pages set takes a payload value, not a resource identity.
+			if strings.Contains(compactLine, "Value string") && strings.Contains(compactLine, `xor:"set-source"`) {
+				continue
+			}
 			if file == "api.go" && strings.Contains(compactLine, "Path string") {
 				continue
 			}
