@@ -91,6 +91,9 @@ func TestSchemaUnmarshalLiveShape(t *testing.T) {
 	if got := schema.FieldType("Photos", "photo", "Image"); got != "file" {
 		t.Fatalf("nested photo Image type = %q", got)
 	}
+	if slugs := schema.BlockSlugsFor("Photos", "hero_stage"); !reflect.DeepEqual(slugs, []string{"photo"}) {
+		t.Fatalf("nested BlockSlugs = %v", slugs)
+	}
 }
 
 func TestSchemaUnmarshalRejectsBrokenAvailableBlocks(t *testing.T) {

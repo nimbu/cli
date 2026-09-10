@@ -23,10 +23,11 @@ type PagesInsertCmd struct {
 }
 
 type insertPlan struct {
-	insert plannedOp
-	files  []plannedFileSet
-	slug   string
-	canvas string
+	insert    plannedOp
+	files     []plannedFileSet
+	slug      string
+	canvas    string
+	canvasRaw string
 }
 
 type plannedFileSet struct {
@@ -58,7 +59,7 @@ func (c *PagesInsertCmd) Run(ctx context.Context, flags *RootFlags) error {
 				Human: file.Field,
 				Op: api.BatchOperation{
 					Op:    "set",
-					Path:  "/items/" + pagepath.EscapeName(plan.canvas) + "/repeatables/<new-id>/items/" + pagepath.EscapeName(file.Field),
+					Path:  insertItemPath(plan.canvasRaw, "<new-id>", file.Field),
 					Value: file.Value,
 				},
 			})
@@ -79,10 +80,9 @@ func (c *PagesInsertCmd) Run(ctx context.Context, flags *RootFlags) error {
 		}
 		fileOps := make([]plannedOp, 0, len(plan.files))
 		for _, file := range plan.files {
-			path := "/items/" + pagepath.EscapeName(plan.canvas) + "/repeatables/" + newID + "/items/" + pagepath.EscapeName(file.Field)
 			fileOps = append(fileOps, plannedOp{
 				Human: file.Field,
-				Op:    api.BatchOperation{Op: "set", Path: path, Value: file.Value},
+				Op:    api.BatchOperation{Op: "set", Path: insertItemPath(plan.canvasRaw, newID, file.Field), Value: file.Value},
 			})
 		}
 		fileResult, err := session.runBatch(fileOps, write)
@@ -93,7 +93,7 @@ func (c *PagesInsertCmd) Run(ctx context.Context, flags *RootFlags) error {
 		ops = append(ops, fileOps...)
 	}
 
-	index := repeatableIndex(session.doc, plan.canvas, insertResultID(insertResult))
+	index := repeatableIndexAt(session.doc, plan.canvasRaw, insertResultID(insertResult))
 	extra := fmt.Sprintf("Inserted %s at %s[%d] (id %s)", plan.slug, plan.canvas, index, insertResultID(insertResult))
 	return printSurgicalResult(ctx, session, ops, result, before, write, extra)
 }
@@ -104,15 +104,18 @@ func (c *PagesInsertCmd) plan(session *surgicalSession) (insertPlan, error) {
 		return insertPlan{}, err
 	}
 	canvas := canvasNameFromRaw(resolved.RawPath)
+	canvasRaw := strings.TrimSuffix(resolved.RawPath, "/repeatables")
+	parentSlug := resolved.RepeatableSlug
 	schema, err := session.ensureSchema()
 	if err != nil {
 		return insertPlan{}, err
 	}
-	if err := validateInsertSlug(schema, canvas, slug); err != nil {
+	seeded, err := prepareInsertItems(schema, canvas, parentSlug, slug, items)
+	if err != nil {
 		return insertPlan{}, err
 	}
 
-	cleanItems, files, err := splitInsertFileItems(schema, canvas, slug, items)
+	cleanItems, files, err := splitInsertFileItems(schema, canvas, slug, seeded)
 	if err != nil {
 		return insertPlan{}, err
 	}
@@ -139,10 +142,11 @@ func (c *PagesInsertCmd) plan(session *surgicalSession) (insertPlan, error) {
 		return insertPlan{}, err
 	}
 	return insertPlan{
-		insert: plannedOp{Human: c.Path, Op: op, rebuild: build},
-		files:  files,
-		slug:   slug,
-		canvas: canvas,
+		insert:    plannedOp{Human: c.Path, Op: op, rebuild: build},
+		files:     files,
+		slug:      slug,
+		canvas:    canvas,
+		canvasRaw: canvasRaw,
 	}, nil
 }
 
@@ -191,8 +195,8 @@ func (c *PagesInsertCmd) readItems() (map[string]any, string, error) {
 	return object, "", nil
 }
 
-func validateInsertSlug(schema *pagepath.Schema, canvas, slug string) error {
-	blocks := schema.Blocks(canvas)
+func validateInsertSlug(schema *pagepath.Schema, canvas, parentSlug, slug string) error {
+	blocks := schema.BlocksFor(canvas, parentSlug)
 	for _, block := range blocks {
 		if block.Slug == slug {
 			return nil
@@ -210,6 +214,50 @@ func validateInsertSlug(schema *pagepath.Schema, canvas, slug string) error {
 		return fmt.Errorf("slug %q is not allowed on canvas %s", slug, canvas)
 	}
 	return fmt.Errorf("slug %q is not allowed on canvas %s; allowed: %s", slug, canvas, strings.Join(allowed, ", "))
+}
+
+func prepareInsertItems(schema *pagepath.Schema, canvas, parentSlug, slug string, items map[string]any) (map[string]any, error) {
+	blocks := schema.BlocksFor(canvas, parentSlug)
+	if len(blocks) == 0 {
+		return items, nil
+	}
+	if err := validateInsertSlug(schema, canvas, parentSlug, slug); err != nil {
+		return nil, err
+	}
+	var fields []pagepath.FieldDef
+	for _, block := range blocks {
+		if block.Slug == slug {
+			fields = block.Fields
+			break
+		}
+	}
+	if len(fields) == 0 {
+		return items, nil
+	}
+	allowed := make(map[string]struct{}, len(fields))
+	var listed []string
+	for _, field := range fields {
+		allowed[field.Slug] = struct{}{}
+		label := field.Slug
+		if field.Type != "" {
+			label = field.Slug + " (" + field.Type + ")"
+		}
+		listed = append(listed, label)
+	}
+	for name := range items {
+		if _, ok := allowed[name]; !ok {
+			return nil, fmt.Errorf("editable %q is not part of block %s; editables: %s", name, slug, strings.Join(listed, ", "))
+		}
+	}
+	seeded := make(map[string]any, len(fields))
+	for _, field := range fields {
+		if value, ok := items[field.Slug]; ok {
+			seeded[field.Slug] = value
+			continue
+		}
+		seeded[field.Slug] = nil
+	}
+	return seeded, nil
 }
 
 func insertAfter(resolved pagepath.Resolved, after string, position *int) (*api.Anchor, error) {
@@ -240,12 +288,13 @@ func splitInsertFileItems(schema *pagepath.Schema, canvas, slug string, items ma
 	clean := make(map[string]any, len(items))
 	var files []plannedFileSet
 	for name, value := range items {
-		if schema.FieldType(canvas, slug, name) == "file" && isFileEditablePayload(value) {
+		if value != nil && schema.FieldType(canvas, slug, name) == "file" && isFileEditablePayload(value) {
 			expanded, err := expandInsertFileValue(value)
 			if err != nil {
 				return nil, nil, err
 			}
 			files = append(files, plannedFileSet{Field: name, Value: expanded})
+			clean[name] = nil
 			continue
 		}
 		clean[name] = value
@@ -260,8 +309,13 @@ func insertResultID(result *api.BatchResult) string {
 	return result.Results[0].ID
 }
 
-func repeatableIndex(doc map[string]any, canvas, id string) int {
-	node, _ := subtreeAt(doc, "/items/"+pagepath.EscapeName(canvas))
+func insertItemPath(canvasRaw, repeatableID, field string) string {
+	base := strings.TrimSuffix(canvasRaw, "/repeatables")
+	return base + "/repeatables/" + repeatableID + "/items/" + pagepath.EscapeName(field)
+}
+
+func repeatableIndexAt(doc map[string]any, canvasRaw, id string) int {
+	node, _ := subtreeAt(doc, strings.TrimSuffix(canvasRaw, "/repeatables"))
 	for _, ref := range siblingRefs(asMapAny(node)) {
 		if ref.ID == id {
 			return ref.Index

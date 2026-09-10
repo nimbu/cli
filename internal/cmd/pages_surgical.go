@@ -234,14 +234,19 @@ func stringAny(v any) string {
 }
 
 func canvasNameFromRaw(raw string) string {
-	rest := strings.TrimPrefix(raw, "/items/")
-	rest = strings.TrimSuffix(rest, "/repeatables")
-	if i := strings.Index(rest, "/"); i >= 0 {
-		rest = rest[:i]
+	parts := strings.Split(strings.Trim(raw, "/"), "/")
+	name := ""
+	for i := 0; i < len(parts); i++ {
+		if parts[i] == "items" && i+1 < len(parts) {
+			name = parts[i+1]
+		}
 	}
-	name, err := pagepath.UnescapeName(rest)
+	if name == "" {
+		return ""
+	}
+	decoded, err := pagepath.UnescapeName(name)
 	if err != nil {
-		return rest
+		return name
 	}
-	return name
+	return decoded
 }

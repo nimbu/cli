@@ -48,6 +48,11 @@
                     "slug": "Alt",
                     "label": "Alt",
                     "type": "field"
+                  },
+                  {
+                    "slug": "Position",
+                    "label": "Position",
+                    "type": "field"
                   }
                 ]
               }

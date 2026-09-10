@@ -136,17 +136,60 @@ func decodeObjectOrEmpty[T any](raw json.RawMessage) (T, error) {
 	return out, nil
 }
 
-// Blocks returns available block definitions for a canvas, in schema order.
+// Blocks returns available block definitions for a top-level canvas, in schema order.
 func (s *Schema) Blocks(canvas string) []BlockDef {
+	return s.BlocksFor(canvas, "")
+}
+
+// BlocksFor returns block definitions for a canvas. parentSlug selects a nested
+// canvas on that parent repeatable (live available_blocks on the canvas field).
+func (s *Schema) BlocksFor(canvas, parentSlug string) []BlockDef {
 	if s == nil {
 		return nil
 	}
-	return s.AvailableBlocks[canvas]
+	if parentSlug == "" {
+		return s.AvailableBlocks[canvas]
+	}
+	for _, blocks := range s.AvailableBlocks {
+		if found := nestedBlocksIn(blocks, canvas, parentSlug); found != nil {
+			return found
+		}
+	}
+	return nil
 }
 
-// BlockSlugs returns available repeatable slugs for a canvas, in schema order.
+func nestedBlocksIn(blocks []BlockDef, canvas, parentSlug string) []BlockDef {
+	for _, block := range blocks {
+		if block.Slug == parentSlug {
+			if nested := block.AvailableBlocks[canvas]; len(nested) > 0 {
+				return nested
+			}
+			for _, field := range block.Fields {
+				if field.Slug == canvas && (field.Type == "canvas" || len(field.AvailableBlocks) > 0) {
+					return field.AvailableBlocks
+				}
+			}
+		}
+		if found := nestedBlocksIn(blockDefs(block.AvailableBlocks), canvas, parentSlug); found != nil {
+			return found
+		}
+		for _, field := range block.Fields {
+			if found := nestedBlocksIn(field.AvailableBlocks, canvas, parentSlug); found != nil {
+				return found
+			}
+		}
+	}
+	return nil
+}
+
+// BlockSlugs returns available repeatable slugs for a top-level canvas, in schema order.
 func (s *Schema) BlockSlugs(canvas string) []string {
-	blocks := s.Blocks(canvas)
+	return s.BlockSlugsFor(canvas, "")
+}
+
+// BlockSlugsFor returns available slugs for a canvas, optionally nested under parentSlug.
+func (s *Schema) BlockSlugsFor(canvas, parentSlug string) []string {
+	blocks := s.BlocksFor(canvas, parentSlug)
 	out := make([]string, 0, len(blocks))
 	for _, block := range blocks {
 		out = append(out, block.Slug)
