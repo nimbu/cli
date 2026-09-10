@@ -19,6 +19,7 @@ type PagesSetCmd struct {
 	Locale   string `help:"Content locale for localized fields"`
 	Diff     bool   `help:"Show a unified diff of the changed subtree"`
 	DryRun   bool   `help:"Resolve paths and print the operations without writing"`
+	Draft    bool   `help:"Write to the page draft instead of the live page"`
 }
 
 // Run executes pages set.
@@ -34,7 +35,10 @@ func (c *PagesSetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	write := surgicalWriteFlags{Locale: c.Locale, Diff: c.Diff, DryRun: c.DryRun}
+	write := surgicalWriteFlags{Locale: c.Locale, Diff: c.Diff, DryRun: c.DryRun, Draft: c.Draft}
+	if err := session.applyWriteMode(write); err != nil {
+		return err
+	}
 
 	op, err := c.plan(session)
 	if err != nil {

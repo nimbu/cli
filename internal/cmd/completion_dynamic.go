@@ -356,6 +356,7 @@ var completionValueFlags = map[string]bool{
 	"device-id":           true,
 	"dir":                 true,
 	"domain":              true,
+	"draft":               true,
 	"download-assets":     true,
 	"email":               true,
 	"enable-commands":     true,

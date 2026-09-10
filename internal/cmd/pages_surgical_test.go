@@ -17,10 +17,13 @@ import (
 )
 
 const (
-	surgicalPageID    = "6a6c60362e4510dd4a459982"
-	surgicalUpdatedAt = "2026-09-10T14:31:12.408Z"
-	surgicalBlockID   = "6a6c699f0655c6dcb4dd854c"
-	surgicalBlockID2  = "6a6c699f0655c6dcb4dd854d"
+	surgicalPageID       = "6a6c60362e4510dd4a459982"
+	surgicalUpdatedAt    = "2026-09-10T14:31:12.408Z"
+	surgicalBlockID      = "6a6c699f0655c6dcb4dd854c"
+	surgicalBlockID2     = "6a6c699f0655c6dcb4dd854d"
+	surgicalDraftID      = "6a6d00000000000000000001"
+	surgicalDraftOnlyID  = "6a6c699f0655c6dcb4dd854e"
+	surgicalDraftUpdated = "2026-09-10T15:30:00.000Z"
 )
 
 func surgicalPageETag(t *testing.T) string {
@@ -90,15 +93,22 @@ func surgicalSchemaJSON() string {
 }
 
 type surgicalServer struct {
-	gets       int
-	posts      int
-	lastReq    *http.Request
-	lastBody   map[string]any
-	ifMatch    []string
-	queries    []string
-	pageJSON   string
-	schemaJSON string
-	batchFn    func(http.ResponseWriter, *http.Request, int)
+	gets         int
+	posts        int
+	draftGets    int
+	draftPosts   int
+	lastReq      *http.Request
+	lastBody     map[string]any
+	ifMatch      []string
+	queries      []string
+	paths        []string
+	pageJSON     string
+	schemaJSON   string
+	draftJSON    string
+	noDraft      bool
+	draftsOff    bool
+	batchFn      func(http.ResponseWriter, *http.Request, int)
+	draftBatchFn func(http.ResponseWriter, *http.Request, int)
 }
 
 func (s *surgicalServer) pageBody() string {
@@ -115,6 +125,41 @@ func (s *surgicalServer) schemaBody() string {
 	return surgicalSchemaJSON()
 }
 
+func (s *surgicalServer) draftBody() string {
+	if s.draftJSON != "" {
+		return s.draftJSON
+	}
+	return surgicalDraftJSON()
+}
+
+func surgicalDraftJSON() string {
+	return `{
+		"id":"` + surgicalDraftID + `",
+		"page_id":"` + surgicalPageID + `",
+		"reserved_fullpath":"about",
+		"updated_at":"` + surgicalDraftUpdated + `",
+		"content":{
+			"title":"About draft",
+			"page_items":[
+				{"slug":"Theme","type":"select","content":"Light"},
+				{"slug":"Blokken","type":"canvas","repeatables":[
+					{"_id":"` + surgicalBlockID + `","slug":"hero_stage","position":1,"page_items":[
+						{"slug":"Title","type":"text","content":"Hero"},
+						{"slug":"Enabled","type":"switch","content":"false"},
+						{"slug":"Image","type":"file","content":"https://cdn.example.test/a.jpg"}
+					]},
+					{"_id":"` + surgicalBlockID2 + `","slug":"proof_strip","position":2,"page_items":[
+						{"slug":"Quote","type":"text","content":"Hi"}
+					]},
+					{"_id":"` + surgicalDraftOnlyID + `","slug":"proof_strip","position":3,"page_items":[
+						{"slug":"Quote","type":"text","content":"Draft only"}
+					]}
+				]}
+			]
+		}
+	}`
+}
+
 func (s *surgicalServer) start(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -126,9 +171,43 @@ func (s *surgicalServer) start(t *testing.T) *httptest.Server {
 			_, _ = w.Write([]byte(s.schemaBody()))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/pages/"+surgicalPageID+"/items/"):
 			_, _ = w.Write([]byte(`{"path":"/items/Blokken/repeatables/` + surgicalBlockID + `/items/Title","parent_path":"/items/Blokken/repeatables/` + surgicalBlockID + `","position":1,"siblings_count":3,"type":"item","data":{"type":"text","content":"Hero"}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/pages/"+surgicalPageID+"/draft":
+			s.draftGets++
+			s.paths = append(s.paths, r.URL.Path)
+			if s.draftsOff {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"message":"Page drafts are not enabled"}`))
+				return
+			}
+			if s.noDraft {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"message":"Not Found","code":101}`))
+				return
+			}
+			_, _ = w.Write([]byte(s.draftBody()))
+		case r.Method == http.MethodPost && r.URL.Path == "/pages/"+surgicalPageID+"/draft/batch":
+			s.draftPosts++
+			s.lastReq = r
+			s.paths = append(s.paths, r.URL.Path)
+			s.ifMatch = append(s.ifMatch, r.Header.Get("If-Match"))
+			s.queries = append(s.queries, r.URL.RawQuery)
+			body, _ := io.ReadAll(r.Body)
+			if err := json.Unmarshal(body, &s.lastBody); err != nil {
+				t.Fatalf("decode draft batch body: %v", err)
+			}
+			if s.draftBatchFn != nil {
+				s.draftBatchFn(w, r, s.draftPosts)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"results":[{"index":0,"status":"ok","path":"/items/Blokken/repeatables/` + surgicalBlockID + `/items/Title","id":"` + surgicalBlockID + `"}],
+				"draft":` + s.draftBody() + `
+			}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/pages/"+surgicalPageID+"/batch":
 			s.posts++
 			s.lastReq = r
+			s.paths = append(s.paths, r.URL.Path)
 			s.ifMatch = append(s.ifMatch, r.Header.Get("If-Match"))
 			s.queries = append(s.queries, r.URL.RawQuery)
 			body, _ := io.ReadAll(r.Body)

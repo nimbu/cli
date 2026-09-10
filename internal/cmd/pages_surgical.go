@@ -17,6 +17,7 @@ type surgicalWriteFlags struct {
 	Locale string
 	Diff   bool
 	DryRun bool
+	Draft  bool
 }
 
 type plannedOp struct {
@@ -27,18 +28,21 @@ type plannedOp struct {
 }
 
 type surgicalSession struct {
-	ctx         context.Context
-	flags       *RootFlags
-	client      *api.Client
-	page        string
-	locale      string
-	pageID      string
-	fullpath    string
-	updatedAt   string
-	etag        string
-	doc         map[string]any
-	schema      *pagepath.Schema
-	schemaTried bool
+	ctx            context.Context
+	flags          *RootFlags
+	client         *api.Client
+	page           string
+	locale         string
+	pageID         string
+	fullpath       string
+	updatedAt      string
+	etag           string
+	doc            map[string]any
+	schema         *pagepath.Schema
+	schemaTried    bool
+	draftMode      bool
+	draft          *api.PageDraft
+	draftConverted bool
 }
 
 func openSurgicalPage(ctx context.Context, flags *RootFlags, page, locale string) (*surgicalSession, error) {
@@ -146,7 +150,7 @@ func (s *surgicalSession) runBatch(ops []plannedOp, write surgicalWriteFlags) (*
 		return result, nil
 	}
 	var apiErr *api.Error
-	if !errors.As(err, &apiErr) || apiErr.StatusCode != 412 {
+	if s.draftMode || !errors.As(err, &apiErr) || apiErr.StatusCode != 412 {
 		return nil, err
 	}
 
@@ -180,6 +184,9 @@ func (s *surgicalSession) postBatch(ops []plannedOp) (*api.BatchResult, error) {
 	batch := make([]api.BatchOperation, len(ops))
 	for i, op := range ops {
 		batch[i] = op.Op
+	}
+	if s.draftMode {
+		return s.postDraftBatch(ops, batch)
 	}
 	return s.client.PostPageBatch(s.ctx, s.pageID, batch, api.BatchOptions{
 		Atomic:        true,

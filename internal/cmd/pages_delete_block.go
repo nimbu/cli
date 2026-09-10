@@ -13,6 +13,7 @@ type PagesDeleteBlockCmd struct {
 	Path   string `required:"" help:"Repeatable path to delete"`
 	Diff   bool   `help:"Show a unified diff of the canvas repeatables"`
 	DryRun bool   `help:"Resolve paths and print the operations without writing"`
+	Draft  bool   `help:"Write to the page draft instead of the live page"`
 }
 
 // Run executes pages delete-block.
@@ -28,8 +29,11 @@ func (c *PagesDeleteBlockCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	write := surgicalWriteFlags{Diff: c.Diff, DryRun: c.DryRun, Draft: c.Draft}
+	if err := session.applyWriteMode(write); err != nil {
+		return err
+	}
 	before := cloneMap(session.doc)
-	write := surgicalWriteFlags{Diff: c.Diff, DryRun: c.DryRun}
 
 	op, err := c.plan(session)
 	if err != nil {

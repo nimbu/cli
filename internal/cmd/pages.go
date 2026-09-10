@@ -12,6 +12,7 @@ type PagesCmd struct {
 	DeleteBlock PagesDeleteBlockCmd `cmd:"" name:"delete-block" help:"Delete a repeatable block"`
 	Move        PagesMoveCmd        `cmd:"" help:"Move a repeatable within its canvas"`
 	Batch       PagesBatchCmd       `cmd:"" help:"Apply multiple page operations from a file"`
+	Draft       PagesDraftCmd       `cmd:"" help:"Work on page drafts (edit and preview without publishing)"`
 	Items       PagesItemsCmd       `cmd:"" help:"Get a resolved items subtree"`
 	Schema      PagesSchemaCmd      `cmd:"" help:"Show the page template schema"`
 	Count       PagesCountCmd       `cmd:"" help:"Count pages"`

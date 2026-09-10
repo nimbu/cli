@@ -102,7 +102,7 @@ func Resolve(p Path, page map[string]any, schema *Schema) (Resolved, error) {
 		}
 		canvasDepth++
 		reps := orderedRepeatables(item)
-		picked, err := pickRepeatable(human, seg.Name, *seg.Selector, reps, schema)
+		picked, err := pickRepeatable(p, i, *seg.Selector, reps, schema)
 		if err != nil {
 			return Resolved{}, err
 		}
@@ -171,7 +171,9 @@ func positionOf(m map[string]any) float64 {
 	}
 }
 
-func pickRepeatable(human, canvas string, sel Selector, reps []repeatable, schema *Schema) (repeatable, error) {
+func pickRepeatable(p Path, canvasIndex int, sel Selector, reps []repeatable, schema *Schema) (repeatable, error) {
+	human := p.String()
+	canvas := p.Segments[canvasIndex].Name
 	sibs := refsOf(reps)
 	switch sel.Kind {
 	case SelID:
@@ -204,10 +206,27 @@ func pickRepeatable(human, canvas string, sel Selector, reps []repeatable, schem
 		return matches[0], nil
 	default:
 		if sel.Index < 0 || sel.Index >= len(reps) {
-			return repeatable{}, indexError(human, canvas, sibs, schema)
+			return repeatable{}, indexError(human, canvas, canvasHintPath(p, canvasIndex), sibs, schema)
 		}
 		return reps[sel.Index], nil
 	}
+}
+
+func canvasHintPath(p Path, canvasIndex int) string {
+	if canvasIndex < 0 || canvasIndex >= len(p.Segments) {
+		return ""
+	}
+	segs := make([]Segment, canvasIndex+1)
+	copy(segs, p.Segments[:canvasIndex+1])
+	segs[canvasIndex].Selector = nil
+	return quoteCLIPath(Path{Segments: segs}.String())
+}
+
+func quoteCLIPath(path string) string {
+	if strings.ContainsAny(path, " \t[]") {
+		return `"` + path + `"`
+	}
+	return path
 }
 
 func refsOf(reps []repeatable) []RepeatableRef {
@@ -226,11 +245,14 @@ func formatRepeatables(sibs []RepeatableRef) []string {
 	return out
 }
 
-func indexError(human, canvas string, sibs []RepeatableRef, schema *Schema) error {
+func indexError(human, canvas, insertPath string, sibs []RepeatableRef, schema *Schema) error {
 	cands := formatRepeatables(sibs)
 	var b strings.Builder
+	if insertPath == "" {
+		insertPath = canvas
+	}
 	if len(sibs) == 0 {
-		fmt.Fprintf(&b, "path %q: %s has no repeatables yet; add one with: nimbu pages insert --page <page> --path %s --slug <slug>", human, canvas, canvas)
+		fmt.Fprintf(&b, "path %q: %s has no repeatables yet; add one with: nimbu pages insert --page <page> --path %s --slug <slug>", human, canvas, insertPath)
 		if slugs := schema.BlockSlugs(canvas); len(slugs) > 0 {
 			fmt.Fprintf(&b, "; allowed slugs: %s", strings.Join(slugs, ", "))
 		}

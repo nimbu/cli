@@ -68,6 +68,7 @@ type detailedError struct {
 	code     canonicalErrorCode
 	exitCode int
 	details  map[string]any
+	hint     string
 }
 
 func (e *detailedError) Error() string {
@@ -86,6 +87,10 @@ func (e *detailedError) Unwrap() error {
 
 func newDetailedError(err error, code canonicalErrorCode, exitCode int, details map[string]any) error {
 	return &detailedError{err: err, code: code, exitCode: exitCode, details: details}
+}
+
+func newHintedError(err error, code canonicalErrorCode, exitCode int, hint string) error {
+	return &detailedError{err: err, code: code, exitCode: exitCode, hint: hint}
 }
 
 func pathResolveError(err error) error {
@@ -156,6 +161,7 @@ func classifyError(err error) errorDescriptor {
 			desc.ExitCode = ExitUsage
 		}
 		desc.Details = detailed.details
+		desc.Hint = detailed.hint
 		return desc
 	}
 

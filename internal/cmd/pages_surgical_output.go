@@ -41,6 +41,9 @@ func printDryRun(ctx context.Context, ops []plannedOp) error {
 }
 
 func printSurgicalResult(ctx context.Context, session *surgicalSession, ops []plannedOp, result *api.BatchResult, before map[string]any, write surgicalWriteFlags, extraHuman string) error {
+	if write.Draft {
+		return printDraftSurgicalResult(ctx, session, ops, result, before, write, extraHuman)
+	}
 	mode := output.FromContext(ctx)
 	diffs, err := computeSurgicalDiffs(ops, before, session.doc, result)
 	if err != nil {
@@ -66,6 +69,64 @@ func printSurgicalResult(ctx context.Context, session *surgicalSession, ops []pl
 		return printSurgicalDiffs(ctx, diffs)
 	}
 	return nil
+}
+
+func printDraftSurgicalResult(ctx context.Context, session *surgicalSession, ops []plannedOp, result *api.BatchResult, before map[string]any, write surgicalWriteFlags, extraHuman string) error {
+	mode := output.FromContext(ctx)
+	diffOK := session.draftConverted
+	var diffs []surgicalDiffEntry
+	if diffOK {
+		var err error
+		diffs, err = computeSurgicalDiffs(ops, before, session.doc, result)
+		if err != nil {
+			return err
+		}
+	}
+	if mode.JSON {
+		payload := map[string]any{
+			"results": result.Results,
+			"draft":   draftJSONMeta(session),
+		}
+		if write.Diff && diffOK {
+			payload["diff"] = diffs
+		}
+		return output.JSON(ctx, payload)
+	}
+	writeBatchResultLines(output.WriterFromContext(ctx).Out, ops, result.Results)
+	if extraHuman != "" {
+		if _, err := output.Fprintln(ctx, extraHuman); err != nil {
+			return err
+		}
+	}
+	if _, err := output.Fprintf(ctx, "Updated draft of %s (draft %s); preview: nimbu pages draft preview-url --page %s\n", session.fullpath, draftID(session), session.fullpath); err != nil {
+		return err
+	}
+	if write.Diff && !diffOK {
+		_, err := output.Fprintln(ctx, "(diff unavailable for drafts)")
+		return err
+	}
+	if write.Diff {
+		return printSurgicalDiffs(ctx, diffs)
+	}
+	return nil
+}
+
+func draftJSONMeta(session *surgicalSession) map[string]any {
+	meta := map[string]any{
+		"id":      draftID(session),
+		"page_id": session.pageID,
+	}
+	if session.draft != nil && session.draft.UpdatedAt != "" {
+		meta["updated_at"] = session.draft.UpdatedAt
+	}
+	return meta
+}
+
+func draftID(session *surgicalSession) string {
+	if session != nil && session.draft != nil {
+		return session.draft.ID
+	}
+	return ""
 }
 
 func writeBatchResultLines(w io.Writer, ops []plannedOp, results []api.BatchOpResult) {

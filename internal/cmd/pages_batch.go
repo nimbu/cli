@@ -17,6 +17,7 @@ type PagesBatchCmd struct {
 	Locale string `help:"Content locale for localized fields"`
 	Diff   bool   `help:"Show a unified diff of each changed subtree"`
 	DryRun bool   `help:"Resolve paths and print the operations without writing"`
+	Draft  bool   `help:"Write to the page draft instead of the live page"`
 }
 
 // Run executes pages batch.
@@ -29,8 +30,11 @@ func (c *PagesBatchCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	write := surgicalWriteFlags{Locale: c.Locale, Diff: c.Diff, DryRun: c.DryRun, Draft: c.Draft}
+	if err := session.applyWriteMode(write); err != nil {
+		return err
+	}
 	before := cloneMap(session.doc)
-	write := surgicalWriteFlags{Locale: c.Locale, Diff: c.Diff, DryRun: c.DryRun}
 
 	ops, err := c.plan(session)
 	if err != nil {
@@ -89,6 +93,9 @@ func (c *PagesBatchCmd) plan(session *surgicalSession) ([]plannedOp, error) {
 }
 
 func (c *PagesBatchCmd) post(session *surgicalSession, ops []plannedOp) (*api.BatchResult, error) {
+	if session.draftMode {
+		return session.postBatch(ops)
+	}
 	batch := make([]api.BatchOperation, len(ops))
 	for i, op := range ops {
 		batch[i] = op.Op

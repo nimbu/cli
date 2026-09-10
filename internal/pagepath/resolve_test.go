@@ -252,6 +252,8 @@ func TestResolveErrorFormats(t *testing.T) {
 
 	const emptyCanvasWithSchema = emptyCanvasNoSchema + `; allowed slugs: hero_stage, proof_strip, case_cards`
 
+	const emptyNestedCanvas = `path "Blokken[0].Photos[0]": Photos has no repeatables yet; add one with: nimbu pages insert --page <page> --path "Blokken[0].Photos" --slug <slug>`
+
 	tests := []struct {
 		name       string
 		input      string
@@ -281,6 +283,13 @@ func TestResolveErrorFormats(t *testing.T) {
 			input: "Blokken[0].Title",
 			page:  emptyCanvasPage(),
 			want:  emptyCanvasNoSchema,
+			kind:  ResolveKindIndex,
+		},
+		{
+			name:  "empty nested canvas uses full human path",
+			input: "Blokken[0].Photos[0]",
+			page:  emptyNestedCanvasPage(),
+			want:  emptyNestedCanvas,
 			kind:  ResolveKindIndex,
 		},
 	}
@@ -376,6 +385,28 @@ func emptyCanvasPage() map[string]any {
 			"Blokken": map[string]any{
 				"type":        "canvas",
 				"repeatables": []any{},
+			},
+		},
+	}
+}
+
+func emptyNestedCanvasPage() map[string]any {
+	return map[string]any{
+		"items": map[string]any{
+			"Blokken": map[string]any{
+				"type": "canvas",
+				"repeatables": []any{
+					map[string]any{
+						"id":   "000000000000000000000001",
+						"slug": "hero_stage",
+						"items": map[string]any{
+							"Photos": map[string]any{
+								"type":        "canvas",
+								"repeatables": []any{},
+							},
+						},
+					},
+				},
 			},
 		},
 	}
