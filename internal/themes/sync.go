@@ -47,7 +47,8 @@ func run(ctx context.Context, client *api.Client, cfg Config, opts Options, mode
 		return result, err
 	}
 
-	if !opts.NoDeps {
+	expandDeps := hasOnlySelectors(opts) && !opts.NoDeps
+	if expandDeps {
 		expanded, added, missing, expandErr := expandUploadsWithLocalDependencies(uploads, allLocal)
 		if expandErr != nil {
 			return result, expandErr
@@ -62,10 +63,10 @@ func run(ctx context.Context, client *api.Client, cfg Config, opts Options, mode
 	if err != nil {
 		return result, err
 	}
-	if opts.NoDeps {
-		result.Warnings = append(result.Warnings, dependencyWarnings...)
-	} else {
+	if expandDeps {
 		result.Warnings = append(result.Warnings, dropTransferSetWarnings(dependencyWarnings)...)
+	} else {
+		result.Warnings = append(result.Warnings, dependencyWarnings...)
 	}
 	result.Deleted = toActions(deletes)
 	categories := uploadCategoriesForOrderedResources(orderedUploads)
