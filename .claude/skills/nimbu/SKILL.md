@@ -338,7 +338,7 @@ A 409 `draft_base_changed` means the live page moved after the draft was based o
 
 - Always pass `--site` (or set `NIMBU_SITE`) in subagent briefs.
 - Run `nimbu commands --json` once to learn the live flag contract.
-- `security_mechanism`: `none` public, `humans` captcha/human check, `customers` login required (`pages create`/`update --help`).
+- `security_mechanism` (`none|humans|customers`): `none` is public; `customers` requires a logged-in customer; `humans` is the intermediate access level. Set it explicitly instead of guessing what the site default is; `pages get --json` shows the current value.
 - FileRef write shapes: [pages-menus-content.md](references/pages-menus-content.md) table. Do not repeat it.
 - Push the theme before content that uses new editables: `nimbu themes push --only templates/<t>.liquid --dry-run`, then without `--dry-run`.
 - Prefer `--dry-run` / `--diff` before writes. Surgical `--dry-run` prints resolved ops; `pages update --dry-run` prints the merged body.
@@ -460,8 +460,9 @@ Consent config copy itself does not require `--force`.
 ### Set up local development
 
 ```bash
-nimbu init
-nimbu server --draft about/team
+nimbu init                        # Bootstrap nimbu.yml + theme structure
+nimbu server                      # Start proxy + child dev server
+nimbu server --draft about/team   # Same, rendering that page's draft
 ```
 
 See [references/themes-and-local-dev.md](references/themes-and-local-dev.md).
