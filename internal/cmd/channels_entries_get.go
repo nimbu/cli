@@ -12,9 +12,9 @@ import (
 
 // ChannelEntriesGetCmd gets an entry by ID or slug.
 type ChannelEntriesGetCmd struct {
-	QueryFlags `embed:""`
-	Channel    string `required:"" help:"Channel ID or slug"`
-	Entry      string `required:"" help:"Entry ID or slug"`
+	Channel string `required:"" help:"Channel ID or slug"`
+	Entry   string `required:"" help:"Entry ID or slug"`
+	Locale  string `help:"Content locale for this read. Reads are per-locale (one GET per locale; the API returns no translations map for entries). Non-localized fields ignore --locale."`
 }
 
 // Run executes the get command.

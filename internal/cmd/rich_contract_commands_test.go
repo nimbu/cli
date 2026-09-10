@@ -522,9 +522,9 @@ func TestChannelEntriesGetUsesContentLocaleAndPreservesCustomFields(t *testing.T
 
 	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
 	cmd := &ChannelEntriesGetCmd{
-		QueryFlags: QueryFlags{Locale: "en"},
-		Channel:    "project_approaches",
-		Entry:      "start",
+		Channel: "project_approaches",
+		Entry:   "start",
+		Locale:  "en",
 	}
 	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
 		t.Fatalf("run entries get: %v", err)
@@ -562,9 +562,9 @@ func TestChannelEntriesGetFallsBackToSlugLookupWithContentLocale(t *testing.T) {
 
 	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
 	cmd := &ChannelEntriesGetCmd{
-		QueryFlags: QueryFlags{Locale: "en"},
-		Channel:    "project_approaches",
-		Entry:      "start",
+		Channel: "project_approaches",
+		Entry:   "start",
+		Locale:  "en",
 	}
 	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
 		t.Fatalf("run entries get: %v", err)

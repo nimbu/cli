@@ -240,7 +240,7 @@ func TestLocalizedContentCommandsUseContentLocale(t *testing.T) {
 		{
 			name: "channel entries get", path: "/channels/news/entries/hello", response: `{"id":"entry"}`,
 			run: func(ctx context.Context) error {
-				return (&ChannelEntriesGetCmd{QueryFlags: QueryFlags{Locale: locale}, Channel: "news", Entry: "hello"}).Run(ctx, flags)
+				return (&ChannelEntriesGetCmd{Channel: "news", Entry: "hello", Locale: locale}).Run(ctx, flags)
 			},
 		},
 		{
