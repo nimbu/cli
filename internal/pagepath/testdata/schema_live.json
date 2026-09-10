@@ -1,0 +1,84 @@
+{
+  "template": {
+    "id": "000000000000000000000001",
+    "name": "page.liquid"
+  },
+  "available_blocks": {
+    "Blokken": [
+      {
+        "slug": "header_full",
+        "label": "Header - Big",
+        "fields": [
+          {
+            "slug": "Title",
+            "label": "Title",
+            "type": "field"
+          }
+        ]
+      },
+      {
+        "slug": "hero_stage",
+        "label": "Header - Hero Stage",
+        "fields": [
+          {
+            "slug": "Title",
+            "label": "Title",
+            "type": "text"
+          },
+          {
+            "slug": "Subtext",
+            "label": "Subtext",
+            "type": "text"
+          },
+          {
+            "slug": "Photos",
+            "label": "Photos",
+            "type": "canvas",
+            "available_blocks": [
+              {
+                "slug": "photo",
+                "label": "Photo",
+                "fields": [
+                  {
+                    "slug": "Image",
+                    "label": "Image",
+                    "type": "file"
+                  },
+                  {
+                    "slug": "Alt",
+                    "label": "Alt",
+                    "type": "field"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "slug": "proof_strip",
+        "label": "Proof strip (logo's + cijfers)",
+        "fields": [
+          {
+            "slug": "Title",
+            "label": "Title",
+            "type": "field"
+          },
+          {
+            "slug": "Subtext",
+            "label": "Subtext",
+            "type": "field"
+          }
+        ]
+      }
+    ]
+  },
+  "select_options": {},
+  "current_structure": {
+    "Blokken": [
+      "header_full",
+      "hero_stage",
+      "proof_strip"
+    ]
+  }
+}

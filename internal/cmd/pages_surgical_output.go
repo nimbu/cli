@@ -9,6 +9,7 @@ import (
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
+	"github.com/nimbu/cli/internal/pagepath"
 )
 
 type surgicalJSONResult struct {
@@ -73,7 +74,7 @@ func writeBatchResultLines(w io.Writer, ops []plannedOp, results []api.BatchOpRe
 		if i < len(ops) {
 			opName = ops[i].Op.Op
 		}
-		line := fmt.Sprintf("%-5s %-6s %s", result.Status, opName, result.Path)
+		line := fmt.Sprintf("%-5s %-6s %s", result.Status, opName, displayRawPath(result.Path))
 		if result.Warning != "" {
 			line += "  warning: " + result.Warning
 		}
@@ -82,6 +83,24 @@ func writeBatchResultLines(w io.Writer, ops []plannedOp, results []api.BatchOpRe
 		}
 		_, _ = fmt.Fprintln(w, line)
 	}
+}
+
+func displayRawPath(raw string) string {
+	if raw == "" {
+		return raw
+	}
+	parts := strings.Split(raw, "/")
+	for i, part := range parts {
+		if part == "" || part == "items" || part == "repeatables" {
+			continue
+		}
+		decoded, err := pagepath.UnescapeName(part)
+		if err != nil {
+			continue
+		}
+		parts[i] = decoded
+	}
+	return strings.Join(parts, "/")
 }
 
 func shortETag(etag string) string {

@@ -90,13 +90,29 @@ func surgicalSchemaJSON() string {
 }
 
 type surgicalServer struct {
-	gets     int
-	posts    int
-	lastReq  *http.Request
-	lastBody map[string]any
-	ifMatch  []string
-	queries  []string
-	batchFn  func(http.ResponseWriter, *http.Request, int)
+	gets       int
+	posts      int
+	lastReq    *http.Request
+	lastBody   map[string]any
+	ifMatch    []string
+	queries    []string
+	pageJSON   string
+	schemaJSON string
+	batchFn    func(http.ResponseWriter, *http.Request, int)
+}
+
+func (s *surgicalServer) pageBody() string {
+	if s.pageJSON != "" {
+		return s.pageJSON
+	}
+	return surgicalPageJSON()
+}
+
+func (s *surgicalServer) schemaBody() string {
+	if s.schemaJSON != "" {
+		return s.schemaJSON
+	}
+	return surgicalSchemaJSON()
 }
 
 func (s *surgicalServer) start(t *testing.T) *httptest.Server {
@@ -105,9 +121,9 @@ func (s *surgicalServer) start(t *testing.T) *httptest.Server {
 		switch {
 		case r.Method == http.MethodGet && (r.URL.Path == "/pages/about" || r.URL.Path == "/pages/"+surgicalPageID):
 			s.gets++
-			_, _ = w.Write([]byte(surgicalPageJSON()))
+			_, _ = w.Write([]byte(s.pageBody()))
 		case r.Method == http.MethodGet && r.URL.Path == "/pages/"+surgicalPageID+"/schema":
-			_, _ = w.Write([]byte(surgicalSchemaJSON()))
+			_, _ = w.Write([]byte(s.schemaBody()))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/pages/"+surgicalPageID+"/items/"):
 			_, _ = w.Write([]byte(`{"path":"/items/Blokken/repeatables/` + surgicalBlockID + `/items/Title","parent_path":"/items/Blokken/repeatables/` + surgicalBlockID + `","position":1,"siblings_count":3,"type":"item","data":{"type":"text","content":"Hero"}}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/pages/"+surgicalPageID+"/batch":
@@ -337,6 +353,52 @@ func TestPagesSetDryRunPrintsOperationsAndSkipsPOST(t *testing.T) {
 	}
 	if ops[0].(map[string]any)["path"] != "/items/Blokken/repeatables/"+surgicalBlockID+"/items/Title" {
 		t.Fatalf("dry-run op = %#v", ops[0])
+	}
+}
+
+func TestPagesSetTitleDiffShowsPageFieldChange(t *testing.T) {
+	const beforeTitle = "CLI surgical test v2"
+	const afterTitle = "CLI surgical test v3"
+	srvState := &surgicalServer{
+		pageJSON: strings.Replace(surgicalPageJSON(), `"title":"About"`, `"title":"`+beforeTitle+`"`, 1),
+	}
+	srvState.batchFn = func(w http.ResponseWriter, _ *http.Request, _ int) {
+		page := strings.Replace(surgicalPageJSON(), `"title":"About"`, `"title":"`+afterTitle+`"`, 1)
+		_, _ = w.Write([]byte(`{
+			"results":[{"index":0,"status":"ok","path":"/title"}],
+			"etag":"newetag12",
+			"updated_at":"2026-09-10T15:00:00.000Z",
+			"page":` + page + `
+		}`))
+	}
+	srv := srvState.start(t)
+	defer srv.Close()
+
+	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{})
+	cmd := &PagesSetCmd{Page: "about", Path: "title", Value: afterTitle, Diff: true}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got := out.String()
+	if strings.Contains(got, "(no change)") {
+		t.Fatalf("diff reported no change:\n%s", got)
+	}
+	if !strings.Contains(got, `"`+beforeTitle+`"`) || !strings.Contains(got, `"`+afterTitle+`"`) {
+		t.Fatalf("diff missing title strings:\n%s", got)
+	}
+}
+
+func TestWriteBatchResultLinesUnescapesPath(t *testing.T) {
+	var buf strings.Builder
+	writeBatchResultLines(&buf, []plannedOp{{Op: api.BatchOperation{Op: "set"}}}, []api.BatchOpResult{
+		{Status: "ok", Path: "/items/Navigation%20on%20dark%20background"},
+	})
+	got := buf.String()
+	if !strings.Contains(got, "/items/Navigation on dark background") {
+		t.Fatalf("output = %q", got)
+	}
+	if strings.Contains(got, "%20") {
+		t.Fatalf("path still escaped: %q", got)
 	}
 }
 

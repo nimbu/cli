@@ -3,6 +3,8 @@ package pagepath
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"sort"
 )
 
 // Schema mirrors GET /pages/{id}/schema.
@@ -30,12 +32,51 @@ type BlockDef struct {
 
 // FieldDef is one editable inside a block definition.
 type FieldDef struct {
-	Slug            string                `json:"slug"`
-	Label           string                `json:"label"`
-	Type            string                `json:"type"`
-	Options         []Option              `json:"options"`
-	Reference       string                `json:"reference"`
-	AvailableBlocks map[string][]BlockDef `json:"available_blocks,omitempty"`
+	Slug            string       `json:"slug"`
+	Label           string       `json:"label"`
+	Type            string       `json:"type"`
+	Options         []Option     `json:"options"`
+	Reference       string       `json:"reference"`
+	AvailableBlocks NestedBlocks `json:"available_blocks,omitempty"`
+}
+
+// NestedBlocks is available_blocks on a canvas field: a live array, or a keyed object.
+type NestedBlocks []BlockDef
+
+// UnmarshalJSON accepts both `[{block}, ...]` and `{"CanvasName":[{block}, ...]}`.
+func (n *NestedBlocks) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		*n = nil
+		return nil
+	}
+	switch trimmed[0] {
+	case '[':
+		var blocks []BlockDef
+		if err := json.Unmarshal(trimmed, &blocks); err != nil {
+			return err
+		}
+		*n = blocks
+		return nil
+	case '{':
+		var keyed map[string][]BlockDef
+		if err := json.Unmarshal(trimmed, &keyed); err != nil {
+			return err
+		}
+		keys := make([]string, 0, len(keyed))
+		for key := range keyed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		var out []BlockDef
+		for _, key := range keys {
+			out = append(out, keyed[key]...)
+		}
+		*n = out
+		return nil
+	default:
+		return fmt.Errorf("available_blocks: expected array or object")
+	}
 }
 
 // Option is a select/radio choice.
@@ -66,25 +107,33 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 			s.Template = Template{}
 		}
 	}
-	s.AvailableBlocks = objectOrEmpty[map[string][]BlockDef](raw["available_blocks"])
-	s.SelectOptions = objectOrEmpty[map[string][]Option](raw["select_options"])
+	blocks, err := decodeObjectOrEmpty[map[string][]BlockDef](raw["available_blocks"])
+	if err != nil {
+		return err
+	}
+	s.AvailableBlocks = blocks
+	opts, err := decodeObjectOrEmpty[map[string][]Option](raw["select_options"])
+	if err != nil {
+		return err
+	}
+	s.SelectOptions = opts
 	if cs, ok := raw["current_structure"]; ok {
 		s.CurrentStructure = bytes.Clone(cs)
 	}
 	return nil
 }
 
-func objectOrEmpty[T any](raw json.RawMessage) T {
+func decodeObjectOrEmpty[T any](raw json.RawMessage) (T, error) {
 	var zero T
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
-		return zero
+		return zero, nil
 	}
 	var out T
 	if err := json.Unmarshal(trimmed, &out); err != nil {
-		return zero
+		return zero, err
 	}
-	return out
+	return out, nil
 }
 
 // Blocks returns available block definitions for a canvas, in schema order.
@@ -161,10 +210,10 @@ func findFields(blocks []BlockDef, canvas, slug string) []FieldDef {
 			return fields
 		}
 		for _, field := range block.Fields {
-			if fields := fieldsInBlocks(field.AvailableBlocks[canvas], slug); fields != nil {
+			if fields := fieldsInBlocks(field.AvailableBlocks, slug); fields != nil {
 				return fields
 			}
-			if nested := findFields(blockDefs(field.AvailableBlocks), canvas, slug); nested != nil {
+			if nested := findFields(field.AvailableBlocks, canvas, slug); nested != nil {
 				return nested
 			}
 		}

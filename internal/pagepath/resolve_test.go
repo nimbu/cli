@@ -248,10 +248,15 @@ func TestResolveErrorFormats(t *testing.T) {
 
 	const depthErr = `path "Blokken[2].Photos[0].Nested[0].X": path exceeds two canvas levels`
 
+	const emptyCanvasNoSchema = `path "Blokken[0].Title": Blokken has no repeatables yet; add one with: nimbu pages insert --page <page> --path Blokken --slug <slug>`
+
+	const emptyCanvasWithSchema = emptyCanvasNoSchema + `; allowed slugs: hero_stage, proof_strip, case_cards`
+
 	tests := []struct {
 		name       string
 		input      string
 		schema     *Schema
+		page       map[string]any
 		want       string
 		kind       string
 		candidates int
@@ -263,6 +268,21 @@ func TestResolveErrorFormats(t *testing.T) {
 		{name: "ambiguous slug", input: "Blokken[slug=case_cards]", want: ambiguousSlug, kind: ResolveKindSlug, candidates: 3},
 		{name: "unknown id", input: "Blokken[id=abc]", want: missingID, kind: ResolveKindID, candidates: 5},
 		{name: "depth limit", input: "Blokken[2].Photos[0].Nested[0].X", want: depthErr, kind: ResolveKindDepth, candidates: 0},
+		{
+			name:   "empty canvas with schema",
+			input:  "Blokken[0].Title",
+			schema: schema,
+			page:   emptyCanvasPage(),
+			want:   emptyCanvasWithSchema,
+			kind:   ResolveKindIndex,
+		},
+		{
+			name:  "empty canvas without schema",
+			input: "Blokken[0].Title",
+			page:  emptyCanvasPage(),
+			want:  emptyCanvasNoSchema,
+			kind:  ResolveKindIndex,
+		},
 	}
 
 	for _, tt := range tests {
@@ -271,7 +291,11 @@ func TestResolveErrorFormats(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = Resolve(p, page, tt.schema)
+			doc := page
+			if tt.page != nil {
+				doc = tt.page
+			}
+			_, err = Resolve(p, doc, tt.schema)
 			if err == nil {
 				t.Fatal("expected resolve error")
 			}
@@ -344,6 +368,17 @@ func containsPlus(s string) bool {
 		}
 	}
 	return false
+}
+
+func emptyCanvasPage() map[string]any {
+	return map[string]any{
+		"items": map[string]any{
+			"Blokken": map[string]any{
+				"type":        "canvas",
+				"repeatables": []any{},
+			},
+		},
+	}
 }
 
 func loadPage(t *testing.T) map[string]any {

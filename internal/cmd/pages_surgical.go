@@ -21,6 +21,7 @@ type surgicalWriteFlags struct {
 
 type plannedOp struct {
 	Human   string
+	Kind    pagepath.Kind
 	Op      api.BatchOperation
 	rebuild func(*surgicalSession) (api.BatchOperation, error)
 }

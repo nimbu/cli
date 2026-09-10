@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -97,6 +99,26 @@ func TestPagesInsertBadSlugListsAllowed(t *testing.T) {
 		t.Fatal("expected slug error")
 	}
 	if !strings.Contains(err.Error(), "hero_stage") || !strings.Contains(err.Error(), "proof_strip") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestPagesInsertBadSlugListsAllowedFromLiveSchema(t *testing.T) {
+	live, err := os.ReadFile(filepath.Join("..", "pagepath", "testdata", "schema_live.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srvState := &surgicalServer{schemaJSON: string(live)}
+	srv := srvState.start(t)
+	defer srv.Close()
+	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{})
+	cmd := &PagesInsertCmd{Page: "about", Path: "Blokken", Slug: "nope"}
+	err = cmd.Run(ctx, &RootFlags{Site: "demo"})
+	if err == nil {
+		t.Fatal("expected slug error")
+	}
+	got := err.Error()
+	if !strings.Contains(got, "hero_stage") || !strings.Contains(got, "allowed:") {
 		t.Fatalf("error = %v", err)
 	}
 }

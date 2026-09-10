@@ -10,6 +10,7 @@ import (
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
+	"github.com/nimbu/cli/internal/pagepath"
 )
 
 type surgicalDiffEntry struct {
@@ -20,10 +21,14 @@ type surgicalDiffEntry struct {
 }
 
 func computeSurgicalDiffs(ops []plannedOp, before, after map[string]any, result *api.BatchResult) ([]surgicalDiffEntry, error) {
-	if after == nil && result != nil && len(result.Page) > 0 {
-		if err := json.Unmarshal(result.Page, &after); err != nil {
+	if result != nil && len(result.Page) > 0 {
+		var page map[string]any
+		if err := json.Unmarshal(result.Page, &page); err != nil {
 			return nil, fmt.Errorf("decode result page: %w", err)
 		}
+		after = page
+	} else if after == nil {
+		after = map[string]any{}
 	}
 	var diffs []surgicalDiffEntry
 	seen := map[string]struct{}{}
@@ -94,6 +99,15 @@ func diffValue(doc map[string]any, op plannedOp, scope string, result *api.Batch
 		}
 		return projected
 	default:
+		if op.Kind == pagepath.KindField || isPageFieldRaw(scope) {
+			field := strings.TrimPrefix(scope, "/")
+			if field == "" || strings.Contains(field, "/") {
+				field = strings.TrimPrefix(op.Op.Path, "/")
+			}
+			if field != "" && !strings.Contains(field, "/") {
+				return doc[field]
+			}
+		}
 		node, _ := subtreeAt(doc, scope)
 		return stripNoise(node)
 	}

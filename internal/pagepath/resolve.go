@@ -102,7 +102,7 @@ func Resolve(p Path, page map[string]any, schema *Schema) (Resolved, error) {
 		}
 		canvasDepth++
 		reps := orderedRepeatables(item)
-		picked, err := pickRepeatable(human, seg.Name, *seg.Selector, reps)
+		picked, err := pickRepeatable(human, seg.Name, *seg.Selector, reps, schema)
 		if err != nil {
 			return Resolved{}, err
 		}
@@ -171,7 +171,7 @@ func positionOf(m map[string]any) float64 {
 	}
 }
 
-func pickRepeatable(human, canvas string, sel Selector, reps []repeatable) (repeatable, error) {
+func pickRepeatable(human, canvas string, sel Selector, reps []repeatable, schema *Schema) (repeatable, error) {
 	sibs := refsOf(reps)
 	switch sel.Kind {
 	case SelID:
@@ -204,7 +204,7 @@ func pickRepeatable(human, canvas string, sel Selector, reps []repeatable) (repe
 		return matches[0], nil
 	default:
 		if sel.Index < 0 || sel.Index >= len(reps) {
-			return repeatable{}, indexError(human, canvas, sibs)
+			return repeatable{}, indexError(human, canvas, sibs, schema)
 		}
 		return reps[sel.Index], nil
 	}
@@ -226,18 +226,21 @@ func formatRepeatables(sibs []RepeatableRef) []string {
 	return out
 }
 
-func indexError(human, canvas string, sibs []RepeatableRef) error {
+func indexError(human, canvas string, sibs []RepeatableRef, schema *Schema) error {
 	cands := formatRepeatables(sibs)
 	var b strings.Builder
 	if len(sibs) == 0 {
-		fmt.Fprintf(&b, "path %q: %s has 0 repeatables:", human, canvas)
+		fmt.Fprintf(&b, "path %q: %s has no repeatables yet; add one with: nimbu pages insert --page <page> --path %s --slug <slug>", human, canvas, canvas)
+		if slugs := schema.BlockSlugs(canvas); len(slugs) > 0 {
+			fmt.Fprintf(&b, "; allowed slugs: %s", strings.Join(slugs, ", "))
+		}
 	} else {
 		fmt.Fprintf(&b, "path %q: %s has %d repeatables (indexes 0-%d):", human, canvas, len(sibs), len(sibs)-1)
-	}
-	for _, line := range cands {
-		b.WriteByte('\n')
-		b.WriteString("  ")
-		b.WriteString(line)
+		for _, line := range cands {
+			b.WriteByte('\n')
+			b.WriteString("  ")
+			b.WriteString(line)
+		}
 	}
 	return &ResolveError{Path: human, Kind: ResolveKindIndex, Candidates: cands, msg: b.String()}
 }

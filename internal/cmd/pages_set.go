@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/nimbu/cli/internal/api"
@@ -33,13 +34,13 @@ func (c *PagesSetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	before := cloneMap(session.doc)
 	write := surgicalWriteFlags{Locale: c.Locale, Diff: c.Diff, DryRun: c.DryRun}
 
 	op, err := c.plan(session)
 	if err != nil {
 		return err
 	}
+	before := cloneMap(session.doc)
 	result, err := session.runBatch([]plannedOp{op}, write)
 	if err != nil || write.DryRun {
 		return err
@@ -48,11 +49,13 @@ func (c *PagesSetCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 func (c *PagesSetCmd) plan(session *surgicalSession) (plannedOp, error) {
+	var kind pagepath.Kind
 	build := func(s *surgicalSession) (api.BatchOperation, error) {
 		resolved, err := s.resolve(c.Path)
 		if err != nil {
 			return api.BatchOperation{}, err
 		}
+		kind = resolved.Kind
 		value, err := c.valueFor(resolved)
 		if err != nil {
 			return api.BatchOperation{}, err
@@ -63,7 +66,7 @@ func (c *PagesSetCmd) plan(session *surgicalSession) (plannedOp, error) {
 	if err != nil {
 		return plannedOp{}, err
 	}
-	return plannedOp{Human: c.Path, Op: op, rebuild: build}, nil
+	return plannedOp{Human: c.Path, Kind: kind, Op: op, rebuild: build}, nil
 }
 
 func (c *PagesSetCmd) valueFor(resolved pagepath.Resolved) (any, error) {
@@ -84,9 +87,17 @@ func cloneMap(in map[string]any) map[string]any {
 	if in == nil {
 		return nil
 	}
-	out := make(map[string]any, len(in))
-	for key, value := range in {
-		out[key] = value
+	data, err := json.Marshal(in)
+	if err != nil {
+		out := make(map[string]any, len(in))
+		for key, value := range in {
+			out[key] = value
+		}
+		return out
+	}
+	var out map[string]any
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil
 	}
 	return out
 }
