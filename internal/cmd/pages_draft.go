@@ -74,7 +74,7 @@ func (c *PagesDraftSaveCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	body := api.PageDocument(raw)
-	if err := api.ExpandPageAttachmentPaths(body); err != nil {
+	if err := api.ExpandPageAttachmentPathsWithOptions(body, pageAttachmentFileRefOptions(ctx, session.client, api.PageAttachmentExpansionOptions{})); err != nil {
 		return err
 	}
 	api.NormalizePageDocumentForWrite(body)

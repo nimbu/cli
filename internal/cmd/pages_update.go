@@ -83,11 +83,11 @@ func (c *PagesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		body = api.PageDocument(rawBody)
 	}
 
-	if err := api.ExpandPageAttachmentPathsWithOptions(body, api.PageAttachmentExpansionOptions{
+	if err := api.ExpandPageAttachmentPathsWithOptions(body, pageAttachmentFileRefOptions(ctx, client, api.PageAttachmentExpansionOptions{
 		AllowEmptyFile:      c.AllowEmptyFile,
 		DropEmptyFile:       len(c.Assignments) > 0,
 		DropReadOnlyFileURL: !c.Replace,
-	}); err != nil {
+	})); err != nil {
 		return err
 	}
 

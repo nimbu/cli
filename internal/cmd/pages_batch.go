@@ -81,6 +81,13 @@ func (c *PagesBatchCmd) plan(session *surgicalSession) ([]plannedOp, error) {
 				}
 				next.Path = resolved.RawPath
 			}
+			if next.Op == "set" {
+				expanded, err := expandSetFileValue(s, next.Value)
+				if err != nil {
+					return api.BatchOperation{}, err
+				}
+				next.Value = expanded
+			}
 			return next, nil
 		}
 		built, err := build(session)

@@ -43,6 +43,7 @@ type surgicalSession struct {
 	draftMode      bool
 	draft          *api.PageDraft
 	draftConverted bool
+	fileRef        *api.FileRefNormalizer
 }
 
 func openSurgicalPage(ctx context.Context, flags *RootFlags, page, locale string) (*surgicalSession, error) {

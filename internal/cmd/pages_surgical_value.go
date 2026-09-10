@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"mime"
@@ -9,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/output"
 	"github.com/nimbu/cli/internal/pagepath"
 )
 
@@ -67,7 +70,33 @@ func detectFileContentType(filename string, data []byte) string {
 	return http.DetectContentType(data)
 }
 
-func expandInsertFileValue(raw any) (any, error) {
+func (s *surgicalSession) fileRefs() *api.FileRefNormalizer {
+	if s == nil {
+		return &api.FileRefNormalizer{}
+	}
+	if s.fileRef == nil {
+		s.fileRef = &api.FileRefNormalizer{Client: s.client}
+	}
+	return s.fileRef
+}
+
+func (s *surgicalSession) warnFileRef(warning string) {
+	if warning == "" || s == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(output.WriterFromContext(s.ctx).Err, "warning: %s\n", warning)
+}
+
+func pageAttachmentFileRefOptions(ctx context.Context, client *api.Client, extra api.PageAttachmentExpansionOptions) api.PageAttachmentExpansionOptions {
+	extra.Context = ctx
+	extra.FileRef = &api.FileRefNormalizer{Client: client}
+	extra.Warn = func(msg string) {
+		_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Err, "warning: %s\n", msg)
+	}
+	return extra
+}
+
+func expandInsertFileValue(session *surgicalSession, raw any) (any, error) {
 	m, ok := raw.(map[string]any)
 	if !ok {
 		return raw, nil
@@ -75,17 +104,38 @@ func expandInsertFileValue(raw any) (any, error) {
 	if path := stringAny(m["attachment_path"]); path != "" {
 		return encodeLocalFileValue(path)
 	}
-	source := stringAny(m["source"])
+	source := firstNonBlank(stringAny(m["source"]), stringAny(m["attachment_url"]), stringAny(m["url"]))
 	if source == "" {
-		source = stringAny(m["attachment_url"])
+		return m, nil
 	}
-	if source != "" {
-		if strings.HasPrefix(source, "nimbu://") {
-			return map[string]any{"__type": "FileRef", "source": source}, nil
-		}
+	if strings.HasPrefix(source, "nimbu://") {
+		return map[string]any{"__type": "FileRef", "source": source}, nil
+	}
+	if session == nil {
 		return map[string]any{"url": source}, nil
 	}
-	return m, nil
+	payload, warning, err := session.fileRefs().NormalizeURL(session.ctx, source)
+	if err != nil {
+		return nil, err
+	}
+	session.warnFileRef(warning)
+	return payload, nil
+}
+
+func expandSetFileValue(session *surgicalSession, raw any) (any, error) {
+	if !isFileEditablePayload(raw) {
+		return raw, nil
+	}
+	return expandInsertFileValue(session, raw)
+}
+
+func firstNonBlank(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func isFileEditablePayload(v any) bool {

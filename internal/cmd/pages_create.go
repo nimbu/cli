@@ -35,6 +35,9 @@ func (c *PagesCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	if err := api.ExpandPageAttachmentPathsWithOptions(api.PageDocument(body), pageAttachmentFileRefOptions(ctx, client, api.PageAttachmentExpansionOptions{})); err != nil {
+		return err
+	}
 
 	var document api.Document[api.Page]
 	var opts []api.RequestOption

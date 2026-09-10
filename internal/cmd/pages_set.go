@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/pagepath"
@@ -60,7 +61,7 @@ func (c *PagesSetCmd) plan(session *surgicalSession) (plannedOp, error) {
 			return api.BatchOperation{}, err
 		}
 		kind = resolved.Kind
-		value, err := c.valueFor(resolved)
+		value, err := c.valueFor(s, resolved)
 		if err != nil {
 			return api.BatchOperation{}, err
 		}
@@ -73,18 +74,47 @@ func (c *PagesSetCmd) plan(session *surgicalSession) (plannedOp, error) {
 	return plannedOp{Human: c.Path, Kind: kind, Op: op, rebuild: build}, nil
 }
 
-func (c *PagesSetCmd) valueFor(resolved pagepath.Resolved) (any, error) {
+func (c *PagesSetCmd) valueFor(session *surgicalSession, resolved pagepath.Resolved) (any, error) {
 	switch {
 	case c.File != "":
-		return readJSONAnyInput(c.File)
+		raw, err := readJSONAnyInput(c.File)
+		if err != nil {
+			return nil, err
+		}
+		return expandSetFileValue(session, raw)
 	case c.FromFile != "":
 		if resolved.Type != "file" {
 			return nil, fmt.Errorf("--from-file requires a file editable, got %q", resolved.Type)
 		}
 		return encodeLocalFileValue(c.FromFile)
 	default:
+		if resolved.Type == "file" {
+			if value, ok, err := parseFileSetValue(c.Value); err != nil {
+				return nil, err
+			} else if ok {
+				return expandSetFileValue(session, value)
+			}
+		}
 		return coerceSetValue(resolved, c.Value)
 	}
+}
+
+func parseFileSetValue(raw string) (any, bool, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, false, nil
+	}
+	if strings.HasPrefix(trimmed, "{") {
+		var value any
+		if err := json.Unmarshal([]byte(trimmed), &value); err != nil {
+			return nil, false, fmt.Errorf("parse file value JSON: %w", err)
+		}
+		return value, true, nil
+	}
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") || strings.HasPrefix(trimmed, "nimbu://") {
+		return map[string]any{"attachment_url": trimmed}, true, nil
+	}
+	return nil, false, nil
 }
 
 func cloneMap(in map[string]any) map[string]any {

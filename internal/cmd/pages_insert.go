@@ -119,7 +119,7 @@ func (c *PagesInsertCmd) plan(session *surgicalSession) (insertPlan, error) {
 		return insertPlan{}, err
 	}
 
-	cleanItems, files, err := splitInsertFileItems(schema, canvas, slug, seeded)
+	cleanItems, files, err := splitInsertFileItems(session, schema, canvas, slug, seeded)
 	if err != nil {
 		return insertPlan{}, err
 	}
@@ -285,7 +285,7 @@ func insertAfter(resolved pagepath.Resolved, after string, position *int) (*api.
 	return &api.Anchor{Set: true, ID: id}, nil
 }
 
-func splitInsertFileItems(schema *pagepath.Schema, canvas, slug string, items map[string]any) (map[string]any, []plannedFileSet, error) {
+func splitInsertFileItems(session *surgicalSession, schema *pagepath.Schema, canvas, slug string, items map[string]any) (map[string]any, []plannedFileSet, error) {
 	if len(items) == 0 {
 		return map[string]any{}, nil, nil
 	}
@@ -293,7 +293,7 @@ func splitInsertFileItems(schema *pagepath.Schema, canvas, slug string, items ma
 	var files []plannedFileSet
 	for name, value := range items {
 		if value != nil && schema.FieldType(canvas, slug, name) == "file" && isFileEditablePayload(value) {
-			expanded, err := expandInsertFileValue(value)
+			expanded, err := expandInsertFileValue(session, value)
 			if err != nil {
 				return nil, nil, err
 			}
