@@ -60,9 +60,26 @@ The `--since` flag changes the git comparison ref. When combined with a category
 - `--build` -- run `sync.build.command` before collecting files
 - `--dry-run` -- print planned operations without executing
 - `--since <ref>` -- compare against this git ref instead of HEAD (e.g. `origin/main`); useful for pushing committed-but-not-pushed changes
-- `--only <path>[,<path>...]` -- push specific project-relative files; commas split multiple selectors and the flag is repeatable; bypasses git change detection; path must be inside a managed root. Note: `--since` is ignored when `--only` is set
+- `--only <path>[,<path>...]` -- push specific project-relative files; commas split multiple selectors and the flag is repeatable; bypasses git change detection; path must be inside a managed root. Note: `--since` is ignored when `--only` is set. Liquid snippet and layout dependencies of `--only` files are auto-added (stderr: `adding dependency X (referenced by Y)`). `--dry-run` lists those extras with a `(dependency)` marker
+- `--no-deps` -- do not auto-add Liquid snippet/layout dependencies of `--only` files
 - `--theme <id>` -- override theme from `nimbu.yml`
 - `--force` -- skip confirmation prompts (from global `--force`)
+
+### `--only` dependency auto-include
+
+When `--only` selects Liquid files, `themes push` and `themes sync` walk `{% include %}` (snippets) and `{% layout %}` tags and add missing local snippet and layout files to the transfer set. Each addition is logged on stderr:
+
+```
+adding dependency snippets/svg/a.liquid (referenced by templates/page.liquid)
+```
+
+`--dry-run` still prints the planned upload and suffixes auto-added files with ` (dependency)`:
+
+```
+[dry-run] upload snippets/svg/a.liquid (dependency)
+```
+
+Pass `--no-deps` to upload exactly the `--only` selectors. JSON output sets `"dependency": true` on auto-added uploads.
 
 ### Filter flags (push, sync, pull, copy)
 
@@ -119,10 +136,10 @@ sync:
 ## CRUD subcommands
 
 Each resource kind has `list`, `get`, `create`, `delete` subcommands:
-- `nimbu themes layouts {list,get,create,delete}`
-- `nimbu themes templates {list,get,create,delete}`
-- `nimbu themes snippets {list,get,create,delete}`
-- `nimbu themes assets {list,get,create,delete}`
+- `nimbu themes layouts {list,get,create,delete}` -- `get` accepts `--layout` as an alias for `--name`
+- `nimbu themes templates {list,get,create,delete}` -- `get` accepts `--template` as an alias for `--name`
+- `nimbu themes snippets {list,get,create,delete}` -- `get` accepts `--snippet` as an alias for `--name`
+- `nimbu themes assets {list,get,create,delete}` -- `get` accepts `--asset` as an alias for `--path`
 - `nimbu themes files {list,get,put,delete}` -- low-level theme file API (uses `put` instead of `create`)
 
 ## Local dev server
@@ -161,7 +178,13 @@ dev:
 5. Matching requests are rendered server-side by the Nimbu API using local liquid templates
 6. Non-matching requests are forwarded to the child dev server
 
-CLI flags (`--cmd`, `--proxy-port`, `--no-watch`, etc.) override nimbu.yml values.
+CLI flags (`--cmd`, `--proxy-port`, `--no-watch`, `--draft`, etc.) override nimbu.yml values.
+
+### Draft preview (`--draft`)
+
+`nimbu server --draft <page>` (repeatable) requests a draft preview token for each listed page at startup and injects `?preview=` on matching local URLs (the page fullpath, locale prefixes such as `/en/…`, and `translations.*.fullpath`). Child paths are not matched. The simulator already honours `?preview=<token>` when the browser URL carries it. Startup fails if page drafts are disabled or the page has no draft.
+
+Pair with `pages set --draft` / `pages draft preview-url` for a local QA loop; see [pages-menus-content.md](pages-menus-content.md).
 
 ## Cloud code (apps)
 

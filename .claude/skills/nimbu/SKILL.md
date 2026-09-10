@@ -6,7 +6,7 @@ description: >
   cloud code, and local dev server for Nimbu sites. Use when building,
   querying, migrating, or deploying Nimbu CMS content and themes.
 metadata:
-  version: "0.4.0"
+  version: "0.5.0"
 ---
 
 # Nimbu CLI
@@ -43,9 +43,9 @@ Commands that require a site resolve it in this order:
 1. `--site` flag
 2. `NIMBU_SITE` env var
 3. `default_site` in `~/.config/nimbu/config.json`
-4. `site` field in `nimbu.yml` (project directory)
+4. `site` in `nimbu.yml`, found by walking up from `NIMBU_PROJECT_DIR` (if set), then the current working directory, then the git top-level
 
-If none is found, the command fails with a clear error.
+If none is found, the command fails with a clear error. Always pass `--site` (or set `NIMBU_SITE`) in subagent briefs so resolution does not depend on CWD.
 
 ## Output Modes
 
@@ -87,12 +87,13 @@ Progress UI, applied-count lines, warnings, and the structured error envelope al
 
 ## Localized Content
 
-On pages, products, collections, blogs/posts, menus, notifications, channel
-entries, and shipping rates, `--locale` is sent as `content_locale`. Use it for
-locale-specific reads and writes:
+On pages, products, collections, blogs/posts, menus, notifications, and shipping
+rates, `--locale` is sent as `content_locale`. Use it for locale-specific reads
+and writes:
 
 ```bash
 nimbu pages get --page about --locale nl --json
+nimbu pages set --page about --path seo_title --locale nl "Nederlandse titel"
 nimbu pages update --page about --locale nl --file nl.json
 ```
 
@@ -102,7 +103,8 @@ recursively overlay the selected translation; missing translated fields fall
 back to the default-locale value. Canonically equivalent keys such as `nl_BE`
 and `nl-BE` match during display projection.
 
-Use a nested `translations` object to write several locales in one request:
+Use a nested `translations` object to write several locales in one
+`pages update --file` request:
 
 ```json
 {
@@ -113,9 +115,12 @@ Use a nested `translations` object to write several locales in one request:
 }
 ```
 
-For pages, prefer `--file`/stdin for this payload. A complete top-level map is
-also supported as `translations:=@translations.json`; arbitrary deep page edits
-remain file-only.
+A complete top-level map is also supported as `translations:=@translations.json`.
+
+**Channel entries differ:** they have no `translations` map. `--locale` is a
+per-locale read/write of top-level fields. See the Locales section in
+[references/channels-and-entries.md](references/channels-and-entries.md) — do
+not duplicate that contract here.
 
 ## Safety
 
@@ -125,8 +130,8 @@ Use these to constrain agent access:
 - `NIMBU_ENABLE_COMMANDS=channels,pages` — allowlist of permitted command groups
 - `NIMBU_NO_INPUT=1` — never prompt; fail instead (CI/agent mode)
 - `NIMBU_COMPLETION_DEBUG=1` — writes dynamic completion diagnostics to `completion-debug.log` in the Nimbu data directory
-- `--dry-run` — available on copy and sync commands; shows what would happen without writing
-- `--force` — required for delete commands; without it, deletes fail
+- `--dry-run` — surgical page verbs, `pages update`, `pages batch`, and copy/sync/theme commands; resolve or print without writing
+- `--force` — required for delete commands (including `pages delete-block` and `pages draft discard`)
 
 ## CLI Grammar
 
@@ -161,13 +166,10 @@ Most `create` and `update` commands accept inline assignments:
 
 Dot paths for nesting: `seo.title="My Page"`.
 
-`--file` and inline assignments are **mutually exclusive**.
+`--file` and inline assignments are **mutually exclusive**. `--file` accepts a path, `-` for stdin, a pipe, or process substitution (`--file <(echo '{"title":"Hi"}')`).
 
 ```bash
-# Inline
 nimbu products update --product sku-123 name="Wine Box" price:=29.9 seo.title="Gift box"
-
-# File payload
 nimbu pages update --page about --file payload.json
 ```
 
@@ -180,7 +182,7 @@ nimbu pages update --page about --file payload.json
 | `channels` | list, get, create, info, copy, diff, empty, delete, fields | `create` from JSON/inline; `delete` needs `--force` |
 | `channels fields` | list, add, update, delete, apply, replace, diff | Channel field schema workflows |
 | `channels entries` | list, get, create, update, delete, count, copy, gallery | Entry CRUD within a channel |
-| `pages` | list, get, create, update, delete, count, copy, versions | Fullpath as identifier |
+| `pages` | list, get, create, update, delete, set, insert, delete-block, move, batch, items, schema, draft, count, copy, versions | Fullpath as identifier. Surgical path verbs; `draft get\|save\|batch\|publish\|discard\|preview-url`; `--draft` on writes |
 | `menus` | list, get, create, update, delete, count, copy | Nested tree structure |
 | `blogs` | list, get, create, update, delete, count, copy | Has `posts` subcommand |
 | `blogs posts` | list, get, create, update, delete, count | Blog post CRUD |
@@ -203,17 +205,17 @@ nimbu pages update --page about --file payload.json
 
 | Command | Subcommands | Notes |
 |---------|-------------|-------|
-| `themes` | list, get, cdn-root, pull, push, sync, diff, copy | Theme development |
-| `themes layouts` | list, get, create, delete | Layout CRUD |
-| `themes templates` | list, get, create, delete | Template CRUD |
-| `themes snippets` | list, get, create, delete | Snippet CRUD |
-| `themes assets` | list, get, create, delete | Asset CRUD |
+| `themes` | list, get, cdn-root, pull, push, sync, diff, copy | `--only` auto-adds Liquid snippet/layout deps (stderr `adding dependency X (referenced by Y)`); `--no-deps` disables; `--dry-run` marks `(dependency)` |
+| `themes layouts` | list, get, create, delete | `get` accepts `--layout` as alias for `--name` |
+| `themes templates` | list, get, create, delete | `get` accepts `--template` as alias for `--name` |
+| `themes snippets` | list, get, create, delete | `get` accepts `--snippet` as alias for `--name` |
+| `themes assets` | list, get, create, delete | `get` accepts `--asset` as alias for `--path` |
 | `themes files` | list, get, create, delete | Generic file CRUD |
 | `apps` | list, get, config, push, logs, code | Cloud code management |
 | `uploads` | list, get, create, download, delete, count | File uploads and exact-byte downloads |
 | `webhooks` | list, get, create, update, delete, count | Webhook management |
 | `redirects` | list, get, create, update, delete, copy | URL redirects |
-| `roles` | list, get, create, update, delete, copy, customers | Permission roles. `update` replaces array fields; use `roles customers add|remove|set` to edit members |
+| `roles` | list, get, create, update, delete, copy, customers | Permission roles. `update` replaces array fields; use `roles customers add\|remove\|set` to edit members |
 | `announcements` | list, get, create, update, delete | HQ announcement management |
 | `domain-registrations` | list, get, count, upsert, update | HQ domain registration management |
 | `settings` | get, update, consent | Includes whole consent config get/update/replace/copy |
@@ -225,7 +227,7 @@ nimbu pages update --page about --file payload.json
 |---------|-------------|-------|
 | `sites` | list, get, current, count, settings, copy | Site management + full-site copy |
 | `auth` | login, logout, status, scopes, token, keyring | Credential management |
-| `server` | *(run directly)* | Local simulator proxy + child dev server |
+| `server` | *(run directly)* | Local simulator proxy + child dev server; `--draft <page>` injects preview tokens |
 | `init` | *(run directly)* | Bootstrap theme project with TUI |
 | `config` | list, get, set, unset, banner, path | CLI configuration |
 | `functions` | run | Execute cloud functions |
@@ -242,30 +244,22 @@ Binary commands require `--output=<file>` or `--output=-`. They preserve exact b
 
 ## Schema Discovery for Theme Development
 
-When working on Nimbu themes or templates, use these commands to understand channel data structures:
-
 ```bash
-# List all custom fields with types, flags, references, and select options
-nimbu channels fields list --channel blog --json
-
-# Get full channel schema including ACL, ordering, and dependency graph
-nimbu channels get --channel blog --json
-
-# Generate a TypeScript interface from channel schema (works cross-site)
-nimbu channels info --channel blog --typescript
-nimbu channels info --channel staging/blog --typescript
+nimbu channels fields list --channel blog --json   # types, flags, references, select_options
+nimbu channels get --channel blog --json           # ACL, ordering, dependency graph
+nimbu channels info --channel blog --typescript    # TypeScript interface (works cross-site)
 ```
 
 **`channels fields list --channel <channel> --json`** returns an array of field definitions:
-- `name` — field key used in templates and entry data
-- `type` — field type (e.g., `string`, `text`, `file`, `date`, `belongs_to`, `select`, `boolean`, `integer`, `float`, `geo`)
-- `label` — human-readable label
-- `required`, `unique`, `localized`, `encrypted` — field flags
-- `reference` — target channel slug for relationship fields (`belongs_to`, `has_many`)
-- `select_options` — available options for `select` type fields
-- `hint` — field description/help text
 
-**Agent tip**: Always run `nimbu channels fields list --channel <channel> --json` before working with channel data in templates. This gives you the exact field names and types to use.
+- `name` — field key used in templates and entry data
+- `type` — `string`, `text`, `file`, `date`, `belongs_to`, `select`, `boolean`, `integer`, `float`, `geo`
+- `label`, `hint` — human-readable label and help text
+- `required`, `unique`, `localized`, `encrypted` — field flags
+- `reference` — target channel slug for `belongs_to` / `has_many`
+- `select_options` — available options for `select` fields
+
+Always list fields before using channel data in templates.
 
 ## Gallery fields
 
@@ -282,26 +276,13 @@ Inspect the channel schema and current gallery first. Use returned image IDs, ne
 
 ## Channel Field Workflows
 
-`channels fields` uses flag identity and trailing payload assignments:
-
 ```bash
-# Inspect fields
 nimbu channels fields list --channel blog --json
-
-# Add or update one field
 nimbu channels fields add --channel blog --name summary type=string label="Summary"
 nimbu channels fields update --channel blog --field summary label="Teaser" required:=true
-
-# Delete one field
 nimbu channels fields delete --channel blog --field summary --force
-
-# Apply a partial schema patch from JSON
 nimbu channels fields apply --channel blog --file fields.patch.json
-
-# Replace the full field set from JSON
 nimbu channels fields replace --channel blog --file fields.json --force
-
-# Compare the current schema with a local JSON array
 nimbu channels fields diff --channel blog --file fields.json --json
 ```
 
@@ -312,21 +293,64 @@ Three resource types have special contracts beyond standard CRUD:
 ### Pages
 
 - **Identifier**: fullpath (e.g., `about/team`), not UUID
-- `pages get --page <fullpath> --json` returns full page document with nested `items`
-- `pages get --page <fullpath> --shape` emits just the canvas/repeatable skeleton (editable names, types, repeatable slugs) — use it to learn the exact structure before writing
-- `pages get --page <fullpath> --download-assets DIR --json` downloads file editables, rewrites to `attachment_path`
-- `pages update --page <fullpath> --file page.json` **MERGES by default** — omitted canvases are left intact
-- `pages update --file page.json --replace` does a full destructive rebuild; inline assignments always use merge semantics. Replace is guarded against wiping a populated canvas to 0 (override with `--allow-empty-canvas`). File editables with no writable attachment/source are rejected unless you intentionally pass `--allow-empty-file`. **Never blind-resend a raw GET under `--replace`.**
-- `pages update` inline: `title`, `template`, `published`, `locale`, or a
-  complete top-level `translations` object — other deep edits need `--file`
+- **Default recipe**: `pages schema --page P` → `pages get --page P --shape` → `pages set|insert|move|delete-block` or `pages batch`. `--shape` includes repeatable ids/positions and select options.
+- **Fallback** for whole-document rewrites: `pages get --json` → edit → `pages update --file` (merge by default; omitted canvases stay intact). `--replace` is a full destructive rebuild (file-only; guarded against wiping a canvas to 0 unless `--allow-empty-canvas`). Never blind-resend a raw GET under `--replace`.
+- `pages update` inline stays shallow (`title`, `template`, `published`, `locale`, or one top-level `translations` object)
+- `pages update --dry-run` prints the merged PATCH body without sending a request
+- `pages create`/`update` `--help` lists `security_mechanism` (`none|humans|customers`) and `published`
+- The CLI computes `If-Match` and retries once on 412; agents do not manage ETags
+- File editables: use the FileRef table in [references/pages-menus-content.md](references/pages-menus-content.md) — do not invent write shapes
+
+| Grammar | Example | Meaning |
+|---------|---------|---------|
+| page field | `title` | `title`, `slug`, `seo_title`, `seo_description`, `seo_keywords`, `published` (also `og_image`, `template`) |
+| `Canvas[i].Field` | `Blokken[2].Title` | 0-based index |
+| `Canvas[id=<oid>].Field` | `Blokken[id=6a6d…].Title` | ObjectId |
+| `Canvas[slug=<slug>]` | `Blokken[slug=hero]` | unique slug, else error lists matches |
+| nested | `Blokken[0].Photos[1].Image` | two canvas levels |
+| quoted name | `"Left Button - Link"` | quote when the name contains `.` or `[` |
+| raw `/items/…` | `/items/Blokken/repeatables/<id>/items/Title` | passed verbatim |
+
+```bash
+nimbu pages schema --page about/team --json
+nimbu pages get --page about/team --shape
+nimbu pages set --page about/team --path title --dry-run "Our Team"
+nimbu pages insert --page about/team --path Blokken --slug item --position 0
+nimbu pages move --page about/team --path Blokken[2] --position 0
+nimbu pages delete-block --page about/team --path Blokken[2] --force
+nimbu pages batch --page about/team --file ops.json --dry-run
+```
+
+### Draft -> preview -> publish QA loop
+
+Edit a draft, preview it, then publish. The live page stays as-is until `pages draft publish`.
+
+```bash
+nimbu pages set --page about/team --path title --draft "Coming soon"
+nimbu pages draft preview-url --page about/team
+# screenshot / inspect (or: nimbu server --draft about/team)
+nimbu pages draft publish --page about/team
+```
+
+A 409 `draft_base_changed` means the live page moved after the draft was based on it. Re-run with `--confirm`, or `nimbu pages draft discard --page about/team --force`.
+
+### Agent rules
+
+- Always pass `--site` (or set `NIMBU_SITE`) in subagent briefs.
+- Run `nimbu commands --json` once to learn the live flag contract.
+- `security_mechanism`: `none` public, `humans` captcha/human check, `customers` login required (`pages create`/`update --help`).
+- FileRef write shapes: [pages-menus-content.md](references/pages-menus-content.md) table. Do not repeat it.
+- Push the theme before content that uses new editables: `nimbu themes push --only templates/<t>.liquid --dry-run`, then without `--dry-run`.
+- Prefer `--dry-run` / `--diff` before writes. Surgical `--dry-run` prints resolved ops; `pages update --dry-run` prints the merged body.
+- The CLI owns ETags (`If-Match`, one 412 refetch). Do not send or cache them.
+- `--file` accepts pipes and process substitution (`--file <(echo '{...}')`).
 
 ### Menus
 
 - **Identifier**: slug/handle
 - `menus get --menu <slug> --json` returns full nested tree (recovers via `?nested=1` when needed)
 - `menus update --file` reconciles nested trees with explicit tombstones; inline `name`/`handle` is shallow
-- `menus update` inline: `name`, `handle`, or a complete top-level
-  `translations` object — other deep edits need `--file`
+- `menus update` inline: `name`, `handle`, or a complete top-level `translations` object — other deep edits need `--file`
 
 ### Channels
 
@@ -338,47 +362,27 @@ Three resource types have special contracts beyond standard CRUD:
 
 1. **Parent field on pages**: Set `parent` to the **fullpath string** (e.g., `"archive"`), NOT an object ID. The API resolves parents by path. `parent_path` is ignored on write.
 
-2. **Inline update limits**: `pages update` and `menus update` inline assignments only accept shallow fields. For nested/deep edits, use `--file` with a full JSON payload.
+2. **Inline update limits**: `pages update` and `menus update` inline assignments only accept shallow fields. Prefer surgical page verbs for nested edits; otherwise `--file`.
 
 3. **`--file` vs inline**: Mutually exclusive. The CLI errors if both are provided.
 
-4. **Delete requires `--force`**: All delete commands fail without `--force`.
+4. **Delete requires `--force`**: All delete commands fail without `--force`, including `pages delete-block` and `pages draft discard`.
 
 5. **Orders are read-only**: No `create` or `delete` — only `list`, `get`, `update` (status), `count`.
 
-6. **Translations locale shorthand**: Bare locale keys like `nl=text` are
-   rewritten to `values.nl=text`. Locale keys are canonicalized (`nl_BE` →
-   `nl-BE`, `zh_hant_tw` → `zh-Hant-TW`) and duplicates after
-   canonicalization are rejected. `translations create --file` accepts one
-   object or an array of objects.
+6. **Translations locale shorthand**: Bare locale keys like `nl=text` become `values.nl=text`. Keys are canonicalized (`nl_BE` → `nl-BE`); duplicates after canonicalization are rejected. `translations create --file` accepts one object or an array.
 
 7. **Theme sync excludes `code/` and `content/`**: These directories are intentionally not managed by `themes push/sync`.
 
 8. **Copy commands use `--from`/`--to` refs**: Format is `site` for site-level ops, `site/channel` for channel-level ops.
 
-9. **Jobs are site-level**: Job names are unique per site. `jobs run --wait` resolves the owning app from the server-side job registry, so it works outside a project directory and never needs `--app` or `nimbu.yml`.
+9. **Jobs are site-level**: `jobs run --wait` resolves the owning app from the server-side job registry; no `--app` or `nimbu.yml` needed.
 
-10. **Shipping-rate translations are per-locale updates**: The shipping-rates
-    API rejects nested `translations`; create the rate once, then repeat
-    `update --locale`. There is no `shipping-rates count` or `copy`. Keep
-    `region_id` opaque because it is site-specific.
+10. **Shipping-rate translations are per-locale**: The API rejects nested `translations`. No `count`/`copy`. Keep `region_id` opaque (site-specific).
 
-11. **Internal resources stay internal**: Accounts, regions, product types, and
-    vendors are not public CLI commands. Do not replace them with raw API calls.
+11. **Internal resources stay internal**: Accounts, regions, product types, and vendors are not public CLI commands. Do not replace them with raw API calls.
 
-12. **Role membership is a full replace**: `roles update` with a
-    `customers`/`children`/`parents` array replaces the whole relation. A
-    payload that would drop more than half the members needs `--force`.
-    To clear a relation, send an empty array (`{"customers": []}`) with
-    `roles update --force`; `roles customers set` always requires at least
-    one `--customer`. Prefer `roles customers add|remove|set`, which
-    compute the full ID list in the CLI and verify it after the write; the
-    same `--force` rule applies when `remove` or `set` would drop more than
-    half of the members.
-    `__op` envelopes (`AddReference`, `RemoveReference`, `Batch`, plus
-    `AddRelation` / `RemoveRelation` aliases) are a server-side feature;
-    the CLI sends them through verbatim. Use `--dry-run` on `roles update`
-    to print the body and projected counts without writing.
+12. **Role membership is a full replace**: `roles update` with `customers`/`children`/`parents` replaces the whole relation (needs `--force` if it would drop more than half). Prefer `roles customers add|remove|set`. `__op` envelopes are sent verbatim. Use `--dry-run` on `roles update` to print the body without writing.
 
 ## Common Workflows
 
@@ -390,36 +394,34 @@ nimbu channels entries list --channel blog --site my-site --json --sort created_
 
 See [references/channels-and-entries.md](references/channels-and-entries.md) for copy, diff, and schema workflows.
 
-### Update a page with nested content
+### Edit a page (surgical, then fallback)
 
 ```bash
-# Export, edit locally, re-upload
-nimbu pages get --page about/team --download-assets tmp/assets --json > page.json
-# ... edit page.json ...
-nimbu pages update --page about/team --file page.json
+nimbu pages schema --page about/team --json
+nimbu pages get --page about/team --shape
+nimbu pages set --page about/team --path Blokken[0].Title --dry-run --diff "Fast"
+nimbu pages set --page about/team --path Blokken[0].Title "Fast"
 ```
 
-See [references/pages-menus-content.md](references/pages-menus-content.md) for pages, menus, blogs, translations, and notification sync.
+Whole-document rewrite fallback: `pages get --json` → edit → `pages update --file`. See [references/pages-menus-content.md](references/pages-menus-content.md).
 
 ### Upload a file and reuse its CDN URL
 
 ```bash
-# Upload (use --file/-f or --source); --json prints the upload object
 URL=$(nimbu uploads create --file ./logo.png --json | jq -r '.url')
-
-# The response `url` is the public CDN link — feed it into a page file editable
-# as a FileRef (attachment_url), or use it anywhere a public URL is needed.
 ```
 
-`uploads create` accepts `--file`/`-f` (matching every other create command) and keeps `--source` for back-compat. The returned `url` field is the public CDN link.
+Feed `url` into a file editable as `attachment_url` (see the FileRef table). `uploads create` accepts `--file`/`-f` and keeps `--source`.
 
 ### Push theme changes after build
 
 ```bash
+nimbu themes push --only templates/page.liquid --dry-run   # deps auto-included
+nimbu themes push --only templates/page.liquid
 nimbu themes push --build --all
 ```
 
-See [references/themes-and-local-dev.md](references/themes-and-local-dev.md) for push/pull/sync/diff, local dev server, and cloud code.
+See [references/themes-and-local-dev.md](references/themes-and-local-dev.md) for `--only` dependency auto-include, `--no-deps`, local `--draft` preview, and cloud code.
 
 ### Copy a site between environments
 
@@ -433,9 +435,7 @@ promote the target default from the matching source locale. Site copy runs
 pages before consent so page-backed privacy-policy IDs can be remapped; with
 `--allow-errors`, a skipped privacy page also skips consent with a warning.
 Shipping rates are inspected but skipped with a warning because their region IDs
-are site-specific.
-
-See [references/site-migration.md](references/site-migration.md) for full-site and per-resource copy workflows.
+are site-specific. See [references/site-migration.md](references/site-migration.md).
 
 For a targeted localized blog copy:
 
@@ -460,11 +460,11 @@ Consent config copy itself does not require `--force`.
 ### Set up local development
 
 ```bash
-nimbu init                # Bootstrap nimbu.yml + theme structure
-nimbu server              # Start proxy + child dev server
+nimbu init
+nimbu server --draft about/team
 ```
 
-See [references/themes-and-local-dev.md](references/themes-and-local-dev.md) for dev server configuration.
+See [references/themes-and-local-dev.md](references/themes-and-local-dev.md).
 
 ## Error Handling
 
@@ -483,6 +483,8 @@ In `--json` mode, errors emit a structured envelope to stderr:
   }
 }
 ```
+
+A 422 `invalid editable` / `invalid slug` on `pages update`/`create` carries a hint: `nimbu themes push --only templates/<t>.liquid --dry-run`.
 
 ### Exit Codes
 
@@ -522,8 +524,8 @@ Default behavior returns the first page. Use `--all --json` for complete dataset
 
 | File | Covers |
 |------|--------|
-| [channels-and-entries.md](references/channels-and-entries.md) | Channel CRUD, entry CRUD, schema, info, copy, diff |
-| [pages-menus-content.md](references/pages-menus-content.md) | Pages, menus, blogs, translations, notifications |
+| [channels-and-entries.md](references/channels-and-entries.md) | Channel CRUD, entry CRUD, schema, info, copy, diff, locales |
+| [pages-menus-content.md](references/pages-menus-content.md) | Pages (surgical verbs, drafts, FileRef), menus, blogs, translations, notifications |
 | [products-orders-customers.md](references/products-orders-customers.md) | Products, shipping rates, orders, customers, collections, coupons |
-| [themes-and-local-dev.md](references/themes-and-local-dev.md) | Theme sync, local dev server, cloud code apps |
+| [themes-and-local-dev.md](references/themes-and-local-dev.md) | Theme sync, `--only` deps, local `--draft` preview, cloud code apps |
 | [site-migration.md](references/site-migration.md) | Full-site copy, per-resource copy, cross-API migration |

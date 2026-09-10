@@ -8,6 +8,181 @@ Subcommands: `list`, `get`, `create`, `update`, `delete`, `set`, `insert`, `dele
 
 Page versions are listed, fetched, and restored with `nimbu pages versions list|get|restore --page <id-or-path>`; `get` and `restore` also take `--page-version <id>`.
 
+### Surgical verbs (default page workflow)
+
+Prefer path verbs over a whole-document read-modify-write. Discover structure, then write one field or block. The CLI computes `If-Match` from the page `id` + `updated_at` and retries once on 412 by refetching; agents do not send or cache ETags. Drafts skip `If-Match`.
+
+Recipe: `pages schema --page P` → `pages get --page P --shape` → `pages set|insert|move|delete-block` or `pages batch`. Fall back to `pages get --json` → edit → `pages update --file` only for whole-document rewrites.
+
+`pages create` / `pages update --help` list `security_mechanism` (`none|humans|customers`) and `published` (`published:=true`).
+
+#### Path grammar
+
+Human paths resolve against the page document (ids/positions) plus the schema (candidates). Positions are **0-based**. A path that starts with `/` is a raw API path and is passed through unchanged.
+
+```
+<path>   := "/" raw-api-path
+          | field
+          | segment ("." segment)*
+segment  := name [ "[" selector "]" ]
+selector := <0-based index> | "id=" <objectid> | "slug=" <slug>
+name     := unquoted (no . or [) | "quoted \"...\""
+field    := title|slug|seo_title|seo_description|seo_keywords|published|og_image|template
+```
+
+| Example | Resolves to |
+|---------|-------------|
+| `title` | page field `/title` |
+| `Blokken[2].Title` | third repeatable's `Title` |
+| `Blokken[id=6a6d…].Photos[0].Image` | nested canvas, two levels max |
+| `Blokken[2]` | the repeatable itself (for `move` / `delete-block`) |
+| `Blokken` | the canvas (for `insert` / `items`) |
+| `"Left Button - Link"` | quote a name that contains `.` or `[` |
+| `/items/Blokken/repeatables/<id>/items/Title` | raw path, verbatim |
+
+`slug=` must match exactly one sibling. Unresolved selectors list candidates (`[index] slug id`, or `Name (type)` for editables) so the next command can use an index or `id=`. An empty canvas tells you to `pages insert --path <canvas> --slug <slug>` and lists allowed slugs from the schema.
+
+#### `pages schema --page P`
+
+`GET /pages/{id}/schema`. Shows the template, available blocks per canvas (slug, label, fields), and select options.
+
+```bash
+nimbu pages schema --page about/team --json
+```
+
+#### `pages get --page P --shape`
+
+Emits the canvas/repeatable skeleton (no content). Repeatable lines include `slug [position] id`. Select fields append `type: option | option`. Combined with `--download-assets`, `--shape` wins and the CLI warns on stderr.
+
+```bash
+nimbu pages get --page about/team --shape
+nimbu pages get --page about/team --shape --json
+```
+
+#### `pages items --page P --path <path>`
+
+`GET /pages/{id}/items/...` for one resolved subtree (human or raw path under `/items`). Page fields (`title`, …) are rejected — use `pages get`. Flags: `--page`, `--path` only.
+
+```bash
+nimbu pages items --page about/team --path Blokken[0]
+```
+
+#### `pages set --page P --path <path> [value]`
+
+Set one page field or editable. Value sources are mutually exclusive: a positional `[value]`, `--file` (JSON value; `-` for stdin), or `--from-file` (local file uploaded as a file editable). `--from-file` requires a file editable.
+
+Key flags: `--locale`, `--diff`, `--dry-run`, `--draft`.
+
+```bash
+nimbu pages set --page about/team --path title --dry-run --diff "Our Team"
+nimbu pages set --page about/team --path Blokken[0].Title "Fast"
+nimbu pages set --page about/team --path Blokken[0].Image --from-file ./hero.png
+```
+
+A file-editable positional value may be a JSON object, or an `http(s)://` / `nimbu://` URL (treated as `attachment_url`). See the FileRef table below.
+
+#### `pages insert --page P --path <canvas>`
+
+Insert a repeatable into a canvas. `--path` is the canvas (`Blokken`, `/items/Blokken`, or `/items/Blokken/repeatables`). `--slug` is required unless `--file` is a `{slug, items}` object. `--file` is a JSON items map or `{slug, items}`. There is no `--first` flag: omit `--after`/`--position` to append; `--position 0` inserts first; `--after` accepts a sibling id or 0-based index. `--after` and `--position` are mutually exclusive.
+
+Key flags: `--slug`, `--after`, `--position`, `--file`, `--locale`, `--diff`, `--dry-run`, `--draft`.
+
+```bash
+nimbu pages insert --page about/team --path Blokken --slug item --position 0
+nimbu pages insert --page about/team --path Blokken --slug item --file items.json
+```
+
+File editables in `--file` are stripped from the insert and applied as follow-up `set` ops (the API insert does not coerce FileRefs).
+
+#### `pages delete-block --page P --path <repeatable>`
+
+Delete one repeatable. `--path` must resolve to a repeatable (`Blokken[2]`, `Blokken[id=…]`). Requires global `--force`. Key flags: `--diff`, `--dry-run`, `--draft`.
+
+```bash
+nimbu pages delete-block --page about/team --path Blokken[2] --force
+```
+
+#### `pages move --page P --path <repeatable>`
+
+Move a repeatable within its canvas. Requires `--after` (sibling id or 0-based index) or `--position` (0-based target index). No `--first` flag — use `--position 0`. Already-at-target is a no-op (`already at position N`). Key flags: `--after`, `--position`, `--diff`, `--dry-run`, `--draft`.
+
+```bash
+nimbu pages move --page about/team --path Blokken[2] --position 0
+nimbu pages move --page about/team --path Blokken[2] --after 0
+```
+
+#### `pages batch --page P --file ops.json`
+
+Apply up to 10 operations atomically (default; `--no-atomic` to disable). `--file` is `{"operations":[...]}` or a bare array. Each object:
+
+| Field | Required | Meaning |
+|-------|----------|---------|
+| `op` | yes | `set`, `insert`, `delete`, or `move` |
+| `path` | yes | human path (resolved) or raw `/…` (verbatim) |
+| `value` | `set` / `insert` | set value, or insert `{slug, items}` |
+| `after` | insert / move | JSON `null` = first; string = sibling **id** (not an index) |
+
+Key flags: `--file`, `--[no-]atomic`, `--locale`, `--diff`, `--dry-run`, `--draft`. `pages draft batch` is the same as `pages batch --draft` (always atomic).
+
+```bash
+nimbu pages batch --page about/team --file ops.json --dry-run
+```
+
+```json
+{
+  "operations": [
+    {"op": "set", "path": "Blokken[0].Title", "value": "x"},
+    {"op": "insert", "path": "/items/Blokken/repeatables", "value": {"slug": "item", "items": {"Title": "New"}}, "after": null},
+    {"op": "move", "path": "Blokken[2]", "after": "6a6d0123456789abcdef0001"},
+    {"op": "delete", "path": "Blokken[1]"}
+  ]
+}
+```
+
+Human paths are resolved to raw API paths before POST. Raw paths that already start with `/` are sent unchanged. Insert wants the canvas `repeatables` collection (`/items/<canvas>/repeatables`).
+
+`--file` accepts a path, `-`, a pipe, or process substitution (`--file <(echo '{"operations":[...]}')`).
+
+### Drafts
+
+`pages draft` edits and previews without publishing. `--draft` on `set` / `insert` / `delete-block` / `move` / `batch` writes the draft instead of the live page. A 403 "Page drafts are not enabled" means the server has drafts disabled — write the live page instead.
+
+| Command | Flags | Notes |
+|---------|-------|-------|
+| `pages draft get --page P` | | Current draft document |
+| `pages draft save --page P --file draft.json` | `--locale` | Whole-page draft from JSON (`-` for stdin) |
+| `pages draft batch --page P --file ops.json` | `--locale`, `--diff`, `--dry-run` | Alias for `pages batch --draft` |
+| `pages draft publish --page P` | `--confirm` | Promote draft to live |
+| `pages draft discard --page P` | `--force` (required) | Drop the draft |
+| `pages draft preview-url --page P` | `--open` | Absolute preview URL (`expires_in` 24h in `--json`) |
+
+```bash
+nimbu pages set --page about/team --path title --draft "Coming soon"
+nimbu pages draft preview-url --page about/team
+nimbu pages draft publish --page about/team
+```
+
+409 `draft_base_changed`: the live page changed after this draft was based on it. Re-run `pages draft publish --page P --confirm`, or `pages draft discard --page P --force`.
+
+`nimbu server --draft <page>` (repeatable) requests a preview token at startup and injects `?preview=` on matching local URLs (the page fullpath, locale prefixes, and `translations.*.fullpath`). Child paths are not matched. Startup fails if drafts are disabled or the page has no draft. The simulator already honours `?preview=<token>` when the browser URL carries it.
+
+### `--dry-run` and `--diff`
+
+Surgical `--dry-run` resolves paths and prints the planned operations (JSON `{operations, paths}`) without writing. `--diff` prints a unified diff of the changed subtree (canvas repeatables for insert/move/delete-block) after a successful write. Draft `--diff` needs a converted snapshot; otherwise the CLI prints `(diff unavailable for drafts)`.
+
+`pages update --dry-run` fetches, merges, and prints the PATCH body without sending it (stderr: `dry-run: no request sent`).
+
+### 422 theme hint
+
+`pages create` / `pages update` (and surgical writes) map 422 `invalid editable <name>` / `invalid slug (<slug>) for repeatable in canvas '<canvas>'` to a hint: the editable or slug is not in the pushed theme. Push it first:
+
+```bash
+nimbu themes push --only templates/<t>.liquid --dry-run
+nimbu themes push --only templates/<t>.liquid
+```
+
+`--only` auto-includes Liquid snippet/layout dependencies. See [themes-and-local-dev.md](themes-and-local-dev.md).
+
 ### Parent field gotcha
 
 **`parent` must be a fullpath string, NOT an object ID.** The API resolves parents by path. Setting `parent` to an ID is silently ignored and the page lands at root level. The `parent_path` field is read-only (ignored on write).
@@ -122,7 +297,7 @@ nimbu pages get --page about/team --shape          # readable tree
 nimbu pages get --page about/team --shape --json   # machine-readable skeleton
 ```
 
-`--shape` emits just the structure (editable name → `type`, and for canvases the `repeatables` with their `slug` and nested skeleton), no content. It is the fastest way to learn the exact repeatable slugs before you write.
+`--shape` emits just the structure (editable name → `type`, and for canvases the `repeatables` with their `slug`, **0-based `position`**, **id**, and nested skeleton), no content. Select fields include their options. It is the fastest way to learn the exact repeatable slugs, ids, and positions before you write.
 If combined with `--download-assets`, `--shape` wins and the CLI warns on stderr instead of downloading files.
 
 ### File editable write shapes
@@ -143,7 +318,7 @@ A file editable that ends up with none of attachment / `attachment_path` / `atta
 
 ### create
 
-Accepts `--file` or inline assignments. No inline key restrictions -- the body is POSTed as-is.
+Accepts `--file` or inline assignments. No inline key restrictions -- the body is POSTed as-is. `--help` lists `security_mechanism` (`none|humans|customers`) and `published` (`published:=true`) among the supported top-level fields.
 
 ### copy
 
@@ -307,9 +482,10 @@ Reads local templates, validates locale directories against the site's configure
 
 ## Common flags
 
-- `--readonly` -- rejects every mutating operation (create, update, delete, pull, push, copy)
-- `--force` -- required for delete; skips confirmation on copy overwrite
+- `--readonly` -- rejects every mutating operation (create, update, delete, pull, push, copy, surgical writes, draft publish/discard)
+- `--force` -- required for delete, `pages delete-block`, and `pages draft discard`; skips confirmation on copy overwrite
 - `--locale <code>` -- select `content_locale` for localized content reads and writes
+- `--dry-run` / `--diff` -- surgical verbs and `pages batch` resolve without writing / show a subtree diff; `pages update --dry-run` prints the merged body
 - `--json` / `--plain` -- output format control
 - `--all` -- fetch all pages (no pagination) for list commands
 - `--page N` / `--per-page N` -- pagination (default: page 1, 25 per page)
