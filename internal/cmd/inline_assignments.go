@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"regexp"
 	"strings"
 
@@ -395,23 +394,17 @@ func isASCIIDigits(value string) bool {
 }
 
 func readRawValueFromFile(path string) (string, error) {
-	data, err := os.ReadFile(path)
+	data, err := readLimitedFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read file %q: %w", path, err)
-	}
-	if int64(len(data)) > maxJSONInputBytes {
-		return "", fmt.Errorf("file %q exceeds %d bytes", path, maxJSONInputBytes)
 	}
 	return string(data), nil
 }
 
 func readJSONValueFromFile(path string) (any, error) {
-	data, err := os.ReadFile(path)
+	data, err := readLimitedFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read file %q: %w", path, err)
-	}
-	if int64(len(data)) > maxJSONInputBytes {
-		return nil, fmt.Errorf("file %q exceeds %d bytes", path, maxJSONInputBytes)
 	}
 	value, err := decodeJSONAnyUseNumber(data)
 	if err != nil {

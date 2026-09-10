@@ -93,25 +93,41 @@ func decodeJSONAnyUseNumber(data []byte) (any, error) {
 }
 
 func readJSONInputBytes(file string) ([]byte, error) {
-	var input io.Reader
+	var (
+		data []byte
+		err  error
+	)
 
 	switch file {
 	case "":
 		if stdinIsTerminal() {
 			return nil, fmt.Errorf("%w; use --file <path> or --file - with piped stdin", errNoJSONInput)
 		}
-		input = os.Stdin
+		data, err = readLimitedBytes(os.Stdin)
 	case "-":
-		input = os.Stdin
+		data, err = readLimitedBytes(os.Stdin)
 	default:
-		f, err := os.Open(file)
-		if err != nil {
-			return nil, fmt.Errorf("open file: %w", err)
-		}
-		defer func() { _ = f.Close() }()
-		input = f
+		data, err = readLimitedFile(file)
 	}
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, errNoJSONInput
+	}
+	return data, nil
+}
 
+func readLimitedFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	return readLimitedBytes(f)
+}
+
+func readLimitedBytes(input io.Reader) ([]byte, error) {
 	limited := io.LimitReader(input, maxJSONInputBytes+1)
 	data, err := io.ReadAll(limited)
 	if err != nil {
@@ -119,9 +135,6 @@ func readJSONInputBytes(file string) ([]byte, error) {
 	}
 	if int64(len(data)) > maxJSONInputBytes {
 		return nil, fmt.Errorf("input exceeds %d bytes", maxJSONInputBytes)
-	}
-	if len(data) == 0 {
-		return nil, errNoJSONInput
 	}
 	return data, nil
 }
