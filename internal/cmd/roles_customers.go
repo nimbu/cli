@@ -78,19 +78,21 @@ func mutateRoleCustomers(ctx context.Context, flags *RootFlags, roleID string, n
 
 	before := slices.Clone(current.Customers)
 	next := nextFn(before)
-	if err := requireRelationShrinks(flags, roleID, []roleRelationDiff{{
-		Field:     "customers",
-		Before:    len(before),
-		After:     len(next),
-		Projected: true,
-	}}); err != nil {
-		return err
-	}
 
-	if humanOutput(ctx) {
+	if output.IsHuman(ctx) {
 		if _, err := output.Fprintf(ctx, "customers: %d → %d\n", len(before), len(next)); err != nil {
 			return err
 		}
+	}
+
+	if err := requireRelationShrinks(flags, roleID, []roleRelationDiff{{
+		Field:       "customers",
+		Before:      len(before),
+		After:       len(next),
+		Projected:   true,
+		BeforeKnown: true,
+	}}); err != nil {
+		return err
 	}
 
 	var (
@@ -115,14 +117,12 @@ func mutateRoleCustomers(ctx context.Context, flags *RootFlags, roleID string, n
 		return fmt.Errorf("role customers verification failed: requested %v, got %v", next, actual)
 	}
 
-	if err := output.Print(ctx, verified, []any{verified.ID, verified.Name, len(verified.Customers)}, func() error {
+	if putErr != nil {
+		_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Err, "warning: %s\n", putErr)
+	}
+
+	return output.Print(ctx, verified, []any{verified.ID, verified.Name, len(verified.Customers)}, func() error {
 		_, err := output.Fprintf(ctx, "Updated role customers: %s (%s)\n", verified.Name, verified.ID)
 		return err
-	}); err != nil {
-		return err
-	}
-	if putErr != nil {
-		return fmt.Errorf("update role customers: %w", putErr)
-	}
-	return nil
+	})
 }

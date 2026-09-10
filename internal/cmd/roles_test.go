@@ -269,7 +269,7 @@ func TestRolesUpdateDryRunPrintsBodyWithoutWriting(t *testing.T) {
 	}
 }
 
-func TestRolesUpdateSurfacesSuccessfulDecodeError(t *testing.T) {
+func TestRolesUpdateWarnsOnSuccessfulDecodeError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/roles/bingo":
@@ -287,10 +287,123 @@ func TestRolesUpdateSurfacesSuccessfulDecodeError(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	ctx, out, errOut := newAdminWorkflowTestContext(t, server.URL, output.Mode{})
+	err := (&RolesUpdateCmd{Role: "bingo", File: file}).Run(ctx, &RootFlags{})
+	if err != nil {
+		t.Fatalf("roles update: %v", err)
+	}
+	if !strings.Contains(errOut.String(), "request succeeded (HTTP 200) but the response could not be decoded:") {
+		t.Fatalf("stderr = %s", errOut.String())
+	}
+	if !strings.Contains(out.String(), "Updated role") {
+		t.Fatalf("output = %s", out.String())
+	}
+}
+
+func TestRolesCustomersAddWarnsOnSuccessfulDecodeError(t *testing.T) {
+	var gets int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/roles/bingo":
+			gets++
+			if gets == 1 {
+				_, _ = w.Write(relationRoleJSON("bingo", "bingo", []string{"c1"}))
+				return
+			}
+			_, _ = w.Write(relationRoleJSON("bingo", "bingo", []string{"c1", "c2"}))
+		case r.Method == http.MethodPut && r.URL.Path == "/roles/bingo":
+			_, _ = w.Write([]byte(`{"id":"bingo","name":"bingo","customers":1}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	ctx, out, errOut := newAdminWorkflowTestContext(t, server.URL, output.Mode{})
+	err := (&RolesCustomersAddCmd{Role: "bingo", Customers: []string{"c2"}}).Run(ctx, &RootFlags{})
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if !strings.Contains(errOut.String(), "request succeeded (HTTP 200) but the response could not be decoded:") {
+		t.Fatalf("stderr = %s", errOut.String())
+	}
+	if !strings.Contains(out.String(), "Updated role customers") {
+		t.Fatalf("output = %s", out.String())
+	}
+}
+
+func TestRolesUpdateRefusesNullRelationWithoutForce(t *testing.T) {
+	members := []string{"c1", "c2", "c3", "c4"}
+	var put bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/roles/bingo":
+			_, _ = w.Write(relationRoleJSON("bingo", "bingo", members))
+		case r.Method == http.MethodPut:
+			put = true
+			_, _ = w.Write(relationRoleJSON("bingo", "bingo", nil))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	file := filepath.Join(t.TempDir(), "patch.json")
+	if err := os.WriteFile(file, []byte(`{"customers":null}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	ctx, _, _ := newAdminWorkflowTestContext(t, server.URL, output.Mode{})
 	err := (&RolesUpdateCmd{Role: "bingo", File: file}).Run(ctx, &RootFlags{})
-	if err == nil || !strings.Contains(err.Error(), "request succeeded (HTTP 200) but the response could not be decoded:") {
-		t.Fatalf("expected success-decode wording, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("expected --force error, got %v", err)
+	}
+	if put {
+		t.Fatal("write should not have been sent")
+	}
+
+	ctx, out, _ := newAdminWorkflowTestContext(t, server.URL, output.Mode{})
+	if err := (&RolesUpdateCmd{Role: "bingo", File: file, DryRun: true}).Run(ctx, &RootFlags{}); err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if put {
+		t.Fatal("dry-run must not write")
+	}
+	if !strings.Contains(out.String(), "4 → 0") {
+		t.Fatalf("output = %s", out.String())
+	}
+}
+
+func TestRolesUpdateDryRunShowsUnknownBeforeForUnexpandedRelation(t *testing.T) {
+	var put bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/roles/bingo":
+			_, _ = w.Write([]byte(`{"id":"bingo","name":"bingo","customers":{"__type":"Relation","className":"customer"}}`))
+		case r.Method == http.MethodPut:
+			put = true
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	file := filepath.Join(t.TempDir(), "patch.json")
+	if err := os.WriteFile(file, []byte(`{"customers":["c1","c2"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, out, _ := newAdminWorkflowTestContext(t, server.URL, output.Mode{})
+	err := (&RolesUpdateCmd{Role: "bingo", File: file, DryRun: true}).Run(ctx, &RootFlags{})
+	if err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if put {
+		t.Fatal("dry-run must not write")
+	}
+	if !strings.Contains(out.String(), "customers: ? → 2") {
+		t.Fatalf("output = %s", out.String())
 	}
 }
 

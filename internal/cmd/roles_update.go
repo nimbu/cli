@@ -54,7 +54,7 @@ func (c *RolesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("update role: %w", err)
 	}
 
-	if humanOutput(ctx) {
+	if output.IsHuman(ctx) {
 		if err := printRoleRelationDiffs(ctx, diffs); err != nil {
 			return err
 		}
@@ -90,22 +90,20 @@ func (c *RolesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("verify role: %w", err)
 	}
 
-	if humanOutput(ctx) {
+	if putErr != nil {
+		_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Err, "warning: %s\n", putErr)
+	}
+
+	if output.IsHuman(ctx) {
 		if err := printRoleMemberCounts(ctx, verified); err != nil {
 			return err
 		}
 	}
 
-	if err := output.Print(ctx, verified, []any{verified.ID, verified.Name}, func() error {
+	return output.Print(ctx, verified, []any{verified.ID, verified.Name}, func() error {
 		_, err := output.Fprintf(ctx, "Updated role: %s (%s)\n", verified.Name, verified.ID)
 		return err
-	}); err != nil {
-		return err
-	}
-	if putErr != nil {
-		return fmt.Errorf("update role: %w", putErr)
-	}
-	return nil
+	})
 }
 
 func printRoleUpdateDryRun(ctx context.Context, body map[string]any, diffs []roleRelationDiff) error {

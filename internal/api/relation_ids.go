@@ -54,6 +54,7 @@ func ParseRelationIDs(value any) []string {
 	case []string:
 		out := make([]string, 0, len(v))
 		for _, id := range v {
+			id = strings.TrimSpace(id)
 			if id != "" {
 				out = append(out, id)
 			}
@@ -79,6 +80,7 @@ func relationIDsFromList(items []any) []string {
 	for _, item := range items {
 		switch it := item.(type) {
 		case string:
+			it = strings.TrimSpace(it)
 			if it != "" {
 				out = append(out, it)
 			}
@@ -92,11 +94,15 @@ func relationIDsFromList(items []any) []string {
 }
 
 func relationObjectID(obj map[string]any) string {
-	if id, ok := obj["id"].(string); ok && id != "" {
-		return id
+	if id, ok := obj["id"].(string); ok {
+		if id = strings.TrimSpace(id); id != "" {
+			return id
+		}
 	}
-	if id, ok := obj["objectId"].(string); ok && id != "" {
-		return id
+	if id, ok := obj["objectId"].(string); ok {
+		if id = strings.TrimSpace(id); id != "" {
+			return id
+		}
 	}
 	return ""
 }

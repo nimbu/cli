@@ -41,6 +41,11 @@ func TestRelationIDsUnmarshalShapes(t *testing.T) {
 			want:  RelationIDs{"plain", "obj"},
 		},
 		{
+			name:  "trimmed string ids",
+			input: `[" a ", "", {"id":" b "}]`,
+			want:  RelationIDs{"a", "b"},
+		},
+		{
 			name:  "legacy objectId",
 			input: `[{"objectId":"legacy"}]`,
 			want:  RelationIDs{"legacy"},

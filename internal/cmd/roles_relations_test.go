@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -45,6 +46,11 @@ func TestProjectRelationIDs(t *testing.T) {
 			},
 			want: []string{"a", "b", "c", "d"},
 		},
+		{
+			name: "explicit null clears",
+			raw:  nil,
+			want: []string{},
+		},
 	}
 
 	for _, tc := range tests {
@@ -78,6 +84,28 @@ func TestRelationShrinksOverHalf(t *testing.T) {
 	}
 	if relationShrinksOverHalf(0, 0) {
 		t.Fatal("empty should not refuse")
+	}
+}
+
+func TestProjectRelationIDsRejectsScalar(t *testing.T) {
+	t.Parallel()
+
+	for _, raw := range []any{"c1", 1.0, true} {
+		_, _, err := projectRelationIDs([]string{"a", "b"}, raw)
+		if err == nil || !strings.Contains(err.Error(), "expected an array of IDs or an __op object") {
+			t.Fatalf("raw %#v: expected scalar error, got %v", raw, err)
+		}
+	}
+}
+
+func TestRequireRelationShrinksNilFlagsRefuses(t *testing.T) {
+	t.Parallel()
+
+	err := requireRelationShrinks(nil, "bingo", []roleRelationDiff{{
+		Field: "customers", Before: 4, After: 1, Projected: true, BeforeKnown: true,
+	}})
+	if err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("expected --force error, got %v", err)
 	}
 }
 

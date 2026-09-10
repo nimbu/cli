@@ -370,9 +370,13 @@ exposed as a public CLI resource.
 
 `roles update` treats `customers`, `children`, and `parents` as a full replace
 when you send a JSON array. Shrinking any of those relations by more than half
-requires `--force`. `--dry-run` prints the request body and the projected
-member counts without writing. Prefer `roles customers add|remove|set`: those
+requires `--force`. To clear a relation, send an empty array (`{"customers": []}`)
+with `roles update --force`; `roles customers set` always requires at least one
+`--customer`. `--dry-run` prints the request body and the projected member
+counts without writing. Prefer `roles customers add|remove|set`: those
 commands GET the role, PUT the full customer ID list, then GET again to verify.
+The same `--force` rule applies when `remove` or `set` would drop more than
+half of the members.
 
 Relation `__op` envelopes (`AddReference`, `RemoveReference`, `Batch`, and the
 `AddRelation` / `RemoveRelation` aliases) are a server-side feature. The CLI

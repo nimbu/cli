@@ -20,11 +20,12 @@ func isResponseDecodeError(err error) bool {
 var roleRelationFields = []string{"customers", "children", "parents"}
 
 type roleRelationDiff struct {
-	Field     string   `json:"field"`
-	Before    int      `json:"before"`
-	After     int      `json:"after"`
-	IDs       []string `json:"ids,omitempty"`
-	Projected bool     `json:"projected"`
+	Field       string   `json:"field"`
+	Before      int      `json:"before"`
+	After       int      `json:"after"`
+	IDs         []string `json:"ids,omitempty"`
+	Projected   bool     `json:"projected"`
+	BeforeKnown bool     `json:"before_known"`
 }
 
 func rolePath(id string) string {
@@ -47,8 +48,17 @@ func roleRelationValues(role api.Role) map[string][]string {
 	}
 }
 
+func roleRelationExpanded(role api.Role) map[string]bool {
+	return map[string]bool{
+		"customers": role.CustomersExpanded,
+		"children":  role.ChildrenExpanded,
+		"parents":   role.ParentsExpanded,
+	}
+}
+
 func roleRelationDiffs(role api.Role, body map[string]any) ([]roleRelationDiff, error) {
 	current := roleRelationValues(role)
+	expanded := roleRelationExpanded(role)
 	var diffs []roleRelationDiff
 	for _, field := range roleRelationFields {
 		raw, ok := body[field]
@@ -64,11 +74,12 @@ func roleRelationDiffs(role api.Role, body map[string]any) ([]roleRelationDiff, 
 			after = len(next)
 		}
 		diffs = append(diffs, roleRelationDiff{
-			Field:     field,
-			Before:    len(current[field]),
-			After:     after,
-			IDs:       next,
-			Projected: projected,
+			Field:       field,
+			Before:      len(current[field]),
+			After:       after,
+			IDs:         next,
+			Projected:   projected,
+			BeforeKnown: expanded[field],
 		})
 	}
 	return diffs, nil
@@ -76,12 +87,17 @@ func roleRelationDiffs(role api.Role, body map[string]any) ([]roleRelationDiff, 
 
 func projectRelationIDs(current []string, raw any) ([]string, bool, error) {
 	if raw == nil {
-		return slices.Clone(current), true, nil
+		return []string{}, true, nil
 	}
 
 	obj, ok := raw.(map[string]any)
 	if !ok {
-		return api.ParseRelationIDs(raw), true, nil
+		switch raw.(type) {
+		case []any, []string:
+			return api.ParseRelationIDs(raw), true, nil
+		default:
+			return nil, false, fmt.Errorf("expected an array of IDs or an __op object, got %T", raw)
+		}
 	}
 
 	op, _ := obj["__op"].(string)
@@ -135,11 +151,11 @@ func relationShrinksOverHalf(before, after int) bool {
 
 func requireRelationShrinks(flags *RootFlags, roleID string, diffs []roleRelationDiff) error {
 	for _, diff := range diffs {
-		if !diff.Projected || !relationShrinksOverHalf(diff.Before, diff.After) {
+		if !diff.BeforeKnown || !diff.Projected || !relationShrinksOverHalf(diff.Before, diff.After) {
 			continue
 		}
-		action := fmt.Sprintf("replace more than half of the %s relation on role %s (%d → %d)", diff.Field, roleID, diff.Before, diff.After)
-		if flags != nil && !flags.Force {
+		action := fmt.Sprintf("drop more than half of the %s relation on role %s (%d → %d)", diff.Field, roleID, diff.Before, diff.After)
+		if flags == nil || !flags.Force {
 			return fmt.Errorf("use --force to %s", action)
 		}
 	}
@@ -148,9 +164,16 @@ func requireRelationShrinks(flags *RootFlags, roleID string, diffs []roleRelatio
 
 func printRoleRelationDiffs(ctx context.Context, diffs []roleRelationDiff) error {
 	for _, diff := range diffs {
-		line := fmt.Sprintf("%s: %d → %d\n", diff.Field, diff.Before, diff.After)
-		if !diff.Projected {
+		var line string
+		switch {
+		case !diff.BeforeKnown && !diff.Projected:
+			line = fmt.Sprintf("%s: ? → ? (__op passed through)\n", diff.Field)
+		case !diff.BeforeKnown:
+			line = fmt.Sprintf("%s: ? → %d\n", diff.Field, diff.After)
+		case !diff.Projected:
 			line = fmt.Sprintf("%s: %d → ? (__op passed through)\n", diff.Field, diff.Before)
+		default:
+			line = fmt.Sprintf("%s: %d → %d\n", diff.Field, diff.Before, diff.After)
 		}
 		if _, err := output.Fprintf(ctx, "%s", line); err != nil {
 			return err
@@ -176,11 +199,7 @@ func relationMemberCount(ids api.RelationIDs, expanded bool) any {
 }
 
 func requireExpandedReplacements(role api.Role, body map[string]any) error {
-	expanded := map[string]bool{
-		"customers": role.CustomersExpanded,
-		"children":  role.ChildrenExpanded,
-		"parents":   role.ParentsExpanded,
-	}
+	expanded := roleRelationExpanded(role)
 	for _, field := range roleRelationFields {
 		raw, ok := body[field]
 		if !ok || !relationPayloadReplaces(raw) {
@@ -210,9 +229,4 @@ func relationPayloadReplaces(raw any) bool {
 	default:
 		return false
 	}
-}
-
-func humanOutput(ctx context.Context) bool {
-	mode := output.FromContext(ctx)
-	return !mode.JSON && !mode.Plain
 }

@@ -369,12 +369,16 @@ Three resource types have special contracts beyond standard CRUD:
 12. **Role membership is a full replace**: `roles update` with a
     `customers`/`children`/`parents` array replaces the whole relation. A
     payload that would drop more than half the members needs `--force`.
-    Prefer `roles customers add|remove|set`, which compute the full ID list
-    in the CLI and verify it after the write. `__op` envelopes
-    (`AddReference`, `RemoveReference`, `Batch`, plus `AddRelation` /
-    `RemoveRelation` aliases) are a server-side feature; the CLI sends them
-    through verbatim. Use `--dry-run` on `roles update` to print the body
-    and projected counts without writing.
+    To clear a relation, send an empty array (`{"customers": []}`) with
+    `roles update --force`; `roles customers set` always requires at least
+    one `--customer`. Prefer `roles customers add|remove|set`, which
+    compute the full ID list in the CLI and verify it after the write; the
+    same `--force` rule applies when `remove` or `set` would drop more than
+    half of the members.
+    `__op` envelopes (`AddReference`, `RemoveReference`, `Batch`, plus
+    `AddRelation` / `RemoveRelation` aliases) are a server-side feature;
+    the CLI sends them through verbatim. Use `--dry-run` on `roles update`
+    to print the body and projected counts without writing.
 
 ## Common Workflows
 
