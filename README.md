@@ -177,6 +177,11 @@ nimbu pages get --page about/team --download-assets tmp/page-assets --json
 # Replace-safe page update using a full document payload
 nimbu pages update --page about/team --file page.json
 
+# Edit a page draft without publishing, then preview it
+nimbu pages set --page about/team --path title --draft "Coming soon"
+nimbu pages draft preview-url --page about/team --open
+nimbu pages draft publish --page about/team
+
 # Nested menu fetch
 nimbu menus get --menu main --json
 
@@ -484,6 +489,7 @@ Runtime notes:
 - Vite starters may still accept `VITE_NIMBU_PROXY_URL` as a compatibility fallback, but `NIMBU_PROXY_URL` is the preferred name.
 - `nimbu server` passes `NIMBU_DEV_PROXY_TOKEN` to the child dev server. Tools such as Vite can use it with `NIMBU_PROXY_URL` to register in-memory template overlays at `PUT /__nimbu/dev/templates/overlays` and clear them with `DELETE /__nimbu/dev/templates/overlays`.
 - Template overlays are local-only, are never written to disk, and override disk templates with the same type/path while the dev proxy is running.
+- `?preview=<token>` already works through the simulator when the browser URL carries it. `nimbu server --draft <page>` (repeatable) also lets you browse the normal page URL: on startup the proxy requests a preview token for each listed page and injects `preview=<token>` into matching requests (the page fullpath, locale prefixes such as `/en/…`, and `translations.*.fullpath`). Child paths are not matched. Startup fails clearly if page drafts are disabled or the page has no draft.
 
 Override example:
 

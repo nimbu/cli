@@ -34,6 +34,7 @@ type ServerCmd struct {
 	Arg               []string      `help:"Child dev server arguments (repeatable)" name:"arg"`
 	CMD               string        `help:"Override child dev server executable" name:"cmd"`
 	CWD               string        `help:"Override child working directory"`
+	Draft             []string      `help:"Request a draft preview token for each page and inject ?preview= on matching local URLs so you can browse the normal path. The simulator already honours ?preview=<token> when the browser URL carries it. Repeatable."`
 	EventsJSON        bool          `help:"Emit structured runtime events as JSON lines"`
 	MaxBodyMB         int           `help:"Max request body size in MB for simulator proxy" default:"0"`
 	NoWatch           bool          `help:"Disable filesystem watcher invalidation"`
@@ -91,6 +92,9 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		WatchScanInterval: runtimeCfg.WatchScanInterval,
 	}, client)
 	if err != nil {
+		return err
+	}
+	if err := enableServerDraftPreviews(ctx, client, c.Draft, proxy); err != nil {
 		return err
 	}
 
