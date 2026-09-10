@@ -71,6 +71,8 @@ func TestFlagFirstSyntaxParsesRepresentativeCommands(t *testing.T) {
 		{"completion", "--shell=zsh"},
 		{"themes", "push", "--only=assets/app.css"},
 		{"themes", "push", "--only=assets/app.css,layouts/theme.liquid"},
+		{"themes", "push", "--only=templates/page.liquid", "--no-deps"},
+		{"pages", "update", "--page=about", "--dry-run", "title=About"},
 		{"themes", "sync", "--only=assets/app.css,layouts/theme.liquid"},
 		{"apps", "push", "--only=code/main.js,code/hooks.js"},
 		{"sites", "settings", "--site=staging"},

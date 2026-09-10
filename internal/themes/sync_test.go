@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/nimbu/cli/internal/api"
@@ -228,6 +229,103 @@ func TestRunPushOrdersUploadsByLiquidDependencies(t *testing.T) {
 	if !reflect.DeepEqual(uploads, wantUploads) {
 		t.Fatalf("request order = %#v, want %#v", uploads, wantUploads)
 	}
+}
+
+func TestRunPushOnlyExpandsLocalLiquidDependencies(t *testing.T) {
+	root := t.TempDir()
+	writeThemeTestFile(t, root, "templates/page.liquid", `{% include 'svg/a' %}`)
+	writeThemeTestFile(t, root, "snippets/svg/a.liquid", `{% include 'svg/b' %}`)
+	writeThemeTestFile(t, root, "snippets/svg/b.liquid", "b")
+	writeThemeTestFile(t, root, "snippets/unused.liquid", "unused")
+
+	var uploads []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode upload: %v", err)
+		}
+		uploads = append(uploads, r.URL.Path+" "+fmtString(body["name"]))
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": body["name"], "code": body["code"]})
+	}))
+	defer server.Close()
+
+	result, err := RunPush(context.Background(), api.New(server.URL, ""), themeAllRootsTestConfig(root), Options{
+		Only: []string{"templates/page.liquid"},
+	})
+	if err != nil {
+		t.Fatalf("RunPush: %v", err)
+	}
+	got := actionPaths(result.Uploaded)
+	want := []string{"snippets/svg/b.liquid", "snippets/svg/a.liquid", "templates/page.liquid"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("uploaded = %#v, want %#v", got, want)
+	}
+	if !result.Uploaded[0].Dependency || !result.Uploaded[1].Dependency || result.Uploaded[2].Dependency {
+		t.Fatalf("dependency flags = %#v", result.Uploaded)
+	}
+	if len(result.AddedDependencies) != 2 {
+		t.Fatalf("added = %#v", result.AddedDependencies)
+	}
+}
+
+func TestRunPushNoDepsWarnsInsteadOfAdding(t *testing.T) {
+	root := t.TempDir()
+	writeThemeTestFile(t, root, "templates/page.liquid", `{% include 'svg/a' %}`)
+	writeThemeTestFile(t, root, "snippets/svg/a.liquid", "a")
+
+	var uploads []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode upload: %v", err)
+		}
+		uploads = append(uploads, fmtString(body["name"]))
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": body["name"], "code": body["code"]})
+	}))
+	defer server.Close()
+
+	result, err := RunPush(context.Background(), api.New(server.URL, ""), themeAllRootsTestConfig(root), Options{
+		Only:   []string{"templates/page.liquid"},
+		NoDeps: true,
+	})
+	if err != nil {
+		t.Fatalf("RunPush: %v", err)
+	}
+	if got := actionPaths(result.Uploaded); !reflect.DeepEqual(got, []string{"templates/page.liquid"}) {
+		t.Fatalf("uploaded = %#v", got)
+	}
+	if len(result.AddedDependencies) != 0 {
+		t.Fatalf("added = %#v", result.AddedDependencies)
+	}
+	joined := strings.Join(result.Warnings, "\n")
+	if !strings.Contains(joined, "dependency not in transfer set: templates/page.liquid references snippets/svg/a.liquid") {
+		t.Fatalf("warnings = %#v", result.Warnings)
+	}
+}
+
+func TestRunPushDryRunMarksAddedDependencies(t *testing.T) {
+	root := t.TempDir()
+	writeThemeTestFile(t, root, "templates/page.liquid", `{% include 'svg/a' %}`)
+	writeThemeTestFile(t, root, "snippets/svg/a.liquid", "a")
+
+	result, err := RunPush(context.Background(), api.New("http://127.0.0.1:1", ""), themeAllRootsTestConfig(root), Options{
+		Only:   []string{"templates/page.liquid"},
+		DryRun: true,
+	})
+	if err != nil {
+		t.Fatalf("RunPush: %v", err)
+	}
+	if got := actionPaths(result.Uploaded); !reflect.DeepEqual(got, []string{"snippets/svg/a.liquid", "templates/page.liquid"}) {
+		t.Fatalf("uploaded = %#v", got)
+	}
+	if !result.Uploaded[0].Dependency {
+		t.Fatalf("expected dependency mark on %s", result.Uploaded[0].DisplayPath)
+	}
+}
+
+func fmtString(value any) string {
+	s, _ := value.(string)
+	return s
 }
 
 func TestUploadCategoriesFollowOrderedResourceRuns(t *testing.T) {

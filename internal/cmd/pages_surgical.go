@@ -151,7 +151,7 @@ func (s *surgicalSession) runBatch(ops []plannedOp, write surgicalWriteFlags) (*
 	}
 	var apiErr *api.Error
 	if s.draftMode || !errors.As(err, &apiErr) || apiErr.StatusCode != 412 {
-		return nil, err
+		return nil, withPageThemeHint(err, stringAny(s.doc["template"]))
 	}
 
 	if refetchErr := s.reload(); refetchErr != nil {
@@ -174,7 +174,7 @@ func (s *surgicalSession) runBatch(ops []plannedOp, write surgicalWriteFlags) (*
 	}
 	result, err = s.postBatch(retried)
 	if err != nil {
-		return nil, err
+		return nil, withPageThemeHint(err, stringAny(s.doc["template"]))
 	}
 	s.absorbResult(result)
 	return result, nil

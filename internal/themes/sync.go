@@ -47,12 +47,26 @@ func run(ctx context.Context, client *api.Client, cfg Config, opts Options, mode
 		return result, err
 	}
 
+	if !opts.NoDeps {
+		expanded, added, missing, expandErr := expandUploadsWithLocalDependencies(uploads, allLocal)
+		if expandErr != nil {
+			return result, expandErr
+		}
+		uploads = expanded
+		result.AddedDependencies = added
+		result.Warnings = append(result.Warnings, missing...)
+	}
+
 	// Sort uploads in dependency order.
 	orderedUploads, dependencyWarnings, err := orderUploadsByDependencies(uploads)
 	if err != nil {
 		return result, err
 	}
-	result.Warnings = append(result.Warnings, dependencyWarnings...)
+	if opts.NoDeps {
+		result.Warnings = append(result.Warnings, dependencyWarnings...)
+	} else {
+		result.Warnings = append(result.Warnings, dropTransferSetWarnings(dependencyWarnings)...)
+	}
 	result.Deleted = toActions(deletes)
 	categories := uploadCategoriesForOrderedResources(orderedUploads)
 
@@ -438,5 +452,6 @@ func toAction(resource Resource) Action {
 		Kind:        resource.Kind,
 		LocalPath:   resource.LocalPath,
 		RemoteName:  resource.RemoteName,
+		Dependency:  resource.Dependency,
 	}
 }

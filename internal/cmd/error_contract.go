@@ -236,6 +236,10 @@ func classifyError(err error) errorDescriptor {
 		if desc.Message == "" {
 			desc.Message = apiErr.Error()
 		}
+		if hint := overlayHintFrom(err); hint != "" {
+			desc.Hint = hint
+			desc.Code = errorRequestValidation
+		}
 		return desc
 	}
 
