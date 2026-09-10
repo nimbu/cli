@@ -77,10 +77,11 @@ func TestSiteFlagHelpMentionsProjectResolution(t *testing.T) {
 			continue
 		}
 		help := strings.ToLower(flag.Help)
-		for _, needle := range []string{"--site", "nimbu_site", "nimbu_project_dir", "git"} {
-			if !strings.Contains(help, needle) {
-				t.Fatalf("site flag help %q, missing %q", flag.Help, needle)
-			}
+		if !strings.Contains(help, "nimbu.yml") {
+			t.Fatalf("site flag help %q, missing %q", flag.Help, "nimbu.yml")
+		}
+		if len(flag.Help) > 45 {
+			t.Fatalf("site flag help %q must stay short enough to render on one help line", flag.Help)
 		}
 		return
 	}
