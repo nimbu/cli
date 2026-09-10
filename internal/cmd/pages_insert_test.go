@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,7 +74,12 @@ func TestPagesInsertFileEditableUsesTwoBatches(t *testing.T) {
 	srv := srvState.start(t)
 	defer srv.Close()
 
-	file := writePageFile(t, `{"Title":"Hi","Image":{"attachment_url":"https://cdn.example.test/a.jpg"}}`)
+	asset := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write([]byte("jpeg-bytes"))
+	}))
+	t.Cleanup(asset.Close)
+	file := writePageFile(t, `{"Title":"Hi","Image":{"attachment_url":"`+asset.URL+`/a.jpg"}}`)
 	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{})
 	cmd := &PagesInsertCmd{Page: "about", Path: "Blokken", Slug: "hero_stage", File: file}
 	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {

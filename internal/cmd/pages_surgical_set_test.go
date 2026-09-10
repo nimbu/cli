@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,6 +76,48 @@ func TestPagesSetSwitchCoercionAndFileSources(t *testing.T) {
 		value := op["value"].(map[string]any)
 		if value["__type"] != "FileRef" || value["source"] != "nimbu://uploads/1" {
 			t.Fatalf("file value = %#v", value)
+		}
+	})
+
+	t.Run("explicit http FileRef is left untouched", func(t *testing.T) {
+		srvState := &surgicalServer{}
+		srv := srvState.start(t)
+		defer srv.Close()
+		file := writePageFile(t, `{"__type":"FileRef","source":"https://cdn.example.test/x.png"}`)
+		ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{})
+		cmd := &PagesSetCmd{Page: "about", Path: "Blokken[0].Image", File: file}
+		if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		op := srvState.lastBody["operations"].([]any)[0].(map[string]any)
+		value := op["value"].(map[string]any)
+		if value["__type"] != "FileRef" || value["source"] != "https://cdn.example.test/x.png" {
+			t.Fatalf("file value = %#v", value)
+		}
+	})
+
+	t.Run("attachment_url downloads as data filename content_type", func(t *testing.T) {
+		asset := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write([]byte("png-bytes"))
+		}))
+		t.Cleanup(asset.Close)
+		srvState := &surgicalServer{}
+		srv := srvState.start(t)
+		defer srv.Close()
+		file := writePageFile(t, `{"attachment_url":"`+asset.URL+`/dot.png"}`)
+		ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{})
+		cmd := &PagesSetCmd{Page: "about", Path: "Blokken[0].Image", File: file}
+		if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		op := srvState.lastBody["operations"].([]any)[0].(map[string]any)
+		value := op["value"].(map[string]any)
+		if value["data"] == nil || value["filename"] != "dot.png" || value["content_type"] != "image/png" {
+			t.Fatalf("file value = %#v", value)
+		}
+		if value["__type"] != nil || value["attachment"] != nil {
+			t.Fatalf("surgical payload should be {data,filename,content_type}, got %#v", value)
 		}
 	})
 

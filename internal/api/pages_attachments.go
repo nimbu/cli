@@ -26,7 +26,7 @@ type PageAttachmentExpansionOptions struct {
 
 // ExpandPageAttachmentPaths prepares file editables for an API write:
 //   - attachment_path: read the local file, base64-encode it, mark __type "File"
-//   - attachment_url:  rewrite to a FileRef (same-site CDN URLs become nimbu:// sources)
+//   - attachment_url:  same-site CDN uploads become nimbu:// FileRefs; other URLs are downloaded and inlined
 //
 // A file editable that ends up with neither an inline attachment nor a writable
 // source is an error, since writing it would silently clear the asset.
@@ -61,6 +61,11 @@ func ExpandPageAttachmentPathsWithOptions(doc PageDocument, opts PageAttachmentE
 
 		if stringValue(file["attachment"]) != "" {
 			file["__type"] = "File"
+			stripReadOnlyFileWriteKeys(file)
+			return nil
+		}
+
+		if stringValue(file["__type"]) == "FileRef" && stringValue(file["source"]) != "" {
 			stripReadOnlyFileWriteKeys(file)
 			return nil
 		}

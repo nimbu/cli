@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 )
@@ -11,15 +12,17 @@ const (
 	nimbuCDNHost             = "cdn.nimbu.io"
 	maxFileRefUploadPages    = 20
 	fileRefUploadPageSize    = 100
-	fileRefCopyWarningSuffix = "is not an upload of this site; the server will copy it"
+	maxInlineFileBytes       = 25 << 20
+	fileRefCopyWarningSuffix = "is not an upload of this site; downloading it and storing a copy"
 )
 
 // FileRefNormalizer turns remote file URLs into write payloads.
-// Same-site CDN URLs become nimbu:// upload references; everything else is
-// passed through as {"__type":"FileRef","source":"<url>"} so the server copies the asset.
+// Same-site CDN URLs become nimbu:// upload references; every other http(s)
+// URL is downloaded and inlined as {"__type":"File","attachment":...}.
 type FileRefNormalizer struct {
 	Client      *Client
 	SiteShortID string
+	HTTPClient  *http.Client
 }
 
 // NormalizeURL rewrites a remote file URL into a FileRef write payload.
@@ -34,17 +37,17 @@ func (n *FileRefNormalizer) NormalizeURL(ctx context.Context, rawURL string) (ma
 
 	cdnSite, isCDN := ParseNimbuCDNSiteShortID(rawURL)
 	if !isCDN {
-		return copyFileRef(rawURL), "", nil
+		return n.inlineRemoteURL(ctx, rawURL)
 	}
 
 	siteShort, err := n.EnsureSiteShortID(ctx)
 	if err == nil && siteShort != "" && !strings.EqualFold(cdnSite, siteShort) {
-		return copyFileRef(rawURL), FileRefCopyWarning(rawURL), nil
+		return n.inlineRemoteURL(ctx, rawURL)
 	}
 
 	upload, err := n.findUploadByURL(ctx, rawURL)
 	if err != nil || upload == nil || strings.TrimSpace(upload.ID) == "" {
-		return copyFileRef(rawURL), FileRefCopyWarning(rawURL), nil
+		return n.inlineRemoteURL(ctx, rawURL)
 	}
 	if siteShort == "" {
 		siteShort = cdnSite
@@ -125,7 +128,7 @@ func ParseNimbuCDNSiteShortID(rawURL string) (string, bool) {
 	return parts[1], true
 }
 
-// FileRefCopyWarning is the stderr message body for a passthrough CDN URL.
+// FileRefCopyWarning is the stderr message body when a URL is downloaded and inlined.
 func FileRefCopyWarning(rawURL string) string {
 	return rawURL + " " + fileRefCopyWarningSuffix
 }
@@ -195,6 +198,10 @@ func nimbuFileRef(source string) map[string]any {
 	return map[string]any{"__type": "FileRef", "source": source}
 }
 
-func copyFileRef(rawURL string) map[string]any {
-	return nimbuFileRef(rawURL)
+func (n *FileRefNormalizer) inlineRemoteURL(ctx context.Context, rawURL string) (map[string]any, string, error) {
+	payload, err := n.downloadInlineFile(ctx, rawURL)
+	if err != nil {
+		return nil, "", err
+	}
+	return payload, FileRefCopyWarning(rawURL), nil
 }

@@ -104,6 +104,10 @@ func expandInsertFileValue(session *surgicalSession, raw any) (any, error) {
 	if path := stringAny(m["attachment_path"]); path != "" {
 		return encodeLocalFileValue(path)
 	}
+	if stringAny(m["__type"]) == "FileRef" {
+		source := firstNonBlank(stringAny(m["source"]), stringAny(m["attachment_url"]), stringAny(m["url"]))
+		return map[string]any{"__type": "FileRef", "source": source}, nil
+	}
 	source := firstNonBlank(stringAny(m["source"]), stringAny(m["attachment_url"]), stringAny(m["url"]))
 	if source == "" {
 		return m, nil
@@ -111,15 +115,34 @@ func expandInsertFileValue(session *surgicalSession, raw any) (any, error) {
 	if strings.HasPrefix(source, "nimbu://") {
 		return map[string]any{"__type": "FileRef", "source": source}, nil
 	}
-	if session == nil {
-		return map[string]any{"__type": "FileRef", "source": source}, nil
+	ctx := context.Background()
+	if session != nil {
+		ctx = session.ctx
 	}
-	payload, warning, err := session.fileRefs().NormalizeURL(session.ctx, source)
+	payload, warning, err := session.fileRefs().NormalizeURL(ctx, source)
 	if err != nil {
 		return nil, err
 	}
 	session.warnFileRef(warning)
-	return payload, nil
+	return surgicalInlineFile(payload), nil
+}
+
+func surgicalInlineFile(payload map[string]any) map[string]any {
+	if stringAny(payload["__type"]) != "File" {
+		return payload
+	}
+	filename := stringAny(payload["filename"])
+	encoded := stringAny(payload["attachment"])
+	contentType := stringAny(payload["content_type"])
+	if contentType == "" {
+		raw, _ := base64.StdEncoding.DecodeString(encoded)
+		contentType = detectFileContentType(filename, raw)
+	}
+	return map[string]any{
+		"data":         encoded,
+		"filename":     filename,
+		"content_type": contentType,
+	}
 }
 
 func expandSetFileValue(session *surgicalSession, raw any) (any, error) {
