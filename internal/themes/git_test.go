@@ -1,7 +1,10 @@
 package themes
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -35,5 +38,26 @@ func TestCollectGitChangesSinceErrorsNoHead(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no commits") {
 		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestCollectGitChangesResolvesSymlinkedProjectRoot(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "theme")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+	writeThemeTestFile(t, real, "snippets/svg/a.liquid", "a")
+	initThemeGitRepo(t, real)
+	runGit(t, real, "add", "snippets/svg/a.liquid")
+	runGit(t, real, "-c", "user.name=test", "-c", "user.email=test@test", "commit", "-m", "snippet")
+	writeThemeTestFile(t, real, "templates/page.liquid", "page")
+
+	changes, err := CollectGitChanges(themeAllRootsTestConfig(link), "HEAD")
+	if err != nil {
+		t.Fatalf("CollectGitChanges: %v", err)
+	}
+	if !reflect.DeepEqual(changes.Changed, []string{"templates/page.liquid"}) {
+		t.Fatalf("changed = %#v, want the untracked template", changes.Changed)
 	}
 }

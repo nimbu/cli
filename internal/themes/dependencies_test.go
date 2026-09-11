@@ -114,6 +114,74 @@ func TestOrderResourceContentWarnsForMissingAndCycles(t *testing.T) {
 	}
 }
 
+func TestExpandTransferSetWithLiquidDependenciesAddsTransitiveSnippets(t *testing.T) {
+	page := ResourceContent{
+		Resource: Resource{Kind: KindTemplate, RemoteName: "page.liquid", DisplayPath: "templates/page.liquid"},
+		Content:  []byte(`{% include 'svg/a' %}`),
+	}
+	snippetA := ResourceContent{
+		Resource: Resource{Kind: KindSnippet, RemoteName: "svg/a.liquid", DisplayPath: "snippets/svg/a.liquid"},
+		Content:  []byte(`{% include 'svg/b' %}`),
+	}
+	snippetB := ResourceContent{
+		Resource: Resource{Kind: KindSnippet, RemoteName: "svg/b.liquid", DisplayPath: "snippets/svg/b.liquid"},
+		Content:  []byte(`b`),
+	}
+	unused := ResourceContent{
+		Resource: Resource{Kind: KindSnippet, RemoteName: "unused.liquid", DisplayPath: "snippets/unused.liquid"},
+		Content:  []byte(`{% include 'svg/a' %}`),
+	}
+
+	expanded, added, warnings := ExpandTransferSetWithLiquidDependencies(
+		[]ResourceContent{page},
+		[]ResourceContent{page, snippetA, snippetB, unused},
+	)
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	got := resourcePaths(expanded)
+	want := []string{"templates/page.liquid", "snippets/svg/a.liquid", "snippets/svg/b.liquid"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expanded = %#v, want %#v", got, want)
+	}
+	if !expanded[1].Resource.Dependency || !expanded[2].Resource.Dependency {
+		t.Fatalf("added files should be marked as dependencies: %#v", expanded)
+	}
+	if expanded[0].Resource.Dependency {
+		t.Fatal("selected template should not be marked as a dependency")
+	}
+	if len(added) != 2 {
+		t.Fatalf("added = %#v", added)
+	}
+	if added[0].Path != "snippets/svg/a.liquid" || added[0].ReferencedBy != "templates/page.liquid" {
+		t.Fatalf("first added = %#v", added[0])
+	}
+	if added[1].Path != "snippets/svg/b.liquid" || added[1].ReferencedBy != "snippets/svg/a.liquid" {
+		t.Fatalf("second added = %#v", added[1])
+	}
+}
+
+func TestExpandTransferSetWithLiquidDependenciesWarnsWhenMissingLocally(t *testing.T) {
+	page := ResourceContent{
+		Resource: Resource{Kind: KindTemplate, RemoteName: "page.liquid", DisplayPath: "templates/page.liquid"},
+		Content:  []byte(`{% include 'missing' %}`),
+	}
+
+	expanded, added, warnings := ExpandTransferSetWithLiquidDependencies(
+		[]ResourceContent{page},
+		[]ResourceContent{page},
+	)
+	if len(added) != 0 {
+		t.Fatalf("added = %#v", added)
+	}
+	if got := resourcePaths(expanded); !reflect.DeepEqual(got, []string{"templates/page.liquid"}) {
+		t.Fatalf("expanded = %#v", got)
+	}
+	if len(warnings) != 1 || warnings[0] != "templates/page.liquid references snippets/missing.liquid, which is not in this theme" {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+}
+
 func resourcePaths(items []ResourceContent) []string {
 	paths := make([]string, len(items))
 	for i, item := range items {

@@ -216,15 +216,21 @@ func completeFlagNames(parser *kong.Kong, req completionRequest) []completionIte
 			if flag == nil || flag.Hidden || flag.Name == "" {
 				continue
 			}
-			value := "--" + flag.Name
-			if _, ok := seen[value]; ok {
-				continue
+			names := append([]string{flag.Name}, flag.Aliases...)
+			for _, name := range names {
+				if name == "" {
+					continue
+				}
+				value := "--" + name
+				if _, ok := seen[value]; ok {
+					continue
+				}
+				seen[value] = struct{}{}
+				items = append(items, completionItem{
+					Value:       value,
+					Description: strings.TrimSpace(flag.Help),
+				})
 			}
-			seen[value] = struct{}{}
-			items = append(items, completionItem{
-				Value:       value,
-				Description: strings.TrimSpace(flag.Help),
-			})
 		}
 	}
 
@@ -331,7 +337,9 @@ var completionValueFlags = map[string]bool{
 	"apiurl":              true,
 	"app":                 true,
 	"account":             true,
+	"after":               true,
 	"attachment":          true,
+	"asset":               true,
 	"arg":                 true,
 	"backend":             true,
 	"blog":                true,
@@ -355,6 +363,7 @@ var completionValueFlags = map[string]bool{
 	"device-id":           true,
 	"dir":                 true,
 	"domain":              true,
+	"draft":               true,
 	"download-assets":     true,
 	"email":               true,
 	"enable-commands":     true,
@@ -371,6 +380,7 @@ var completionValueFlags = map[string]bool{
 	"filename":            true,
 	"function":            true,
 	"from":                true,
+	"from-file":           true,
 	"from-host":           true,
 	"id":                  true,
 	"image":               true,
@@ -378,6 +388,7 @@ var completionValueFlags = map[string]bool{
 	"include":             true,
 	"job":                 true,
 	"key":                 true,
+	"layout":              true,
 	"level":               true,
 	"limit":               true,
 	"locale":              true,
@@ -417,10 +428,13 @@ var completionValueFlags = map[string]bool{
 	"since":               true,
 	"shell":               true,
 	"site":                true,
+	"slug":                true,
+	"snippet":             true,
 	"kind":                true,
 	"sort":                true,
 	"source":              true,
 	"status":              true,
+	"template":            true,
 	"template-root":       true,
 	"theme":               true,
 	"timestamp":           true,

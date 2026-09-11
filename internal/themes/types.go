@@ -49,6 +49,7 @@ type Resource struct {
 	RemoteName  string `json:"remote_name"`
 	PublicURL   string `json:"public_url,omitempty"`
 	AbsPath     string `json:"-"`
+	Dependency  bool   `json:"-"`
 }
 
 // Action records one upload or delete operation.
@@ -57,19 +58,27 @@ type Action struct {
 	DisplayPath string `json:"path"`
 	LocalPath   string `json:"local_path,omitempty"`
 	RemoteName  string `json:"remote_name"`
+	Dependency  bool   `json:"dependency,omitempty"`
+}
+
+// AddedDependency is a local snippet or layout pulled into a narrowed transfer set.
+type AddedDependency struct {
+	Path         string `json:"path"`
+	ReferencedBy string `json:"referenced_by"`
 }
 
 // Result is emitted by push/sync commands.
 type Result struct {
-	Built            bool     `json:"built,omitempty"`
-	Deleted          []Action `json:"deleted,omitempty"`
-	DryRun           bool     `json:"dry_run,omitempty"`
-	Mode             string   `json:"mode"`
-	Skipped          []Action `json:"skipped,omitempty"`
-	Theme            string   `json:"theme"`
-	Uploaded         []Action `json:"uploaded,omitempty"`
-	Warnings         []string `json:"warnings,omitempty"`
-	TimelineRendered bool     `json:"-"`
+	Built             bool              `json:"built,omitempty"`
+	Deleted           []Action          `json:"deleted,omitempty"`
+	DryRun            bool              `json:"dry_run,omitempty"`
+	Mode              string            `json:"mode"`
+	Skipped           []Action          `json:"skipped,omitempty"`
+	Theme             string            `json:"theme"`
+	Uploaded          []Action          `json:"uploaded,omitempty"`
+	Warnings          []string          `json:"warnings,omitempty"`
+	AddedDependencies []AddedDependency `json:"added_dependencies,omitempty"`
+	TimelineRendered  bool              `json:"-"`
 }
 
 // BuildConfig configures an optional pre-push/pre-sync build step.
@@ -113,6 +122,7 @@ type Options struct {
 	ImagesOnly bool
 	FontsOnly  bool
 	NoImages   bool
+	NoDeps     bool
 
 	ConfirmOverwrite func(context.Context, Resource, error) (bool, error)
 }

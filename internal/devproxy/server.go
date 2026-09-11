@@ -54,8 +54,17 @@ type Server struct {
 
 	httpServer *http.Server
 	listener   net.Listener
+	preview    *PreviewInjector
 
 	requestLogSpacer sync.Once
+}
+
+// SetPreview installs a draft preview token injector for matching page paths.
+func (s *Server) SetPreview(preview *PreviewInjector) {
+	if s == nil {
+		return
+	}
+	s.preview = preview
 }
 
 func New(config Config, client SimulatorClient) (*Server, error) {
@@ -242,6 +251,8 @@ func (s *Server) handleCatchAll(w http.ResponseWriter, req *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "Not Found", "Resource not handled by proxy server")
 		return
 	}
+
+	s.preview.Apply(req)
 
 	rawBody, parsedBody, err := readBody(req, s.config.MaxBodyBytes)
 	if err != nil {

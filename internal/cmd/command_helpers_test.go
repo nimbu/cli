@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -108,6 +110,53 @@ func TestReadJSONInputRejectsTooLargePayload(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestReadJSONInputFromPipePath(t *testing.T) {
+	if _, err := os.Stat("/proc/self/fd"); err != nil {
+		t.Skip("/proc/self/fd not available")
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	defer func() { _ = r.Close() }()
+
+	if _, err := w.WriteString(`{"from":"pipe"}`); err != nil {
+		t.Fatalf("write pipe: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close pipe writer: %v", err)
+	}
+
+	info, err := r.Stat()
+	if err != nil {
+		t.Fatalf("stat pipe: %v", err)
+	}
+	if info.Size() != 0 {
+		t.Fatalf("pipe Size() = %d, want 0", info.Size())
+	}
+
+	path := fmt.Sprintf("/proc/self/fd/%d", r.Fd())
+	body, err := readJSONInput(path)
+	if err != nil {
+		t.Fatalf("readJSONInput(%s): %v", path, err)
+	}
+	if body["from"] != "pipe" {
+		t.Fatalf("body = %#v", body)
+	}
+}
+
+func TestReadJSONInputRejectsEmptyFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "empty.json")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	_, err := readJSONInput(file)
+	if !errors.Is(err, errNoJSONInput) {
+		t.Fatalf("error = %v, want no JSON input", err)
 	}
 }
 

@@ -30,6 +30,7 @@ func CollectGitChanges(cfg Config, since string) (GitChanges, error) {
 		return GitChanges{FallbackAll: true}, nil
 	}
 
+	projectRoot := realPath(cfg.ProjectRoot)
 	var changes GitChanges
 	changedSeen := map[string]struct{}{}
 	deletedSeen := map[string]struct{}{}
@@ -56,27 +57,27 @@ func CollectGitChanges(cfg Config, since string) (GitChanges, error) {
 
 		switch code {
 		case "D":
-			if rel, ok := repoPathToProjectRelative(repoRoot, cfg.ProjectRoot, parts[1:2]); ok {
+			if rel, ok := repoPathToProjectRelative(repoRoot, projectRoot, parts[1:2]); ok {
 				if _, exists := deletedSeen[rel]; !exists {
 					deletedSeen[rel] = struct{}{}
 					changes.Deleted = append(changes.Deleted, rel)
 				}
 			}
 		case "R":
-			if rel, ok := repoPathToProjectRelative(repoRoot, cfg.ProjectRoot, parts[1:2]); ok {
+			if rel, ok := repoPathToProjectRelative(repoRoot, projectRoot, parts[1:2]); ok {
 				if _, exists := deletedSeen[rel]; !exists {
 					deletedSeen[rel] = struct{}{}
 					changes.Deleted = append(changes.Deleted, rel)
 				}
 			}
-			if rel, ok := repoPathToProjectRelative(repoRoot, cfg.ProjectRoot, parts[2:3]); ok {
+			if rel, ok := repoPathToProjectRelative(repoRoot, projectRoot, parts[2:3]); ok {
 				if _, exists := changedSeen[rel]; !exists {
 					changedSeen[rel] = struct{}{}
 					changes.Changed = append(changes.Changed, rel)
 				}
 			}
 		default:
-			if rel, ok := repoPathToProjectRelative(repoRoot, cfg.ProjectRoot, parts[1:2]); ok {
+			if rel, ok := repoPathToProjectRelative(repoRoot, projectRoot, parts[1:2]); ok {
 				if _, exists := changedSeen[rel]; !exists {
 					changedSeen[rel] = struct{}{}
 					changes.Changed = append(changes.Changed, rel)
@@ -90,7 +91,7 @@ func CollectGitChanges(cfg Config, since string) (GitChanges, error) {
 		return GitChanges{}, err
 	}
 	for _, line := range lines {
-		if rel, ok := repoPathToProjectRelative(repoRoot, cfg.ProjectRoot, []string{line}); ok {
+		if rel, ok := repoPathToProjectRelative(repoRoot, projectRoot, []string{line}); ok {
 			if _, exists := changedSeen[rel]; !exists {
 				changedSeen[rel] = struct{}{}
 				changes.Changed = append(changes.Changed, rel)
@@ -111,7 +112,18 @@ func gitRepoRoot(projectRoot string) (string, bool) {
 	if root == "" {
 		return "", false
 	}
-	return filepath.Clean(root), true
+	return realPath(root), true
+}
+
+// realPath resolves symlinks and short names so paths reported by git compare
+// equal to the configured project root (macOS /var vs /private/var, Windows 8.3 names).
+func realPath(value string) string {
+	cleaned := filepath.Clean(value)
+	resolved, err := filepath.EvalSymlinks(cleaned)
+	if err != nil {
+		return cleaned
+	}
+	return resolved
 }
 
 func gitHasHead(projectRoot string) bool {

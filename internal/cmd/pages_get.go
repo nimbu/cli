@@ -8,6 +8,7 @@ import (
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
+	"github.com/nimbu/cli/internal/pagepath"
 )
 
 // PagesGetCmd gets page details.
@@ -48,7 +49,7 @@ func (c *PagesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if mode.Plain {
 			_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Err, "warning: --shape ignores --plain\n")
 		}
-		shape := api.PageShape(page)
+		shape := api.PageShapeWithSchema(page, loadPageShapeSchema(ctx, flags, client, page))
 		if mode.JSON {
 			return output.JSON(ctx, shape)
 		}
@@ -146,6 +147,9 @@ func writePageShapeItems(ctx context.Context, items map[string]any, depth int) e
 	for _, name := range names {
 		entry, _ := items[name].(map[string]any)
 		typ, _ := entry["type"].(string)
+		if options, ok := entry["options"].([]string); ok && len(options) > 0 {
+			typ = typ + ": " + strings.Join(options, " | ")
+		}
 		if _, err := output.Fprintf(ctx, "%s%s (%s)\n", indent, name, typ); err != nil {
 			return err
 		}
@@ -159,7 +163,8 @@ func writePageShapeItems(ctx context.Context, items map[string]any, depth int) e
 				continue
 			}
 			slug, _ := rep["slug"].(string)
-			if _, err := output.Fprintf(ctx, "%s  - %s\n", indent, slug); err != nil {
+			id, _ := rep["id"].(string)
+			if _, err := output.Fprintf(ctx, "%s  - %s [%v] %s\n", indent, slug, rep["position"], id); err != nil {
 				return err
 			}
 			if childItems, ok := rep["items"].(map[string]any); ok && len(childItems) > 0 {
@@ -168,6 +173,21 @@ func writePageShapeItems(ctx context.Context, items map[string]any, depth int) e
 				}
 			}
 		}
+	}
+	return nil
+}
+
+func loadPageShapeSchema(ctx context.Context, flags *RootFlags, client *api.Client, page api.PageDocument) *pagepath.Schema {
+	id, _ := page["id"].(string)
+	if strings.TrimSpace(id) == "" {
+		return nil
+	}
+	schema, err := client.GetPageSchema(ctx, id)
+	if err == nil {
+		return schema
+	}
+	if flags != nil && flags.Verbose {
+		_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Err, "warning: could not fetch page schema: %v\n", err)
 	}
 	return nil
 }

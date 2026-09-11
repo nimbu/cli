@@ -34,6 +34,7 @@ type ThemePushCmd struct {
 	ImagesOnly bool     `help:"Only upload image assets" name:"images-only"`
 	FontsOnly  bool     `help:"Only upload font assets" name:"fonts-only"`
 	NoImages   bool     `help:"Exclude image assets" name:"no-images"`
+	NoDeps     bool     `help:"Do not auto-add Liquid snippet/layout dependencies of --only files" name:"no-deps"`
 }
 
 // Run executes the push command.
@@ -56,6 +57,7 @@ type ThemeSyncCmd struct {
 	ImagesOnly bool     `help:"Only sync image assets" name:"images-only"`
 	FontsOnly  bool     `help:"Only sync font assets" name:"fonts-only"`
 	NoImages   bool     `help:"Exclude image assets" name:"no-images"`
+	NoDeps     bool     `help:"Do not auto-add Liquid snippet/layout dependencies of --only files" name:"no-deps"`
 }
 
 // Run executes the sync command.
@@ -77,6 +79,7 @@ func themePushOptions(c *ThemePushCmd, flags *RootFlags) themes.Options {
 		ImagesOnly: c.ImagesOnly,
 		FontsOnly:  c.FontsOnly,
 		NoImages:   c.NoImages,
+		NoDeps:     c.NoDeps,
 	}
 }
 
@@ -95,6 +98,7 @@ func themeSyncOptions(c *ThemeSyncCmd, flags *RootFlags) themes.Options {
 		ImagesOnly: c.ImagesOnly,
 		FontsOnly:  c.FontsOnly,
 		NoImages:   c.NoImages,
+		NoDeps:     c.NoDeps,
 	}
 }
 
@@ -251,44 +255,59 @@ func resolveThemeProjectConfig() (string, config.ProjectConfig, []string, error)
 }
 
 func writeThemeTransferResult(ctx context.Context, result themes.Result) error {
-	if output.IsHuman(ctx) {
-		w := output.WriterFromContext(ctx)
-		for _, warning := range result.Warnings {
-			_, _ = fmt.Fprintf(w.Err, "warning: %s\n", warning)
-		}
-	}
-	if result.TimelineRendered {
-		return nil
-	}
+	writeThemeTransferNotes(ctx, result)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, result)
 	}
-	if mode.Plain {
-		for _, action := range result.Uploaded {
-			if _, err := output.Fprintf(ctx, "upload\t%s\n", action.DisplayPath); err != nil {
-				return err
-			}
-		}
-		for _, action := range result.Deleted {
-			if _, err := output.Fprintf(ctx, "delete\t%s\n", action.DisplayPath); err != nil {
-				return err
-			}
-		}
-		for _, action := range result.Skipped {
-			if _, err := output.Fprintf(ctx, "skip\t%s\n", action.DisplayPath); err != nil {
-				return err
-			}
+	if result.TimelineRendered {
+		if result.DryRun && !mode.Plain {
+			return writeThemeTransferHumanList(ctx, result, false)
 		}
 		return nil
 	}
+	if mode.Plain {
+		return writeThemeTransferPlainList(ctx, result)
+	}
+	return writeThemeTransferHumanList(ctx, result, true)
+}
 
+func writeThemeTransferNotes(ctx context.Context, result themes.Result) {
+	w := output.WriterFromContext(ctx)
+	for _, added := range result.AddedDependencies {
+		_, _ = fmt.Fprintf(w.Err, "adding dependency %s (referenced by %s)\n", added.Path, added.ReferencedBy)
+	}
+	for _, warning := range result.Warnings {
+		_, _ = fmt.Fprintf(w.Err, "warning: %s\n", warning)
+	}
+}
+
+func writeThemeTransferPlainList(ctx context.Context, result themes.Result) error {
+	for _, action := range result.Uploaded {
+		if _, err := output.Fprintf(ctx, "upload\t%s%s\n", action.DisplayPath, dependencySuffix(action)); err != nil {
+			return err
+		}
+	}
+	for _, action := range result.Deleted {
+		if _, err := output.Fprintf(ctx, "delete\t%s\n", action.DisplayPath); err != nil {
+			return err
+		}
+	}
+	for _, action := range result.Skipped {
+		if _, err := output.Fprintf(ctx, "skip\t%s\n", action.DisplayPath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeThemeTransferHumanList(ctx context.Context, result themes.Result, summary bool) error {
 	prefix := ""
 	if result.DryRun {
 		prefix = "[dry-run] "
 	}
 	for _, action := range result.Uploaded {
-		if _, err := output.Fprintf(ctx, "%supload %s\n", prefix, action.DisplayPath); err != nil {
+		if _, err := output.Fprintf(ctx, "%supload %s%s\n", prefix, action.DisplayPath, dependencySuffix(action)); err != nil {
 			return err
 		}
 	}
@@ -302,12 +321,20 @@ func writeThemeTransferResult(ctx context.Context, result themes.Result) error {
 			return err
 		}
 	}
+	if !summary {
+		return nil
+	}
 	skipped := ""
 	if len(result.Skipped) > 0 {
 		skipped = fmt.Sprintf(", %d skipped", len(result.Skipped))
 	}
-	if _, err := output.Fprintf(ctx, "%s complete: %d uploads, %d deletes%s\n", result.Mode, len(result.Uploaded), len(result.Deleted), skipped); err != nil {
-		return err
+	_, err := output.Fprintf(ctx, "%s complete: %d uploads, %d deletes%s\n", result.Mode, len(result.Uploaded), len(result.Deleted), skipped)
+	return err
+}
+
+func dependencySuffix(action themes.Action) string {
+	if action.Dependency {
+		return " (dependency)"
 	}
-	return nil
+	return ""
 }

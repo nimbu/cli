@@ -17,6 +17,10 @@ type ChannelEntriesGetCmd struct {
 	Entry      string `required:"" help:"Entry ID or slug"`
 }
 
+func (ChannelEntriesGetCmd) Help() string {
+	return "Reads are per-locale (one GET per locale; the API returns no translations map for entries). Non-localized fields ignore --locale."
+}
+
 // Run executes the get command.
 func (c *ChannelEntriesGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	site, err := RequireSite(ctx, "")

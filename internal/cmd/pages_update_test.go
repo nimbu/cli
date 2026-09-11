@@ -392,6 +392,61 @@ func TestPagesUpdateAllowEmptyFileOverridesGuard(t *testing.T) {
 	}
 }
 
+func TestPagesUpdateDryRunPrintsBodyWithoutPatch(t *testing.T) {
+	var patched bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/pages/about":
+			_, _ = w.Write([]byte(`{"id":"p1","fullpath":"about","title":"Old","template":"page","items":{}}`))
+		case r.Method == http.MethodPatch && r.URL.Path == "/pages/about":
+			patched = true
+			_, _ = w.Write([]byte(`{"id":"p1"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, out, errOut := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	cmd := &PagesUpdateCmd{Page: "about", Assignments: []string{"title=New"}, DryRun: true}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo", Readonly: true}); err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if patched {
+		t.Fatal("dry-run must not PATCH")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("stdout is not a single JSON object: %v\n%s", err, out)
+	}
+	if payload["dry_run"] != true {
+		t.Fatalf("stdout = %s", out)
+	}
+	body, _ := payload["body"].(map[string]any)
+	if body["title"] != "New" {
+		t.Fatalf("body = %#v", payload["body"])
+	}
+	if !strings.Contains(errOut.String(), "dry-run: no request sent (the API has no validation endpoint yet)") {
+		t.Fatalf("stderr = %q", errOut.String())
+	}
+	if strings.Contains(out.String(), "dry-run: no request sent") {
+		t.Fatalf("stderr note leaked onto stdout: %s", out)
+	}
+}
+
+func TestPagesUpdateDryRunFlagParses(t *testing.T) {
+	parser, cli, err := newParser()
+	if err != nil {
+		t.Fatalf("newParser: %v", err)
+	}
+	if _, err := parser.Parse([]string{"pages", "update", "--page=about", "--dry-run", "title=New"}); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !cli.Pages.Update.DryRun {
+		t.Fatal("expected --dry-run")
+	}
+}
+
 func TestPagesUpdatePrintsAppliedCounts(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPatch && r.URL.Path == "/pages/about" {

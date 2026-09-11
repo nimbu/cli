@@ -5,6 +5,7 @@ import (
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/auth"
+	"github.com/nimbu/cli/internal/pagepath"
 )
 
 func TestClassifyErrorScopeMissing(t *testing.T) {
@@ -39,6 +40,21 @@ func TestClassifyErrorReadonly(t *testing.T) {
 	}
 	if desc.Hint == "" {
 		t.Fatal("expected readonly hint")
+	}
+}
+
+func TestClassifyErrorResolveError(t *testing.T) {
+	err := &pagepath.ResolveError{Path: "Blokken[9]", Candidates: []string{"[0] hero a"}}
+	desc := classifyError(err)
+	if desc.Code != errorRequestInvalid {
+		t.Fatalf("code = %s", desc.Code)
+	}
+	if desc.ExitCode != ExitUsage {
+		t.Fatalf("exit = %d", desc.ExitCode)
+	}
+	cands, ok := desc.Details["candidates"].([]string)
+	if !ok || len(cands) != 1 {
+		t.Fatalf("details = %#v", desc.Details)
 	}
 }
 

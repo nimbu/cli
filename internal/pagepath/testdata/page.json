@@ -1,0 +1,100 @@
+{
+  "id": "0000000000000000000000aa",
+  "title": "Home",
+  "slug": "home",
+  "seo_title": "Home SEO",
+  "seo_description": "A homepage",
+  "seo_keywords": "home",
+  "published": true,
+  "og_image": {"url": "https://cdn.example.test/og.png"},
+  "template": "home",
+  "items": {
+    "Blokken": {
+      "type": "canvas",
+      "repeatables": [
+        {
+          "id": "000000000000000000000004",
+          "slug": "case_cards",
+          "position": 4,
+          "items": {
+            "Title": {"type": "text", "content": "Card stored first"}
+          }
+        },
+        {
+          "id": "000000000000000000000001",
+          "slug": "hero_stage",
+          "position": 1,
+          "items": {
+            "Eyebrow": {"type": "field", "content": "New"},
+            "Title": {"type": "text", "content": "Hero"},
+            "Footnote": {"type": "field", "content": "Note"},
+            "Left Button - Link": {"type": "field", "content": "/contact"},
+            "Swoosh Bottom (hero)": {"type": "file", "file": {"url": "https://cdn.example.test/swoosh.png"}}
+          }
+        },
+        {
+          "id": "000000000000000000000002",
+          "slug": "proof_strip",
+          "position": 2,
+          "items": {
+            "Quote": {"type": "text", "content": "Trusted"}
+          }
+        },
+        {
+          "id": "000000000000000000000005",
+          "slug": "case_cards",
+          "position": 5,
+          "items": {
+            "Title": {"type": "text", "content": "Card stored fourth"}
+          }
+        },
+        {
+          "id": "000000000000000000000003",
+          "slug": "case_cards",
+          "position": 3,
+          "items": {
+            "Title": {"type": "text", "content": "Nested photos"},
+            "Photos": {
+              "type": "canvas",
+              "repeatables": [
+                {
+                  "id": "000000000000000000000011",
+                  "slug": "image",
+                  "position": 2,
+                  "items": {
+                    "Image": {"type": "file", "file": {"url": "https://cdn.example.test/a.jpg"}}
+                  }
+                },
+                {
+                  "id": "000000000000000000000010",
+                  "slug": "image",
+                  "position": 1,
+                  "items": {
+                    "Image": {"type": "file", "file": {"url": "https://cdn.example.test/b.jpg"}},
+                    "Nested": {
+                      "type": "canvas",
+                      "repeatables": [
+                        {
+                          "id": "000000000000000000000021",
+                          "slug": "deep",
+                          "position": 1,
+                          "items": {
+                            "X": {"type": "field", "content": "too deep"}
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "Korte uitleg \u2013 vraag": {
+      "type": "text",
+      "content": "Short explanation"
+    }
+  }
+}

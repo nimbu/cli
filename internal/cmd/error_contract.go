@@ -11,6 +11,7 @@ import (
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/auth"
 	"github.com/nimbu/cli/internal/output"
+	"github.com/nimbu/cli/internal/pagepath"
 )
 
 type canonicalErrorCode string
@@ -61,6 +62,48 @@ type displayedError struct {
 func (e *displayedError) Error() string { return e.err.Error() }
 func (e *displayedError) Unwrap() error { return e.err }
 
+// detailedError injects JSON envelope details for a typed CLI failure.
+type detailedError struct {
+	err      error
+	code     canonicalErrorCode
+	exitCode int
+	details  map[string]any
+	hint     string
+}
+
+func (e *detailedError) Error() string {
+	if e == nil || e.err == nil {
+		return ""
+	}
+	return e.err.Error()
+}
+
+func (e *detailedError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func newDetailedError(err error, code canonicalErrorCode, exitCode int, details map[string]any) error {
+	return &detailedError{err: err, code: code, exitCode: exitCode, details: details}
+}
+
+func newHintedError(err error, code canonicalErrorCode, exitCode int, hint string) error {
+	return &detailedError{err: err, code: code, exitCode: exitCode, hint: hint}
+}
+
+func pathResolveError(err error) error {
+	var resolveErr *pagepath.ResolveError
+	if errors.As(err, &resolveErr) {
+		return newDetailedError(err, errorRequestInvalid, ExitUsage, map[string]any{
+			"path":       resolveErr.Path,
+			"candidates": resolveErr.Candidates,
+		})
+	}
+	return err
+}
+
 func emitCommandError(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
@@ -85,6 +128,9 @@ func emitCommandError(ctx context.Context, err error) error {
 			_, _ = fmt.Fprintln(os.Stderr, string(data))
 		}
 	} else {
+		if results := batchResultsFromError(err); len(results) > 0 {
+			writeBatchResultLines(os.Stderr, nil, results)
+		}
 		_, _ = fmt.Fprintln(os.Stderr, desc.Message)
 		if desc.Hint != "" {
 			_, _ = fmt.Fprintln(os.Stderr, desc.Hint)
@@ -102,11 +148,46 @@ func classifyError(err error) errorDescriptor {
 		Retryable: false,
 	}
 
+	var detailed *detailedError
+	if errors.As(err, &detailed) {
+		if detailed.code != "" {
+			desc.Code = detailed.code
+		} else {
+			desc.Code = errorRequestInvalid
+		}
+		desc.Message = detailed.Error()
+		desc.ExitCode = detailed.exitCode
+		if desc.ExitCode == 0 {
+			desc.ExitCode = ExitUsage
+		}
+		desc.Details = detailed.details
+		desc.Hint = detailed.hint
+		return desc
+	}
+
+	var resolveErr *pagepath.ResolveError
+	if errors.As(err, &resolveErr) {
+		desc.Code = errorRequestInvalid
+		desc.ExitCode = ExitUsage
+		desc.Message = resolveErr.Error()
+		desc.Details = map[string]any{
+			"path":       resolveErr.Path,
+			"candidates": resolveErr.Candidates,
+		}
+		return desc
+	}
+
 	var apiErr *api.Error
 	if errors.As(err, &apiErr) {
 		desc.HTTPStatus = apiErr.StatusCode
-		desc.Details = apiErr.Details
+		desc.Details = cloneDetails(apiErr.Details)
 		desc.ValidationErrors = apiErr.Errors
+		if results := apiErr.BatchResults(); len(results) > 0 {
+			if desc.Details == nil {
+				desc.Details = map[string]any{}
+			}
+			desc.Details["results"] = results
+		}
 
 		switch apiErr.StatusCode {
 		case 400:
@@ -131,6 +212,10 @@ func classifyError(err error) errorDescriptor {
 		case 409:
 			desc.Code = errorConflict
 			desc.ExitCode = ExitValidation
+		case 412:
+			desc.Code = errorConflict
+			desc.ExitCode = ExitValidation
+			desc.Hint = "page changed since it was read; retry the command"
 		case 422:
 			desc.Code = errorRequestValidation
 			desc.ExitCode = ExitValidation
@@ -150,6 +235,10 @@ func classifyError(err error) errorDescriptor {
 		}
 		if desc.Message == "" {
 			desc.Message = apiErr.Error()
+		}
+		if hint := overlayHintFrom(err); hint != "" {
+			desc.Hint = hint
+			desc.Code = errorRequestValidation
 		}
 		return desc
 	}
@@ -228,4 +317,23 @@ func scopeHint(apiErr *api.Error) string {
 		return fmt.Sprintf("missing required scope(s): %v. create/use a token with these scopes", accepted)
 	}
 	return "token lacks required permissions for this endpoint; compare X-OAuth-Scopes with X-Accepted-OAuth-Scopes"
+}
+
+func cloneDetails(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func batchResultsFromError(err error) []api.BatchOpResult {
+	var apiErr *api.Error
+	if errors.As(err, &apiErr) {
+		return apiErr.BatchResults()
+	}
+	return nil
 }

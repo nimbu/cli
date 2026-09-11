@@ -12,7 +12,7 @@ import (
 // ThemeAssetsGetCmd gets an asset.
 type ThemeAssetsGetCmd struct {
 	Theme string `required:"" help:"Theme ID"`
-	Path  string `required:"" help:"Asset path"`
+	Path  string `required:"" aliases:"asset" help:"Asset path"`
 }
 
 // Run executes the get command.

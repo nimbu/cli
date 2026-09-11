@@ -13,7 +13,7 @@ import (
 type ChannelEntriesUpdateCmd struct {
 	Channel     string   `required:"" help:"Channel ID or slug"`
 	Entry       string   `required:"" help:"Entry ID or slug"`
-	Locale      string   `help:"Content locale for localized channel fields"`
+	Locale      string   `help:"Content locale for localized field writes. Reads are per-locale (one GET per locale; the API returns no translations map for entries). Non-localized fields ignore --locale."`
 	File        string   `help:"Read entry JSON from file (use - for stdin)"`
 	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. title=Hello, fields.teaser=Text)"`
 }

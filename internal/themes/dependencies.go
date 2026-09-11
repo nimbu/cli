@@ -125,6 +125,60 @@ func OrderResourceContentByLiquidDependencies(items []ResourceContent) ([]Resour
 	return ordered, warnings
 }
 
+// ExpandTransferSetWithLiquidDependencies adds locally present snippet and
+// layout dependencies of the selected files that are missing from the transfer
+// set, walking includes transitively.
+func ExpandTransferSetWithLiquidDependencies(selected, local []ResourceContent) ([]ResourceContent, []AddedDependency, []string) {
+	if len(selected) == 0 {
+		return nil, nil, nil
+	}
+
+	byKey := make(map[resourceKey]ResourceContent, len(local))
+	for _, item := range local {
+		byKey[keyFor(item.Resource)] = item
+	}
+
+	expanded := append([]ResourceContent(nil), selected...)
+	inSet := make(map[resourceKey]bool, len(selected))
+	for _, item := range selected {
+		inSet[keyFor(item.Resource)] = true
+	}
+
+	var added []AddedDependency
+	var warnings []string
+	queue := append([]ResourceContent(nil), selected...)
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		dependencies, _ := parseLiquidDependencies(current.Resource, current.Content)
+		seen := map[resourceKey]bool{}
+		for _, dependency := range dependencies {
+			if seen[dependency] {
+				continue
+			}
+			seen[dependency] = true
+			if inSet[dependency] {
+				continue
+			}
+			localItem, ok := byKey[dependency]
+			if !ok {
+				warnings = append(warnings, fmt.Sprintf("%s references %s, which is not in this theme", current.Resource.DisplayPath, dependency.DisplayPath()))
+				continue
+			}
+			localItem.Resource.Dependency = true
+			expanded = append(expanded, localItem)
+			inSet[dependency] = true
+			added = append(added, AddedDependency{
+				Path:         localItem.Resource.DisplayPath,
+				ReferencedBy: current.Resource.DisplayPath,
+			})
+			queue = append(queue, localItem)
+		}
+	}
+
+	return expanded, added, warnings
+}
+
 func parseLiquidDependencies(resource Resource, content []byte) ([]resourceKey, []string) {
 	if resource.Kind == KindAsset {
 		return nil, nil

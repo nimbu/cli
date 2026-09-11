@@ -61,12 +61,29 @@ All entry commands take the channel slug or ID via `--channel`.
 | Command | Syntax | Key flags | Notes |
 |---------|--------|-----------|-------|
 | `list` | `nimbu channels entries list --channel <channel>` | `--all`, `--page`, `--per-page` | Displays title fallback: `title` field > `fields.title` > slug > ID. |
-| `get` | `nimbu channels entries get --channel <channel> --entry <entry>` | `--locale` (global) | Entry identified by ID or slug. |
+| `get` | `nimbu channels entries get --channel <channel> --entry <entry>` | `--locale` | Entry identified by ID or slug. JSON is the full per-locale API body. |
 | `create` | `nimbu channels entries create --channel <channel> [assignments...]` | `--file` | Inline or `--file` (mutually exclusive). Requires write mode. |
-| `update` | `nimbu channels entries update --channel <channel> --entry <entry> [assignments...]` | `--file` | Same input rules as create. Requires write mode. |
+| `update` | `nimbu channels entries update --channel <channel> --entry <entry> [assignments...]` | `--file`, `--locale` | Same input rules as create. Sends only assigned fields. Requires write mode. |
 | `delete` | `nimbu channels entries delete --channel <channel> --entry <entry>` | `--force` (required) | Requires both `--force` and write mode. |
 | `count` | `nimbu channels entries count --channel <channel>` | `--locale` (global) | Returns integer count. |
 | `copy` | `nimbu channels entries copy --from <ref> --to <ref>` | See table below | Most complex command. Requires write mode (unless `--dry-run`). |
+
+### Locales
+
+Entries have no `translations` map. `--locale` is sent as `content_locale`;
+top-level values are for that locale only. Read each locale with a separate
+`entries get --locale`. `get --json` keeps the full raw body.
+
+`entries update --locale en title=Hallo` sends only the assigned fields (no
+full-document echo) plus `content_locale=en`. Localized fields write to that
+locale and leave the default-locale value intact. Non-localized fields have one
+stored value, so `--locale` cannot apply to them — updating them changes the
+default document.
+
+```bash
+nimbu channels entries get --channel blog --entry welcome --locale en --json
+nimbu channels entries update --channel blog --entry welcome --locale en title="Hello"
+```
 
 ### Entries Copy Flags
 

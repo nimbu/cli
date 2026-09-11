@@ -631,6 +631,39 @@ func TestCompleteFlagNamesForCommand(t *testing.T) {
 	}
 }
 
+func TestCompleteFlagNamesIncludesThemeGetAliases(t *testing.T) {
+	parser, _, err := newParser()
+	if err != nil {
+		t.Fatalf("newParser: %v", err)
+	}
+
+	items := completeFlagNames(parser, completionRequest{
+		Current:     "--",
+		Words:       []string{"nimbu", "themes", "templates", "get"},
+		CommandPath: []string{"themes", "templates", "get"},
+		Prefix:      "--",
+	})
+	values := completionValues(items)
+	for _, want := range []string{"--theme", "--name", "--template"} {
+		if !containsString(values, want) {
+			t.Fatalf("flag values missing %s: %#v", want, values)
+		}
+	}
+
+	items = completeFlagNames(parser, completionRequest{
+		Current:     "--",
+		Words:       []string{"nimbu", "themes", "assets", "get"},
+		CommandPath: []string{"themes", "assets", "get"},
+		Prefix:      "--",
+	})
+	values = completionValues(items)
+	for _, want := range []string{"--theme", "--path", "--asset"} {
+		if !containsString(values, want) {
+			t.Fatalf("flag values missing %s: %#v", want, values)
+		}
+	}
+}
+
 func TestCompleteFlagNamesFiltersPrefix(t *testing.T) {
 	parser, _, err := newParser()
 	if err != nil {

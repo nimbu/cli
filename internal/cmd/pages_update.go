@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -17,13 +18,16 @@ type PagesUpdateCmd struct {
 	Replace          bool     `help:"Replace canvases entirely (destructive rebuild)"`
 	AllowEmptyCanvas bool     `help:"Allow emptying a canvas"`
 	AllowEmptyFile   bool     `help:"Allow file editables with no attachment or URL to clear assets"`
+	DryRun           bool     `name:"dry-run" help:"Fetch, merge, and print the PATCH body without sending it"`
 	Assignments      []string `arg:"" optional:"" help:"Inline assignments (e.g. title=About, published:=true)"`
 }
 
 // Run executes the update command.
 func (c *PagesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if err := requireWrite(flags, "update page"); err != nil {
-		return err
+	if !c.DryRun {
+		if err := requireWrite(flags, "update page"); err != nil {
+			return err
+		}
 	}
 
 	site, err := RequireSite(ctx, "")
@@ -79,11 +83,11 @@ func (c *PagesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		body = api.PageDocument(rawBody)
 	}
 
-	if err := api.ExpandPageAttachmentPathsWithOptions(body, api.PageAttachmentExpansionOptions{
+	if err := api.ExpandPageAttachmentPathsWithOptions(body, pageAttachmentFileRefOptions(ctx, client, api.PageAttachmentExpansionOptions{
 		AllowEmptyFile:      c.AllowEmptyFile,
 		DropEmptyFile:       len(c.Assignments) > 0,
 		DropReadOnlyFileURL: !c.Replace,
-	}); err != nil {
+	})); err != nil {
 		return err
 	}
 
@@ -109,9 +113,19 @@ func (c *PagesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		}
 	}
 
+	if c.DryRun {
+		// TODO: when the pages API grows a validation endpoint, send this body
+		// with ?dry_run=1 (api.WithQuery("dry_run", "1")) instead of skipping the write.
+		return printPagesUpdateDryRun(ctx, body)
+	}
+
 	page, err := api.PatchPageDocument(ctx, client, c.Page, body, opts...)
 	if err != nil {
-		return fmt.Errorf("update page: %w", err)
+		template := api.PageDocumentTemplate(body)
+		if template == "" {
+			template = api.PageDocumentTemplate(current)
+		}
+		return withPageThemeHint(fmt.Errorf("update page: %w", err), template)
 	}
 
 	returned := api.PageStats(page)
@@ -194,4 +208,20 @@ func pluralize(count int, singular string) string {
 		return singular
 	}
 	return singular + "s"
+}
+
+func printPagesUpdateDryRun(ctx context.Context, body api.PageDocument) error {
+	_, _ = fmt.Fprintln(output.WriterFromContext(ctx).Err, "dry-run: no request sent (the API has no validation endpoint yet)")
+	if output.FromContext(ctx).JSON {
+		return output.JSON(ctx, map[string]any{
+			"dry_run": true,
+			"body":    body,
+		})
+	}
+	encoded, err := json.MarshalIndent(body, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode dry-run body: %w", err)
+	}
+	_, err = output.Fprintf(ctx, "%s\n", encoded)
+	return err
 }

@@ -201,3 +201,30 @@ func TestThemePushAndSyncAcceptNoImages(t *testing.T) {
 		t.Fatal("expected sync options NoImages set")
 	}
 }
+
+func TestThemePushAndSyncAcceptNoDeps(t *testing.T) {
+	parser, cli, err := newParser()
+	if err != nil {
+		t.Fatalf("new parser: %v", err)
+	}
+	if _, err := parser.Parse([]string{"themes", "push", "--no-deps"}); err != nil {
+		t.Fatalf("parse themes push --no-deps: %v", err)
+	}
+	if !cli.Themes.Push.NoDeps {
+		t.Fatal("expected push NoDeps flag set")
+	}
+	if opts := themePushOptions(&cli.Themes.Push, nil); !opts.NoDeps {
+		t.Fatal("expected push options NoDeps set")
+	}
+
+	parser, cli, err = newParser()
+	if err != nil {
+		t.Fatalf("new parser: %v", err)
+	}
+	if _, err := parser.Parse([]string{"themes", "sync", "--no-deps"}); err != nil {
+		t.Fatalf("parse themes sync --no-deps: %v", err)
+	}
+	if !cli.Themes.Sync.NoDeps {
+		t.Fatal("expected sync NoDeps flag set")
+	}
+}

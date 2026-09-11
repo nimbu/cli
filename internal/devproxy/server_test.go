@@ -3,6 +3,7 @@ package devproxy
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -301,6 +302,51 @@ func TestCatchAllUsesRegisteredTemplateOverlay(t *testing.T) {
 	if got := templates["snippets"]["bundle_app.liquid"]; got != "virtual bundle" {
 		t.Fatalf("simulator payload overlay = %q", got)
 	}
+}
+
+func TestCatchAllInjectsDraftPreviewQuery(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "layouts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "layouts", "default.liquid"), []byte("layout"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
+	client := &captureSimulatorClient{}
+	server, err := New(Config{Port: port, TemplateRoot: root, Watch: false, QuietRequests: true}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.SetPreview(NewPreviewInjector(map[string]string{"/zz-cli-test/surgical": "jwt-token"}))
+	if err := server.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = server.Stop(context.Background()) }()
+
+	resp, err := http.Get(server.URL() + "/zz-cli-test/surgical")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if got, _ := queryValue(client.payload.Simulator.Request.Query, "preview"); got != "jwt-token" {
+		t.Fatalf("preview query = %q payload=%s", got, client.payload.Simulator.Request.Query)
+	}
+}
+
+func queryValue(raw, key string) (string, bool) {
+	var object map[string]any
+	if json.Unmarshal([]byte(raw), &object) != nil {
+		return "", false
+	}
+	value, ok := object[key].(string)
+	return value, ok
 }
 
 func captureStdout(t *testing.T, fn func()) string {

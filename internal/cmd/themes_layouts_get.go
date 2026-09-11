@@ -12,7 +12,7 @@ import (
 // ThemeLayoutsGetCmd gets a layout.
 type ThemeLayoutsGetCmd struct {
 	Theme string `required:"" help:"Theme ID"`
-	Name  string `required:"" help:"Layout name including extension"`
+	Name  string `required:"" aliases:"layout" help:"Layout name including extension"`
 }
 
 // Run executes the get command.

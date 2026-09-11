@@ -35,6 +35,9 @@ func (c *PagesCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	if err := api.ExpandPageAttachmentPathsWithOptions(api.PageDocument(body), pageAttachmentFileRefOptions(ctx, client, api.PageAttachmentExpansionOptions{})); err != nil {
+		return err
+	}
 
 	var document api.Document[api.Page]
 	var opts []api.RequestOption
@@ -42,7 +45,7 @@ func (c *PagesCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		opts = append(opts, api.WithContentLocale(c.Locale))
 	}
 	if err := client.Post(ctx, "/pages", body, &document, opts...); err != nil {
-		return fmt.Errorf("create page: %w", err)
+		return withPageThemeHint(fmt.Errorf("create page: %w", err), stringAny(body["template"]))
 	}
 	page := document.Value
 

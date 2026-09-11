@@ -151,16 +151,22 @@ For richer document resources, inline updates stay intentionally shallow:
   complete top-level `translations` object
 - `menus update` accepts `name`, `handle`, or one complete top-level
   `translations` object
-- deep/nested edits for pages and menus should use `--file` or stdin JSON
+- deep/nested page edits should use `pages set|insert|move|delete-block` or
+  `pages batch`; `pages update --file` remains the whole-document fallback.
+  Deep menu edits should use `--file` or stdin JSON
 
 ## Rich Resource Contracts
 
 `pages`, `menus`, and `channels` have resource-specific contracts rather than generic CRUD payloads.
 
 - `pages get` and `pages update` use page `fullpath` as the canonical identifier
+- Default page recipe: `pages schema` then `pages get --shape` (ids, positions, select options), then `pages set|insert|move|delete-block` or `pages batch`
+- Human paths are 0-based (`Blokken[2].Title`, `Blokken[id=<oid>]`, `Blokken[slug=hero]`); a leading `/` is a raw API path
 - `pages get --page <fullpath> --json` returns the full page document, including nested `items`
 - `pages get --page <fullpath> --download-assets DIR --json` downloads file editables and rewrites them to `attachment_path`
-- `pages update --page <fullpath>` uses replace-safe patch semantics and supports `attachment_path` file refs in JSON
+- `pages update --page <fullpath>` merges by default (replace-safe); `--dry-run` prints the merged body without a request
+- `pages create` / `pages update` accept `security_mechanism` (`none|humans|customers`) and `published`
+- Drafts: `--draft` on the surgical verbs, then `pages draft preview-url` / `publish` / `discard`; `nimbu server --draft <page>` for local preview
 - `menus get --menu <slug> --json` returns the full nested menu tree (recovers via `?nested=1` when needed)
 - `menus update --file` reconciles nested menu trees with explicit tombstones; inline `name`/`handle` updates are shallow (no items rewrite)
 - `channels get --channel <slug> --json` returns the richer channel contract, including schema/customizations and ACL-oriented fields
@@ -168,14 +174,26 @@ For richer document resources, inline updates stay intentionally shallow:
 Examples:
 
 ```bash
-# Fetch a page by fullpath
+# Learn the page skeleton (ids, positions, select options)
+nimbu pages schema --page about/team --json
+nimbu pages get --page about/team --shape
+
+# Surgical edit (preview the op, then write)
+nimbu pages set --page about/team --path title --dry-run --diff "Our Team"
+nimbu pages set --page about/team --path Blokken[0].Title "Fast"
+nimbu pages insert --page about/team --path Blokken --slug item --position 0
+nimbu pages batch --page about/team --file ops.json
+
+# Whole-document fallback
 nimbu pages get --page about/team --json
-
-# Download page file editables and rewrite JSON to local file refs
 nimbu pages get --page about/team --download-assets tmp/page-assets --json
-
-# Replace-safe page update using a full document payload
+nimbu pages update --page about/team --file page.json --dry-run
 nimbu pages update --page about/team --file page.json
+
+# Draft -> preview -> publish (409 draft_base_changed: --confirm or discard --force)
+nimbu pages set --page about/team --path title --draft "Coming soon"
+nimbu pages draft preview-url --page about/team --open
+nimbu pages draft publish --page about/team
 
 # Nested menu fetch
 nimbu menus get --menu main --json
@@ -484,6 +502,7 @@ Runtime notes:
 - Vite starters may still accept `VITE_NIMBU_PROXY_URL` as a compatibility fallback, but `NIMBU_PROXY_URL` is the preferred name.
 - `nimbu server` passes `NIMBU_DEV_PROXY_TOKEN` to the child dev server. Tools such as Vite can use it with `NIMBU_PROXY_URL` to register in-memory template overlays at `PUT /__nimbu/dev/templates/overlays` and clear them with `DELETE /__nimbu/dev/templates/overlays`.
 - Template overlays are local-only, are never written to disk, and override disk templates with the same type/path while the dev proxy is running.
+- `?preview=<token>` already works through the simulator when the browser URL carries it. `nimbu server --draft <page>` (repeatable) also lets you browse the normal page URL: on startup the proxy requests a preview token for each listed page and injects `preview=<token>` into matching requests (the page fullpath, locale prefixes such as `/en/…`, and `translations.*.fullpath`). Child paths are not matched. Startup fails clearly if page drafts are disabled or the page has no draft.
 
 Override example:
 

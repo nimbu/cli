@@ -15,6 +15,7 @@ type Error struct {
 	Message    string            `json:"message"`
 	Details    map[string]any    `json:"details,omitempty"`
 	Errors     []ValidationError `json:"errors,omitempty"`
+	Raw        map[string]any    `json:"-"`
 	Err        error             `json:"-"`
 }
 
@@ -99,6 +100,44 @@ func (e *Error) IsValidation() bool {
 	return e.StatusCode == 422
 }
 
+// CurrentETag returns current_etag from a 412 body, if present.
+func (e *Error) CurrentETag() string {
+	if e == nil {
+		return ""
+	}
+	if e.Raw != nil {
+		if value, ok := e.Raw["current_etag"].(string); ok {
+			return value
+		}
+	}
+	if e.Details != nil {
+		if value, ok := e.Details["current_etag"].(string); ok {
+			return value
+		}
+	}
+	return ""
+}
+
+// BatchResults decodes results from a 422 atomic_failure body.
+func (e *Error) BatchResults() []BatchOpResult {
+	if e == nil || e.Raw == nil {
+		return nil
+	}
+	raw, ok := e.Raw["results"]
+	if !ok {
+		return nil
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var results []BatchOpResult
+	if err := json.Unmarshal(data, &results); err != nil {
+		return nil
+	}
+	return results
+}
+
 func parseError(statusCode int, body []byte) *Error {
 	apiErr := &Error{StatusCode: statusCode}
 
@@ -109,6 +148,11 @@ func parseError(statusCode int, body []byte) *Error {
 		RawCode json.RawMessage   `json:"code"`
 		Errors  []ValidationError `json:"errors"`
 		Details map[string]any    `json:"details"`
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err == nil {
+		apiErr.Raw = raw
 	}
 
 	if err := json.Unmarshal(body, &errResp); err == nil {
