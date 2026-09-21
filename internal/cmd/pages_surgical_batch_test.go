@@ -369,9 +369,30 @@ func TestValidateBatchOpPathOnlyRejectsContentPropertySegment(t *testing.T) {
 	}
 }
 
+// surgicalContentPageJSON has editables literally named "content", at the top
+// level and inside a repeatable.
+func surgicalContentPageJSON() string {
+	return `{
+		"id":"` + surgicalPageID + `",
+		"fullpath":"about",
+		"updated_at":"` + surgicalUpdatedAt + `",
+		"title":"About",
+		"items":{
+			"content":{"type":"text","content":"Top"},
+			"Blokken":{
+				"type":"canvas",
+				"repeatables":[
+					{"id":"` + surgicalBlockID + `","slug":"hero_stage","position":1,
+					 "items":{"Title":{"type":"text","content":"Hero"},"content":{"type":"text","content":"Inner"}}}
+				]
+			}
+		}
+	}`
+}
+
 func TestPagesBatchAllowsEditableNamedContent(t *testing.T) {
 	t.Run("editable named content is posted verbatim", func(t *testing.T) {
-		srvState := &surgicalServer{}
+		srvState := &surgicalServer{pageJSON: surgicalContentPageJSON()}
 		if _, err := runBatchFile(t, srvState,
 			`[{"op":"set","path":"/items/content","value":"Hi"}]`,
 			&PagesBatchCmd{}); err != nil {
@@ -384,7 +405,7 @@ func TestPagesBatchAllowsEditableNamedContent(t *testing.T) {
 
 	t.Run("nested editable named content is posted verbatim", func(t *testing.T) {
 		raw := "/items/Blokken/repeatables/" + surgicalBlockID + "/items/content"
-		srvState := &surgicalServer{}
+		srvState := &surgicalServer{pageJSON: surgicalContentPageJSON()}
 		if _, err := runBatchFile(t, srvState,
 			`[{"op":"set","path":"`+raw+`","value":"Hi"}]`,
 			&PagesBatchCmd{}); err != nil {
@@ -507,4 +528,178 @@ func TestPagesBatchRetriesOnceOn412AndReresolvesIndexes(t *testing.T) {
 	if len(body.Results) != 1 || body.Results[0].Status != "ok" {
 		t.Fatalf("results = %#v", body.Results)
 	}
+}
+
+// nestedFullPath is the canonical full-form raw path into the nested canvas of
+// surgicalNestedPageJSON.
+const nestedFullPath = "/items/Blokken/repeatables/" + surgicalBlockID +
+	"/items/Items/repeatables/" + surgicalNestedID + "/items/Label"
+
+// shortenedNestedPaths are the forms people write by hand: each drops one or
+// more of the /items and /repeatables keywords the API requires.
+var shortenedNestedPaths = map[string]string{
+	"no keywords at all": "/items/Blokken/" + surgicalBlockID +
+		"/Items/" + surgicalNestedID + "/Label",
+	"missing /items before the nested canvas": "/items/Blokken/repeatables/" + surgicalBlockID +
+		"/Items/repeatables/" + surgicalNestedID + "/items/Label",
+	"missing /repeatables before the nested id": "/items/Blokken/repeatables/" + surgicalBlockID +
+		"/items/Items/" + surgicalNestedID + "/items/Label",
+	"missing the leading /items": "/Blokken/repeatables/" + surgicalBlockID +
+		"/items/Items/repeatables/" + surgicalNestedID + "/items/Label",
+}
+
+// runBatchDryRun returns the operations a dry run would post, as JSON. The
+// dryRunOutput.Paths echo is left out on purpose: it repeats the path the user
+// typed, which is what differs between a shortened and a full path.
+func runBatchDryRun(t *testing.T, srvState *surgicalServer, contents string) string {
+	t.Helper()
+	srv := srvState.start(t)
+	defer srv.Close()
+	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{})
+	cmd := &PagesBatchCmd{Page: "about", File: writePageFile(t, contents), Atomic: true, DryRun: true}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("dry run: %v", err)
+	}
+	if srvState.posts != 0 {
+		t.Fatalf("dry run posted %d times", srvState.posts)
+	}
+	var body dryRunOutput
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatalf("decode dry run output %q: %v", out.String(), err)
+	}
+	encoded, err := json.Marshal(body.Operations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
+
+func TestPagesBatchRepairsShortenedRawPaths(t *testing.T) {
+	for name, short := range shortenedNestedPaths {
+		t.Run(name, func(t *testing.T) {
+			srvState := &surgicalServer{pageJSON: surgicalNestedPageJSON()}
+			if _, err := runBatchFile(t, srvState,
+				`[{"op":"set","path":"`+short+`","value":"Hi"}]`, &PagesBatchCmd{}); err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			if got := batchOpAt(t, srvState, 0)["path"]; got != nestedFullPath {
+				t.Fatalf("path = %#v, want %s", got, nestedFullPath)
+			}
+		})
+	}
+
+	t.Run("a correct full path is untouched", func(t *testing.T) {
+		srvState := &surgicalServer{pageJSON: surgicalNestedPageJSON()}
+		if _, err := runBatchFile(t, srvState,
+			`[{"op":"set","path":"`+nestedFullPath+`","value":"Hi"}]`, &PagesBatchCmd{}); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		if got := batchOpAt(t, srvState, 0)["path"]; got != nestedFullPath {
+			t.Fatalf("path = %#v, want %s", got, nestedFullPath)
+		}
+	})
+
+	t.Run("insert canvas path gains items and repeatables", func(t *testing.T) {
+		srvState := &surgicalServer{pageJSON: surgicalNestedPageJSON()}
+		short := "/items/Blokken/" + surgicalBlockID + "/Items"
+		if _, err := runBatchFile(t, srvState,
+			`[{"op":"insert","path":"`+short+`","value":{"slug":"tile","items":{}}}]`,
+			&PagesBatchCmd{}); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		want := "/items/Blokken/repeatables/" + surgicalBlockID + "/items/Items/repeatables"
+		if got := batchOpAt(t, srvState, 0)["path"]; got != want {
+			t.Fatalf("insert path = %#v, want %s", got, want)
+		}
+	})
+}
+
+// TestPagesBatchDryRunMatchesFullPath pins the report that started this: a
+// shortened path passed --dry-run and was then rejected by the server. Dry-run
+// output must now be identical to the full path's.
+func TestPagesBatchDryRunMatchesFullPath(t *testing.T) {
+	full := runBatchDryRun(t, &surgicalServer{pageJSON: surgicalNestedPageJSON()},
+		`[{"op":"set","path":"`+nestedFullPath+`","value":"Hi"}]`)
+	if !strings.Contains(full, nestedFullPath) {
+		t.Fatalf("dry run of the full path lost it: %s", full)
+	}
+	for name, short := range shortenedNestedPaths {
+		t.Run(name, func(t *testing.T) {
+			got := runBatchDryRun(t, &surgicalServer{pageJSON: surgicalNestedPageJSON()},
+				`[{"op":"set","path":"`+short+`","value":"Hi"}]`)
+			if got != full {
+				t.Fatalf("dry run output for %s:\n%s\nwant:\n%s", short, got, full)
+			}
+		})
+	}
+}
+
+func TestPagesBatchRejectsUnknownRawSegments(t *testing.T) {
+	t.Run("unknown editable name", func(t *testing.T) {
+		srvState := &surgicalServer{pageJSON: surgicalNestedPageJSON()}
+		_, err := runBatchFile(t, srvState,
+			`[{"op":"set","path":"/items/Blokken/repeatables/`+surgicalBlockID+`/items/Titel","value":"Hi"}]`,
+			&PagesBatchCmd{})
+		if err == nil {
+			t.Fatal("expected an unknown editable error")
+		}
+		for _, needle := range []string{
+			`editable "Titel" not found`,
+			"Title (text)",
+			"expected /items/<canvas>/repeatables/<id>/items/<editable>",
+		} {
+			if !strings.Contains(err.Error(), needle) {
+				t.Fatalf("error %v missing %q", err, needle)
+			}
+		}
+		if srvState.posts != 0 {
+			t.Fatalf("unknown editable should not post, posts = %d", srvState.posts)
+		}
+	})
+
+	t.Run("unknown repeatable id lists the siblings", func(t *testing.T) {
+		srvState := &surgicalServer{pageJSON: surgicalNestedPageJSON()}
+		_, err := runBatchFile(t, srvState,
+			`[{"op":"set","path":"/items/Blokken/repeatables/deadbeefdeadbeefdeadbeef/items/Title","value":"Hi"}]`,
+			&PagesBatchCmd{})
+		if err == nil {
+			t.Fatal("expected an unknown repeatable id error")
+		}
+		for _, needle := range []string{
+			`repeatable id "deadbeefdeadbeefdeadbeef" not found`,
+			"[0] hero_stage " + surgicalBlockID,
+			"expected /items/<canvas>/repeatables/<id>/items/<editable>",
+		} {
+			if !strings.Contains(err.Error(), needle) {
+				t.Fatalf("error %v missing %q", err, needle)
+			}
+		}
+		if srvState.posts != 0 {
+			t.Fatalf("unknown id should not post, posts = %d", srvState.posts)
+		}
+	})
+
+	t.Run("a first segment that is neither page field nor editable", func(t *testing.T) {
+		srvState := &surgicalServer{pageJSON: surgicalNestedPageJSON()}
+		_, err := runBatchFile(t, srvState,
+			`[{"op":"set","path":"/Blocks/repeatables/0/items/Title","value":"Hi"}]`,
+			&PagesBatchCmd{})
+		if err == nil || !strings.Contains(err.Error(), "neither a page field nor a top-level editable") {
+			t.Fatalf("error = %v", err)
+		}
+		if srvState.posts != 0 {
+			t.Fatalf("bad first segment should not post, posts = %d", srvState.posts)
+		}
+	})
+
+	t.Run("page fields still pass through", func(t *testing.T) {
+		srvState := &surgicalServer{}
+		if _, err := runBatchFile(t, srvState,
+			`[{"op":"set","path":"/title","value":"Hi"}]`, &PagesBatchCmd{}); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		if got := batchOpAt(t, srvState, 0)["path"]; got != "/title" {
+			t.Fatalf("path = %#v", got)
+		}
+	})
 }

@@ -58,6 +58,8 @@ Paths are human (Blokken[0].Title, Blokken[id=<id>].Items) or raw
 name; never append /content. insert paths address the canvas itself:
 Blokken, Blokken[id=<id>].Items, or /items/Blokken/repeatables. A raw
 path may use a position where an id belongs; it is rewritten to the id.
+Raw paths are checked against the page before posting; shortened id paths
+are expanded to the full form.
 
 Example ops.json:
 

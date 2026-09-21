@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -258,8 +259,9 @@ func formatRepeatableCandidates(siblings []pagepath.RepeatableRef) []string {
 	return out
 }
 
-// resolveUserPath resolves a human path, or a raw path whose positional
-// repeatable segments are first rewritten to repeatable ids.
+// resolveUserPath resolves a human path, or a raw path that is first
+// normalized against the document: shortened forms are expanded to the full
+// grammar and positional segments are rewritten to repeatable ids.
 func (s *surgicalSession) resolveUserPath(input string) (pagepath.Resolved, error) {
 	trimmed := strings.TrimSpace(input)
 	if strings.HasPrefix(trimmed, "/") {
@@ -315,32 +317,172 @@ func insertRepeatablesPath(raw string) string {
 	return strings.TrimSuffix(strings.TrimRight(raw, "/"), "/repeatables") + "/repeatables"
 }
 
-// normalizeRawRepeatableIndexes rewrites raw paths that use a positional index
-// where the API expects a repeatable id (/items/Blokken/repeatables/11/...).
-// Segments that already name a repeatable id are left untouched.
+// rawPathGrammar is the full form a raw API path must take, shown whenever a
+// raw path cannot be walked against the page document.
+const rawPathGrammar = "expected /items/<canvas>/repeatables/<id>/items/<editable>" +
+	"[/repeatables/<id>/items/<editable>] or /<page field>"
+
+// normalizeRawRepeatableIndexes normalizes a raw API path against the loaded
+// page document. Kept under its original name for its callers; see
+// normalizeRawPath.
 func normalizeRawRepeatableIndexes(doc map[string]any, raw string) (string, error) {
+	return normalizeRawPath(doc, raw)
+}
+
+// normalizeRawPath walks a raw path against the page document and returns the
+// canonical full-form path. It repairs the shortened forms people write by
+// hand — a missing leading /items, a missing /repeatables before a repeatable
+// id, a missing /items before a nested editable — and rewrites positional
+// indexes to repeatable ids. Every canvas, editable and id it walks past is
+// checked against the document, so a wrong path fails here instead of at the
+// API. A path that is already in full form comes back byte-identical.
+func normalizeRawPath(doc map[string]any, raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
-	if !strings.Contains(trimmed, "/repeatables/") {
+	parts := splitRawPath(trimmed)
+	if len(parts) == 0 {
 		return raw, nil
 	}
-	parts := strings.Split(strings.TrimPrefix(trimmed, "/"), "/")
-	out := make([]string, 0, len(parts))
-	for i := 0; i < len(parts); i++ {
-		part := parts[i]
-		out = append(out, part)
-		if part != "repeatables" || i+1 >= len(parts) {
-			continue
+	items := asMapAny(doc["items"])
+
+	i := 0
+	if parts[0] == "items" {
+		i = 1
+		if i == len(parts) {
+			return "", rawPathError(trimmed,
+				fmt.Sprintf("path %q: /items addresses no editable", trimmed),
+				"editables", editableCandidates(items))
 		}
+	} else if _, ok := items[unescapeSegment(parts[0])]; !ok {
+		// Not a top-level editable: the only other legal first segment is a
+		// single page field.
+		field := unescapeSegment(parts[0])
+		if len(parts) == 1 && (pagepath.IsPageField(field) || hasKeyAny(doc, field)) {
+			return "/" + parts[0], nil
+		}
+		return "", rawPathError(trimmed,
+			fmt.Sprintf("path %q: %q is neither a page field nor a top-level editable", trimmed, parts[0]),
+			"page fields and editables", pageCandidates(doc, items))
+	}
+
+	out := []string{"items"}
+	canvasDepth := 0
+	for i < len(parts) {
+		seg := parts[i]
+		name := unescapeSegment(seg)
+		node, ok := items[name]
+		if !ok {
+			return "", rawPathError(trimmed,
+				fmt.Sprintf("path %q: editable %q not found in %s", trimmed, name, displayRawPath("/"+strings.Join(out, "/"))),
+				"editables", editableCandidates(items))
+		}
+		out = append(out, seg)
 		i++
+		if i == len(parts) {
+			return "/" + strings.Join(out, "/"), nil
+		}
+
+		canvas := asMapAny(node)
+		if stringAny(canvas["type"]) != "canvas" {
+			return "", rawPathError(trimmed,
+				fmt.Sprintf("path %q: %s is not a canvas, so the path cannot descend into it", trimmed, name),
+				"", nil)
+		}
+		if parts[i] == "repeatables" {
+			i++
+		}
+		out = append(out, "repeatables")
+		if i == len(parts) {
+			return "/" + strings.Join(out, "/"), nil
+		}
+
+		canvasDepth++
+		if canvasDepth > 2 {
+			return "", rawPathError(trimmed,
+				fmt.Sprintf("path %q: path exceeds two canvas levels", trimmed), "", nil)
+		}
 		canvasRaw := "/" + strings.Join(out[:len(out)-1], "/")
-		node, _ := subtreeAt(doc, canvasRaw)
-		id, err := repeatableSegmentID(parts[i], trimmed, canvasRaw, siblingRefs(asMapAny(node)))
+		id, err := repeatableSegmentID(parts[i], trimmed, canvasRaw, siblingRefs(canvas))
 		if err != nil {
 			return "", err
 		}
 		out = append(out, id)
+		i++
+		if i == len(parts) {
+			return "/" + strings.Join(out, "/"), nil
+		}
+
+		if parts[i] == "items" {
+			i++
+		}
+		out = append(out, "items")
+		repeatable, _ := subtreeAt(doc, "/"+strings.Join(out[:len(out)-1], "/"))
+		items = asMapAny(asMapAny(repeatable)["items"])
+		if i == len(parts) {
+			return "", rawPathError(trimmed,
+				fmt.Sprintf("path %q: path stops at a repeatable's items; append the editable name", trimmed),
+				"editables", editableCandidates(items))
+		}
 	}
 	return "/" + strings.Join(out, "/"), nil
+}
+
+func splitRawPath(raw string) []string {
+	out := make([]string, 0, 8)
+	for _, part := range strings.Split(raw, "/") {
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func unescapeSegment(segment string) string {
+	name, err := pagepath.UnescapeName(segment)
+	if err != nil {
+		return segment
+	}
+	return name
+}
+
+func hasKeyAny(doc map[string]any, key string) bool {
+	_, ok := doc[key]
+	return ok
+}
+
+func editableCandidates(items map[string]any) []string {
+	out := make([]string, 0, len(items))
+	for name, raw := range items {
+		if typ := stringAny(asMapAny(raw)["type"]); typ != "" {
+			out = append(out, name+" ("+typ+")")
+			continue
+		}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func pageCandidates(doc map[string]any, items map[string]any) []string {
+	out := editableCandidates(items)
+	for key := range doc {
+		if key == "items" || !pagepath.IsPageField(key) {
+			continue
+		}
+		out = append(out, key+" (page field)")
+	}
+	sort.Strings(out)
+	return out
+}
+
+func rawPathError(path, msg, candidateLabel string, candidates []string) error {
+	if len(candidates) > 0 && candidateLabel != "" {
+		msg += "; " + candidateLabel + ":\n  " + strings.Join(candidates, "\n  ")
+	}
+	msg += "\n" + rawPathGrammar
+	return newDetailedError(fmt.Errorf("%s", msg), errorRequestInvalid, ExitUsage, map[string]any{
+		"path":       path,
+		"candidates": candidates,
+	})
 }
 
 func repeatableSegmentID(segment, raw, canvasRaw string, siblings []pagepath.RepeatableRef) (string, error) {
@@ -351,8 +493,13 @@ func repeatableSegmentID(segment, raw, canvasRaw string, siblings []pagepath.Rep
 	}
 	index, err := strconv.Atoi(segment)
 	if err != nil {
-		// Not an index: an unknown id is the server's call, not ours.
-		return segment, nil
+		canvas := displayRawPath(canvasRaw)
+		candidates := formatRepeatableCandidates(siblings)
+		msg := fmt.Sprintf("path %q: repeatable id %q not found in %s", raw, segment, canvas)
+		if len(siblings) == 0 {
+			msg += " (no repeatables yet)"
+		}
+		return "", rawPathError(raw, msg, "repeatables", candidates)
 	}
 	for _, sibling := range siblings {
 		if sibling.Index == index {
