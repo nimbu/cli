@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -26,8 +27,18 @@ func TestPagesDraftGetHumanAndJSON(t *testing.T) {
 	if !strings.Contains(got, "Draft "+surgicalDraftID+" for about, updated "+surgicalDraftUpdated) {
 		t.Fatalf("human header = %q", got)
 	}
-	if !strings.Contains(got, "title: About draft") || !strings.Contains(got, "2 page_items") {
-		t.Fatalf("summary = %q", got)
+	for _, want := range []string{
+		"ID:           " + surgicalPageID,
+		"Fullpath:     about",
+		"Title:        About draft",
+		"Published:    true",
+		"Editables:",
+		"Attachments:",
+		"Blokken:      3 blocks",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("summary missing %q in %q", want, got)
+		}
 	}
 
 	ctxJSON, outJSON, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
@@ -38,12 +49,246 @@ func TestPagesDraftGetHumanAndJSON(t *testing.T) {
 	if err := json.Unmarshal(outJSON.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
+	// Document shape: same keys as `pages get --json`, never the draft envelope.
+	if body["id"] != surgicalPageID || body["fullpath"] != "about" || body["title"] != "About draft" {
+		t.Fatalf("document fields = %s", outJSON.Bytes())
+	}
+	if _, bad := body["content"]; bad {
+		t.Fatalf("draft envelope leaked: %s", outJSON.Bytes())
+	}
+	items, ok := body["items"].(map[string]any)
+	if !ok {
+		t.Fatalf("items must be a canvas map: %s", outJSON.Bytes())
+	}
+	if _, bad := items["page_items"]; bad {
+		t.Fatalf("page_items leaked into items: %s", outJSON.Bytes())
+	}
+	theme, _ := items["Theme"].(map[string]any)
+	if theme["type"] != "select" || theme["content"] != "Light" {
+		t.Fatalf("Theme = %#v", theme)
+	}
+	blokken, _ := items["Blokken"].(map[string]any)
+	reps, _ := blokken["repeatables"].([]any)
+	if blokken["type"] != "canvas" || len(reps) != 3 {
+		t.Fatalf("Blokken = %#v", blokken)
+	}
+	first, _ := reps[0].(map[string]any)
+	firstItems, _ := first["items"].(map[string]any)
+	title, _ := firstItems["Title"].(map[string]any)
+	if first["id"] != surgicalBlockID || title["content"] != "Hero" {
+		t.Fatalf("first repeatable = %#v", first)
+	}
+	draftMeta, ok := body["draft"].(map[string]any)
+	if !ok {
+		t.Fatalf("draft metadata missing: %s", outJSON.Bytes())
+	}
+	for key, want := range map[string]any{
+		"id":                surgicalDraftID,
+		"page_id":           surgicalPageID,
+		"future_page_id":    "",
+		"reserved_fullpath": "about",
+		"updated_at":        surgicalDraftUpdated,
+		"items_source":      "draft",
+	} {
+		if draftMeta[key] != want {
+			t.Fatalf("draft.%s = %#v, want %#v", key, draftMeta[key], want)
+		}
+	}
+}
+
+func TestPagesDraftGetRawKeepsEnvelope(t *testing.T) {
+	srvState := &surgicalServer{}
+	srv := srvState.start(t)
+	defer srv.Close()
+
+	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	if err := (&PagesDraftGetCmd{Page: "about", Raw: true}).Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
 	if body["id"] != surgicalDraftID {
-		t.Fatalf("json = %s", outJSON.Bytes())
+		t.Fatalf("raw json = %s", out.Bytes())
 	}
 	content, _ := body["content"].(map[string]any)
 	if content["title"] != "About draft" {
 		t.Fatalf("content = %#v", content)
+	}
+
+	ctxHuman, outHuman, _ := newContractTestContext(t, srv.URL, output.Mode{})
+	if err := (&PagesDraftGetCmd{Page: "about", Raw: true}).Run(ctxHuman, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("human: %v", err)
+	}
+	if !strings.Contains(outHuman.String(), "title: About draft") || !strings.Contains(outHuman.String(), "2 page_items") {
+		t.Fatalf("raw human = %q", outHuman.String())
+	}
+
+	ctxBoth, _, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	err := (&PagesDraftGetCmd{Page: "about", Raw: true, Shape: true}).Run(ctxBoth, &RootFlags{Site: "demo"})
+	if err == nil || !strings.Contains(err.Error(), "--raw and --shape") {
+		t.Fatalf("expected raw+shape rejection, got %v", err)
+	}
+}
+
+// mirroredDraftPageJSON and mirroredDraftJSON describe the same content in the
+// two server shapes: the page document (items map) and the draft snapshot
+// (content.page_items).
+func mirroredDraftPageJSON() string {
+	return `{
+		"id":"` + surgicalPageID + `",
+		"fullpath":"about",
+		"updated_at":"` + surgicalUpdatedAt + `",
+		"title":"About",
+		"published":true,
+		"items":{
+			"Theme":{"slug":"Theme","type":"select","content":"Light"},
+			"Blokken":{
+				"slug":"Blokken",
+				"type":"canvas",
+				"repeatables":[
+					{"id":"` + surgicalBlockID + `","slug":"hero_stage","position":1,"items":{"Title":{"slug":"Title","type":"text","content":"Hero"}}},
+					{"id":"` + surgicalBlockID2 + `","slug":"proof_strip","position":2,"items":{"Quote":{"slug":"Quote","type":"text","content":"Hi"}}}
+				]
+			}
+		}
+	}`
+}
+
+func mirroredDraftJSON() string {
+	return `{
+		"id":"` + surgicalDraftID + `",
+		"page_id":"` + surgicalPageID + `",
+		"reserved_fullpath":"about",
+		"updated_at":"` + surgicalDraftUpdated + `",
+		"content":{
+			"title":"About",
+			"page_items":[
+				{"slug":"Theme","type":"select","content":"Light"},
+				{"slug":"Blokken","type":"canvas","repeatables":[
+					{"_id":"` + surgicalBlockID + `","slug":"hero_stage","position":1,"page_items":[
+						{"slug":"Title","type":"text","content":"Hero"}
+					]},
+					{"_id":"` + surgicalBlockID2 + `","slug":"proof_strip","position":2,"page_items":[
+						{"slug":"Quote","type":"text","content":"Hi"}
+					]}
+				]}
+			]
+		}
+	}`
+}
+
+func TestPagesDraftGetShapeMatchesPagesGetShape(t *testing.T) {
+	srvState := &surgicalServer{pageJSON: mirroredDraftPageJSON(), draftJSON: mirroredDraftJSON()}
+	srv := srvState.start(t)
+	defer srv.Close()
+
+	ctxGet, outGet, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	if err := (&PagesGetCmd{Page: "about", Shape: true}).Run(ctxGet, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("pages get --shape: %v", err)
+	}
+	ctxDraft, outDraft, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	if err := (&PagesDraftGetCmd{Page: "about", Shape: true}).Run(ctxDraft, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("draft get --shape: %v", err)
+	}
+
+	var wantShape, gotShape map[string]any
+	if err := json.Unmarshal(outGet.Bytes(), &wantShape); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(outDraft.Bytes(), &gotShape); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(wantShape, gotShape) {
+		t.Fatalf("shape mismatch\npages get:  %s\ndraft get:  %s", outGet.Bytes(), outDraft.Bytes())
+	}
+	blokken, _ := gotShape["Blokken"].(map[string]any)
+	if blokken["type"] != "canvas" {
+		t.Fatalf("Blokken shape = %#v", blokken)
+	}
+	if reps, _ := blokken["repeatables"].([]any); len(reps) != 2 {
+		t.Fatalf("repeatables = %#v", blokken["repeatables"])
+	}
+
+	ctxHuman, outHuman, _ := newContractTestContext(t, srv.URL, output.Mode{})
+	if err := (&PagesDraftGetCmd{Page: "about", Shape: true}).Run(ctxHuman, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("human shape: %v", err)
+	}
+	if !strings.Contains(outHuman.String(), "Blokken (canvas)") || !strings.Contains(outHuman.String(), "- hero_stage [0]") {
+		t.Fatalf("human shape = %q", outHuman.String())
+	}
+}
+
+func TestPagesDraftGetJSONDocumentMatchesPagesGetDocument(t *testing.T) {
+	srvState := &surgicalServer{pageJSON: mirroredDraftPageJSON(), draftJSON: mirroredDraftJSON()}
+	srv := srvState.start(t)
+	defer srv.Close()
+
+	ctxGet, outGet, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	if err := (&PagesGetCmd{Page: "about"}).Run(ctxGet, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("pages get: %v", err)
+	}
+	ctxDraft, outDraft, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	if err := (&PagesDraftGetCmd{Page: "about"}).Run(ctxDraft, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("draft get: %v", err)
+	}
+
+	var want, got map[string]any
+	if err := json.Unmarshal(outGet.Bytes(), &want); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(outDraft.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["draft"]; !ok {
+		t.Fatalf("draft metadata missing: %s", outDraft.Bytes())
+	}
+	delete(got, "draft")
+	if !reflect.DeepEqual(pruneNullContent(want), pruneNullContent(got)) {
+		t.Fatalf("document mismatch\npages get:  %s\ndraft get:  %s", outGet.Bytes(), outDraft.Bytes())
+	}
+}
+
+// pruneNullContent drops "content": null keys the snapshot converter adds for
+// canvas editables, which the live document simply omits.
+func pruneNullContent(v any) any {
+	switch typed := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, value := range typed {
+			if key == "content" && value == nil {
+				continue
+			}
+			out[key] = pruneNullContent(value)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for i, value := range typed {
+			out[i] = pruneNullContent(value)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+func TestPagesDraftGetShapeWithoutDraftErrors(t *testing.T) {
+	srvState := &surgicalServer{noDraft: true}
+	srv := srvState.start(t)
+	defer srv.Close()
+
+	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	err := (&PagesDraftGetCmd{Page: "about", Shape: true}).Run(ctx, &RootFlags{Site: "demo"})
+	if err == nil {
+		t.Fatal("expected missing draft")
+	}
+	if classifyError(err).Code != errorNotFound {
+		t.Fatalf("code = %s", classifyError(err).Code)
+	}
+	if !strings.Contains(err.Error(), "no draft for page about") {
+		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -313,5 +558,184 @@ func TestDraftAPIErrorWrapper(t *testing.T) {
 	}
 	if !strings.Contains(notFound.Error(), "no draft for page about") {
 		t.Fatalf("404 = %v", notFound)
+	}
+}
+
+// divergentLivePageJSON and divergentDraftJSON deliberately disagree: the draft
+// changed a block title, added a translation and a file editable, and appended a
+// third block that the live page does not have.
+func divergentLivePageJSON() string {
+	return `{
+		"id":"` + surgicalPageID + `",
+		"fullpath":"about",
+		"updated_at":"` + surgicalUpdatedAt + `",
+		"title":"About",
+		"published":true,
+		"items":{
+			"Blokken":{
+				"slug":"Blokken",
+				"type":"canvas",
+				"repeatables":[
+					{"id":"` + surgicalBlockID + `","slug":"hero_stage","position":1,"items":{
+						"Title":{"slug":"Title","type":"text","content":"Live hero"},
+						"Image":{"slug":"Image","type":"file"}
+					}},
+					{"id":"` + surgicalBlockID2 + `","slug":"proof_strip","position":2,"items":{
+						"Quote":{"slug":"Quote","type":"text","content":"Live quote"}
+					}}
+				]
+			}
+		}
+	}`
+}
+
+func divergentDraftJSON() string {
+	return `{
+		"id":"` + surgicalDraftID + `",
+		"page_id":"` + surgicalPageID + `",
+		"reserved_fullpath":"about",
+		"updated_at":"` + surgicalDraftUpdated + `",
+		"content":{
+			"title":"About draft",
+			"page_items":[
+				{"slug":"Blokken","type":"canvas","repeatables":[
+					{"_id":"` + surgicalBlockID + `","slug":"hero_stage","position":1,"page_items":[
+						{"_id":"item-title","slug":"Title","type":"text","content":"Draft hero",
+						 "translations":[{"locale":"nl","content":"Draft hero"},{"locale":"en","content":"Draft hero EN"}]},
+						{"_id":"item-image","slug":"Image","type":"file",
+						 "source":"draft-shot.png","source_content_type":"image/png","source_size":4321,
+						 "source_width":800,"source_height":600}
+					]},
+					{"_id":"` + surgicalBlockID2 + `","slug":"proof_strip","position":2,"page_items":[
+						{"slug":"Quote","type":"text","content":"Draft quote"}
+					]},
+					{"_id":"` + surgicalDraftOnlyID + `","slug":"proof_strip","position":3,"page_items":[
+						{"slug":"Quote","type":"text","content":"Draft only block"}
+					]}
+				]}
+			]
+		}
+	}`
+}
+
+// TestPagesDraftGetShowsDraftContentNotLive is the mirror of
+// TestPagesDraftGetJSONDocumentMatchesPagesGetDocument: when the draft and the
+// live page disagree, the draft document must carry the draft's values only.
+func TestPagesDraftGetShowsDraftContentNotLive(t *testing.T) {
+	srvState := &surgicalServer{pageJSON: divergentLivePageJSON(), draftJSON: divergentDraftJSON()}
+	srv := srvState.start(t)
+	defer srv.Close()
+
+	ctx, out, errOut := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	if err := (&PagesDraftGetCmd{Page: "about"}).Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("draft get: %v", err)
+	}
+	if strings.Contains(errOut.String(), "warning:") {
+		t.Fatalf("unexpected warning: %q", errOut.String())
+	}
+	raw := out.String()
+	for _, liveOnly := range []string{"Live hero", "Live quote"} {
+		if strings.Contains(raw, liveOnly) {
+			t.Fatalf("live-only value %q leaked into the draft document: %s", liveOnly, raw)
+		}
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	draftMeta, _ := body["draft"].(map[string]any)
+	if draftMeta["items_source"] != "draft" {
+		t.Fatalf("draft.items_source = %#v", draftMeta["items_source"])
+	}
+	items, _ := body["items"].(map[string]any)
+	blokken, _ := items["Blokken"].(map[string]any)
+	reps, _ := blokken["repeatables"].([]any)
+	if len(reps) != 3 {
+		t.Fatalf("draft-only block missing, repeatables = %#v", reps)
+	}
+	third, _ := reps[2].(map[string]any)
+	thirdItems, _ := third["items"].(map[string]any)
+	thirdQuote, _ := thirdItems["Quote"].(map[string]any)
+	if third["id"] != surgicalDraftOnlyID || thirdQuote["content"] != "Draft only block" {
+		t.Fatalf("draft-only block = %#v", third)
+	}
+
+	hero, _ := reps[0].(map[string]any)
+	heroItems, _ := hero["items"].(map[string]any)
+	title, _ := heroItems["Title"].(map[string]any)
+	if title["content"] != "Draft hero" {
+		t.Fatalf("Title = %#v", title)
+	}
+	if title["id"] != "item-title" || title["slug"] != "Title" {
+		t.Fatalf("Title identity = %#v", title)
+	}
+	translations, _ := title["translations"].(map[string]any)
+	en, _ := translations["en"].(map[string]any)
+	if en["content"] != "Draft hero EN" {
+		t.Fatalf("translations = %#v", translations)
+	}
+	if _, leaked := en["locale"]; leaked {
+		t.Fatalf("locale key must not stay inside the translation map: %#v", en)
+	}
+
+	// A file editable must render its file object, not "(empty)".
+	image, _ := heroItems["Image"].(map[string]any)
+	file, _ := image["file"].(map[string]any)
+	if file["filename"] != "draft-shot.png" || file["content_type"] != "image/png" {
+		t.Fatalf("Image file = %#v", image)
+	}
+	if file["width"] != float64(800) || file["height"] != float64(600) || file["size"] != float64(4321) {
+		t.Fatalf("Image file metadata = %#v", file)
+	}
+	if _, leaked := image["source"]; leaked {
+		t.Fatalf("raw source column must not leak: %#v", image)
+	}
+
+	ctxHuman, outHuman, _ := newContractTestContext(t, srv.URL, output.Mode{})
+	if err := (&PagesGetCmd{Page: "about", Draft: true, Outline: true}).Run(ctxHuman, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("pages get --draft --outline: %v", err)
+	}
+	if !strings.Contains(outHuman.String(), "draft-shot.png") {
+		t.Fatalf("file editable should render its filename, got %q", outHuman.String())
+	}
+	if strings.Contains(outHuman.String(), "Live hero") {
+		t.Fatalf("outline leaked live content: %q", outHuman.String())
+	}
+}
+
+func TestPagesDraftGetWarnsWhenSnapshotCannotBeDecoded(t *testing.T) {
+	broken := `{
+		"id":"` + surgicalDraftID + `",
+		"page_id":"` + surgicalPageID + `",
+		"reserved_fullpath":"about",
+		"updated_at":"` + surgicalDraftUpdated + `",
+		"content":{"title":"About draft","page_items":"nope"}
+	}`
+	srvState := &surgicalServer{pageJSON: divergentLivePageJSON(), draftJSON: broken}
+	srv := srvState.start(t)
+	defer srv.Close()
+
+	ctx, out, errOut := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	if err := (&PagesDraftGetCmd{Page: "about"}).Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("draft get: %v", err)
+	}
+	if !strings.Contains(errOut.String(), "warning: could not decode draft snapshot; showing live items") {
+		t.Fatalf("stderr = %q", errOut.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	draftMeta, _ := body["draft"].(map[string]any)
+	if draftMeta["items_source"] != "live" {
+		t.Fatalf("draft.items_source = %#v (want live): %s", draftMeta["items_source"], out.Bytes())
+	}
+	// The live items are still shown, and the draft's page fields still win.
+	if body["title"] != "About draft" {
+		t.Fatalf("title = %#v", body["title"])
+	}
+	if !strings.Contains(out.String(), "Live hero") {
+		t.Fatalf("live items should be the fallback: %s", out.Bytes())
 	}
 }

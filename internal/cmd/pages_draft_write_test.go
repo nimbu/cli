@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -212,6 +214,21 @@ func TestCommandContractContainsPageDrafts(t *testing.T) {
 	} {
 		if !draftFlags[path] {
 			t.Errorf("%s missing --draft", path)
+		}
+	}
+}
+
+func TestWarnDraftLocaleOnlyWhenBothSet(t *testing.T) {
+	for _, tc := range []struct {
+		draft  bool
+		locale string
+		want   bool
+	}{{true, "en", true}, {true, "", false}, {false, "en", false}} {
+		var stderr bytes.Buffer
+		ctx := output.WithWriter(context.Background(), &output.Writer{Out: &bytes.Buffer{}, Err: &stderr})
+		warnDraftLocale(ctx, tc.draft, tc.locale)
+		if got := strings.Contains(stderr.String(), "--draft with --locale"); got != tc.want {
+			t.Fatalf("draft=%v locale=%q: warning printed=%v want %v", tc.draft, tc.locale, got, tc.want)
 		}
 	}
 }

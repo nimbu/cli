@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/nimbu/cli/internal/api"
@@ -23,18 +24,152 @@ type PagesDraftCmd struct {
 
 // PagesDraftGetCmd fetches GET /pages/{id}/draft.
 type PagesDraftGetCmd struct {
-	Page string `required:"" help:"Page fullpath or id"`
+	Page   string `required:"" help:"Page fullpath or id"`
+	Locale string `help:"Content locale for localized fields"`
+	Shape  bool   `help:"Emit canvas/repeatable skeleton instead of content"`
+	Raw    bool   `help:"Emit the raw draft envelope (content.page_items) instead of the page document"`
 }
 
 // Run executes pages draft get.
 func (c *PagesDraftGetCmd) Run(ctx context.Context, flags *RootFlags) error {
-	session, draft, err := loadPageDraft(ctx, flags, c.Page, "")
+	session, draft, err := loadPageDraft(ctx, flags, c.Page, c.Locale)
 	if err != nil {
 		return err
 	}
-	if output.FromContext(ctx).JSON {
-		return output.JSON(ctx, draft)
+	mode := output.FromContext(ctx)
+	if c.Raw {
+		if c.Shape {
+			return fmt.Errorf("--raw and --shape cannot be combined")
+		}
+		if mode.JSON {
+			return output.JSON(ctx, draft)
+		}
+		return printDraftRawSummary(ctx, session, draft)
 	}
+
+	doc := draftPageDocument(session, draft)
+	if c.Shape {
+		shape := api.PageShapeWithSchema(doc, loadPageShapeSchema(ctx, flags, session.client, doc))
+		if mode.JSON {
+			return output.JSON(ctx, shape)
+		}
+		return printPageShape(ctx, shape)
+	}
+
+	if mode.JSON {
+		return output.JSON(ctx, map[string]any(doc))
+	}
+	return printDraftDocumentSummary(ctx, doc, draft)
+}
+
+// draftPageDocument renders a draft as a page document: the live page document
+// with the draft's snapshot content (page_items) folded in as an items map, plus
+// draft metadata under the "draft" key.
+func draftPageDocument(session *surgicalSession, draft *api.PageDraft) api.PageDocument {
+	base := cloneMap(session.doc)
+	if base == nil {
+		base = map[string]any{}
+	}
+	content := draft.ContentMap()
+	itemsSource := "draft"
+	if converted, ok := draftSnapshotToDocument(content); ok {
+		base = mergeDraftResolutionDoc(base, converted)
+	} else {
+		// The snapshot could not be decoded, so the items below are the LIVE
+		// page's. Say so instead of printing live content under a draft header.
+		itemsSource = "live"
+		warnDraftItemsFallback(session)
+		for _, key := range draftSnapshotPageFields {
+			if value, exists := content[key]; exists {
+				base[key] = value
+			}
+		}
+	}
+	if reserved := strings.TrimSpace(draft.ReservedFullpath); reserved != "" {
+		base["fullpath"] = reserved
+	}
+	base["draft"] = map[string]any{
+		"id":                draft.ID,
+		"page_id":           draft.PageID,
+		"future_page_id":    draft.FuturePageID,
+		"reserved_fullpath": draft.ReservedFullpath,
+		"updated_at":        draft.UpdatedAt,
+		"items_source":      itemsSource,
+	}
+	return api.PageDocument(base)
+}
+
+// warnDraftItemsFallback tells the caller on stderr that the items in the
+// document came from the live page, not from the draft snapshot.
+func warnDraftItemsFallback(session *surgicalSession) {
+	ctx := context.Background()
+	if session != nil && session.ctx != nil {
+		ctx = session.ctx
+	}
+	_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Err,
+		"warning: could not decode draft snapshot; showing live items\n")
+}
+
+func draftHeaderLine(ctx context.Context, doc api.PageDocument, draft *api.PageDraft) error {
+	fullpath := draftFullpath(draft, api.PageDocumentFullpath(doc))
+	_, err := output.Fprintf(ctx, "Draft %s for %s, updated %s\n", draft.ID, fullpath, draft.UpdatedAt)
+	return err
+}
+
+func printDraftDocumentSummary(ctx context.Context, doc api.PageDocument, draft *api.PageDraft) error {
+	if err := draftHeaderLine(ctx, doc, draft); err != nil {
+		return err
+	}
+	stats := api.PageStats(doc)
+	lines := []struct {
+		label string
+		value any
+	}{
+		{"ID", doc["id"]},
+		{"Fullpath", api.PageDocumentFullpath(doc)},
+		{"Title", api.PageDocumentTitle(doc)},
+		{"Published", api.PageDocumentPublished(doc)},
+		{"Editables", stats.EditableCount},
+		{"Attachments", stats.AttachmentCount},
+	}
+	for _, line := range lines {
+		if _, err := output.Fprintf(ctx, "%-13s %v\n", line.label+":", line.value); err != nil {
+			return err
+		}
+	}
+	return printDraftCanvasCounts(ctx, doc)
+}
+
+func printDraftCanvasCounts(ctx context.Context, doc api.PageDocument) error {
+	items, ok := doc["items"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	names := make([]string, 0, len(items))
+	for name, raw := range items {
+		editable, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, isCanvas := editable["repeatables"].([]any); isCanvas {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		editable, _ := items[name].(map[string]any)
+		reps, _ := editable["repeatables"].([]any)
+		if _, err := output.Fprintf(ctx, "%-13s %d blocks\n", name+":", len(reps)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func printDraftRawSummary(ctx context.Context, session *surgicalSession, draft *api.PageDraft) error {
 	fullpath := draftFullpath(draft, session.fullpath)
 	if _, err := output.Fprintf(ctx, "Draft %s for %s, updated %s\n", draft.ID, fullpath, draft.UpdatedAt); err != nil {
 		return err
@@ -49,7 +184,7 @@ func (c *PagesDraftGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if items, ok := content["page_items"].([]any); ok {
 		count = len(items)
 	}
-	_, err = output.Fprintf(ctx, "%d page_items\n", count)
+	_, err := output.Fprintf(ctx, "%d page_items\n", count)
 	return err
 }
 
@@ -65,6 +200,7 @@ func (c *PagesDraftSaveCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err := requireWrite(flags, "save page draft"); err != nil {
 		return err
 	}
+	warnDraftLocale(ctx, true, c.Locale)
 	session, err := openSurgicalPage(ctx, flags, c.Page, c.Locale)
 	if err != nil {
 		return err
