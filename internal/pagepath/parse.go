@@ -34,14 +34,15 @@ type Selector struct {
 }
 
 var pageFields = map[string]struct{}{
-	"title":           {},
-	"slug":            {},
-	"seo_title":       {},
-	"seo_description": {},
-	"seo_keywords":    {},
-	"published":       {},
-	"og_image":        {},
-	"template":        {},
+	"title":              {},
+	"slug":               {},
+	"seo_title":          {},
+	"seo_description":    {},
+	"seo_keywords":       {},
+	"published":          {},
+	"og_image":           {},
+	"security_mechanism": {},
+	"template":           {},
 }
 
 var pageFieldOrder = []string{
@@ -52,6 +53,7 @@ var pageFieldOrder = []string{
 	"seo_keywords",
 	"published",
 	"og_image",
+	"security_mechanism",
 	"template",
 }
 
@@ -81,6 +83,14 @@ func Parse(input string) (Path, error) {
 func isPageField(name string) bool {
 	_, ok := pageFields[name]
 	return ok
+}
+
+// IsPageField reports whether name is a top-level page field. A single-segment
+// human path with this name always parses as the page field, never as an
+// editable, so callers that build paths must fall back to the raw path when an
+// editable name collides with one.
+func IsPageField(name string) bool {
+	return isPageField(name)
 }
 
 func parseSegments(input string) ([]Segment, error) {
