@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/pagepath"
 )
 
 // PagesBatchCmd applies multiple page operations from a file.
@@ -24,6 +25,13 @@ type PagesBatchCmd struct {
 func (c *PagesBatchCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err := requireWrite(flags, "batch page operations"); err != nil {
 		return err
+	}
+	if c.Draft && !c.Atomic {
+		return newDetailedError(
+			errors.New("--no-atomic cannot be combined with --draft: draft batches are always atomic server-side"),
+			errorRequestInvalid, ExitUsage,
+			map[string]any{"flags": []string{"--draft", "--no-atomic"}},
+		)
 	}
 
 	session, err := openSurgicalPage(ctx, flags, c.Page, c.Locale)
@@ -74,12 +82,27 @@ func (c *PagesBatchCmd) plan(session *surgicalSession) ([]plannedOp, error) {
 		}
 		build := func(s *surgicalSession) (api.BatchOperation, error) {
 			next := op
-			if human != "" && !strings.HasPrefix(human, "/") {
+			switch {
+			case human != "" && !strings.HasPrefix(human, "/"):
 				resolved, err := s.resolve(human)
 				if err != nil {
 					return api.BatchOperation{}, err
 				}
+				if next.Op == "insert" {
+					if err := requireResolvedKind(resolved, human, pagepath.KindCanvas, canvasCandidates(s.doc)); err != nil {
+						return api.BatchOperation{}, err
+					}
+				}
 				next.Path = resolved.RawPath
+			case next.Path != "":
+				normalized, err := normalizeRawRepeatableIndexes(s.doc, next.Path)
+				if err != nil {
+					return api.BatchOperation{}, err
+				}
+				next.Path = normalized
+			}
+			if next.Op == "insert" {
+				next.Path = insertRepeatablesPath(next.Path)
 			}
 			if next.Op == "set" {
 				expanded, err := expandSetFileValue(s, next.Value)
@@ -181,6 +204,12 @@ func decodeBatchOp(item map[string]any) (api.BatchOperation, error) {
 	}
 	if op.Op == "" {
 		return api.BatchOperation{}, fmt.Errorf("operation is missing op")
+	}
+	if err := validateBatchOpName(op.Op); err != nil {
+		return api.BatchOperation{}, err
+	}
+	if err := validateBatchOpPath(op.Path); err != nil {
+		return api.BatchOperation{}, err
 	}
 	if raw, ok := item["after"]; ok {
 		switch typed := raw.(type) {

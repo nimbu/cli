@@ -281,3 +281,61 @@ func surgicalPageWithNestedPhotos() string {
 		`"Ref":{"type":"reference"},"Photos":{"type":"canvas","repeatables":[]}`,
 		1)
 }
+
+func surgicalNestedSchemaJSON() string {
+	return `{
+		"template":{"id":"t1","name":"home"},
+		"available_blocks":{
+			"Blokken":[
+				{"slug":"hero_stage","label":"Hero","fields":[
+					{"slug":"Title","type":"text"},
+					{"slug":"Items","type":"canvas","available_blocks":[
+						{"slug":"tile","label":"Tile","fields":[{"slug":"Label","type":"text"}]}
+					]}
+				]}
+			]
+		}
+	}`
+}
+
+func TestPagesInsertAcceptsNestedCanvasPaths(t *testing.T) {
+	wantPath := "/items/Blokken/repeatables/" + surgicalBlockID + "/items/Items/repeatables"
+
+	for name, path := range map[string]string{
+		"human":            "Blokken[id=" + surgicalBlockID + "].Items",
+		"human by index":   "Blokken[0].Items",
+		"raw":              "/items/Blokken/repeatables/" + surgicalBlockID + "/items/Items",
+		"raw with index":   "/items/Blokken/repeatables/0/items/Items",
+		"raw /repeatables": "/items/Blokken/repeatables/0/items/Items/repeatables",
+	} {
+		t.Run(name, func(t *testing.T) {
+			srvState := &surgicalServer{pageJSON: surgicalNestedPageJSON(), schemaJSON: surgicalNestedSchemaJSON()}
+			srv := srvState.start(t)
+			defer srv.Close()
+			ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{})
+			cmd := &PagesInsertCmd{Page: "about", Path: path, Slug: "tile"}
+			if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			op := srvState.lastBody["operations"].([]any)[0].(map[string]any)
+			if op["op"] != "insert" || op["path"] != wantPath {
+				t.Fatalf("op = %#v, want path %s", op, wantPath)
+			}
+		})
+	}
+}
+
+func TestPagesInsertRawIndexOutOfRange(t *testing.T) {
+	srvState := &surgicalServer{pageJSON: surgicalNestedPageJSON(), schemaJSON: surgicalNestedSchemaJSON()}
+	srv := srvState.start(t)
+	defer srv.Close()
+	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{})
+	cmd := &PagesInsertCmd{Page: "about", Path: "/items/Blokken/repeatables/11/items/Items", Slug: "tile"}
+	err := cmd.Run(ctx, &RootFlags{Site: "demo"})
+	if err == nil || !strings.Contains(err.Error(), "index 11") {
+		t.Fatalf("error = %v", err)
+	}
+	if srvState.posts != 0 {
+		t.Fatal("bad index should not post")
+	}
+}

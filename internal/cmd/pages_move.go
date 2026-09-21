@@ -74,7 +74,7 @@ func (c *PagesMoveCmd) plan(session *surgicalSession) (plannedOp, int, error) {
 }
 
 func (c *PagesMoveCmd) build(session *surgicalSession) (api.BatchOperation, int, error) {
-	resolved, err := session.resolve(c.Path)
+	resolved, err := session.resolveUserPath(c.Path)
 	if err != nil {
 		return api.BatchOperation{}, -1, err
 	}

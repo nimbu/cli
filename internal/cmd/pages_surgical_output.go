@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -190,12 +189,4 @@ func mergeBatchResults(parts ...*api.BatchResult) *api.BatchResult {
 		}
 	}
 	return merged
-}
-
-func prettyJSON(v any) string {
-	data, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return fmt.Sprint(v)
-	}
-	return string(data)
 }

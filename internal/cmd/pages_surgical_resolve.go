@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/nimbu/cli/internal/pagepath"
@@ -35,6 +36,21 @@ func enrichResolved(resolved pagepath.Resolved, doc map[string]any) pagepath.Res
 		resolved.Type = stringAny(item["slug"])
 		resolved.RepeatableID = stringAny(item["id"])
 		resolved.RepeatableSlug = resolved.Type
+		// A raw path carries no siblings or position: read them off the canvas.
+		if idx := strings.LastIndex(raw, "/repeatables/"); idx > 0 {
+			parentRaw := raw[:idx]
+			parent, _ := subtreeAt(doc, parentRaw)
+			if siblings := siblingRefs(asMapAny(parent)); len(siblings) > 0 {
+				resolved.ParentCanvasRaw = parentRaw
+				resolved.Siblings = siblings
+				for _, sibling := range siblings {
+					if sibling.ID == resolved.RepeatableID {
+						resolved.Index = sibling.Index
+						break
+					}
+				}
+			}
+		}
 	case typ == "canvas" || strings.HasSuffix(resolved.RawPath, "/repeatables"):
 		resolved.Kind = pagepath.KindCanvas
 		resolved.Type = "canvas"
@@ -51,7 +67,7 @@ func enrichResolved(resolved pagepath.Resolved, doc map[string]any) pagepath.Res
 	if resolved.Value == nil {
 		resolved.Value = node
 	}
-	if resolved.Kind == pagepath.KindCanvas || resolved.Kind == pagepath.KindRepeatable {
+	if len(resolved.Siblings) == 0 && (resolved.Kind == pagepath.KindCanvas || resolved.Kind == pagepath.KindRepeatable) {
 		if parent := canvasNode(doc, raw); parent != nil {
 			resolved.Siblings = siblingRefs(parent)
 		}
@@ -240,4 +256,121 @@ func formatRepeatableCandidates(siblings []pagepath.RepeatableRef) []string {
 		out[i] = fmt.Sprintf("[%d] %s %s", sib.Index, sib.Slug, sib.ID)
 	}
 	return out
+}
+
+// resolveUserPath resolves a human path, or a raw path whose positional
+// repeatable segments are first rewritten to repeatable ids.
+func (s *surgicalSession) resolveUserPath(input string) (pagepath.Resolved, error) {
+	trimmed := strings.TrimSpace(input)
+	if strings.HasPrefix(trimmed, "/") {
+		normalized, err := normalizeRawRepeatableIndexes(s.doc, trimmed)
+		if err != nil {
+			return pagepath.Resolved{}, err
+		}
+		trimmed = normalized
+	}
+	return s.resolve(trimmed)
+}
+
+// batchOpNames are the operations the page batch endpoint accepts.
+var batchOpNames = []string{"set", "insert", "delete", "move"}
+
+func validateBatchOpName(op string) error {
+	for _, name := range batchOpNames {
+		if op == name {
+			return nil
+		}
+	}
+	return newDetailedError(
+		fmt.Errorf("unknown op %q; valid ops: %s", op, strings.Join(batchOpNames, ", ")),
+		errorRequestInvalid, ExitUsage,
+		map[string]any{"op": op, "valid_ops": batchOpNames},
+	)
+}
+
+// validateBatchOpPath rejects paths that append a /content property segment to
+// an editable (…/items/<name>/content). An editable literally named "content"
+// (/items/content) is a legitimate path and is left alone.
+func validateBatchOpPath(path string) error {
+	trimmed := strings.TrimSpace(path)
+	if !strings.HasSuffix(trimmed, "/content") {
+		return nil
+	}
+	segments := strings.Split(strings.Trim(trimmed, "/"), "/")
+	// …/items/<editable>/content is the rejected form: the segment two before
+	// the trailing "content" is the "items" collection.
+	if len(segments) < 3 || segments[len(segments)-3] != "items" {
+		return nil
+	}
+	return newDetailedError(
+		fmt.Errorf("path %q ends in /content; paths end at the editable name", path),
+		errorRequestInvalid, ExitUsage,
+		map[string]any{"path": path, "hint": "paths end at the editable name"},
+	)
+}
+
+// insertRepeatablesPath normalizes a canvas path so that it addresses the
+// canvas repeatables collection, which is what the insert op requires.
+func insertRepeatablesPath(raw string) string {
+	return strings.TrimSuffix(strings.TrimRight(raw, "/"), "/repeatables") + "/repeatables"
+}
+
+// normalizeRawRepeatableIndexes rewrites raw paths that use a positional index
+// where the API expects a repeatable id (/items/Blokken/repeatables/11/...).
+// Segments that already name a repeatable id are left untouched.
+func normalizeRawRepeatableIndexes(doc map[string]any, raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if !strings.Contains(trimmed, "/repeatables/") {
+		return raw, nil
+	}
+	parts := strings.Split(strings.TrimPrefix(trimmed, "/"), "/")
+	out := make([]string, 0, len(parts))
+	for i := 0; i < len(parts); i++ {
+		part := parts[i]
+		out = append(out, part)
+		if part != "repeatables" || i+1 >= len(parts) {
+			continue
+		}
+		i++
+		canvasRaw := "/" + strings.Join(out[:len(out)-1], "/")
+		node, _ := subtreeAt(doc, canvasRaw)
+		id, err := repeatableSegmentID(parts[i], trimmed, canvasRaw, siblingRefs(asMapAny(node)))
+		if err != nil {
+			return "", err
+		}
+		out = append(out, id)
+	}
+	return "/" + strings.Join(out, "/"), nil
+}
+
+func repeatableSegmentID(segment, raw, canvasRaw string, siblings []pagepath.RepeatableRef) (string, error) {
+	for _, sibling := range siblings {
+		if sibling.ID == segment {
+			return segment, nil
+		}
+	}
+	index, err := strconv.Atoi(segment)
+	if err != nil {
+		// Not an index: an unknown id is the server's call, not ours.
+		return segment, nil
+	}
+	for _, sibling := range siblings {
+		if sibling.Index == index {
+			return sibling.ID, nil
+		}
+	}
+	canvas := displayRawPath(canvasRaw)
+	candidates := formatRepeatableCandidates(siblings)
+	var msg string
+	switch {
+	case len(siblings) == 0:
+		msg = fmt.Sprintf("path %q: %q is a position, not a repeatable id, and %s has no repeatables", raw, segment, canvas)
+	default:
+		msg = fmt.Sprintf("path %q: index %d is out of range for %s (%d repeatables):\n  %s",
+			raw, index, canvas, len(siblings), strings.Join(candidates, "\n  "))
+	}
+	return "", newDetailedError(fmt.Errorf("%s", msg), errorRequestInvalid, ExitUsage, map[string]any{
+		"path":       raw,
+		"candidates": candidates,
+	})
 }
