@@ -10,4 +10,5 @@ type ChannelEntriesCmd struct {
 	Count   ChannelEntriesCountCmd   `cmd:"" help:"Count entries"`
 	Copy    ChannelEntriesCopyCmd    `cmd:"" help:"Copy channel entries between sites"`
 	Gallery ChannelEntriesGalleryCmd `cmd:"" help:"Manage gallery fields on channel entries"`
+	Watch   ChannelEntriesWatchCmd   `cmd:"" help:"Stream live entry events over the realtime socket"`
 }

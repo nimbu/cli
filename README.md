@@ -318,6 +318,7 @@ nimbu blogs      Manage blogs
 nimbu webhooks   Manage webhooks
 nimbu server     Run local simulator proxy with child dev server
 nimbu config     Manage configuration
+nimbu realtime   Realtime grants and live queries
 nimbu api        Raw API access
 nimbu completion Generate shell completions
 ```
@@ -377,6 +378,11 @@ nimbu roles update --role bingo --site my-site --force --file role.json
 nimbu products attachments download --product PRODUCT --attachment ATTACHMENT --output manual.pdf
 nimbu pages versions list --page about --site my-site
 
+# Live queries over the realtime socket
+nimbu channels entries watch --channel blog --site my-site --json
+nimbu channels entries watch --channel blog --filters status=published --for 30s --once
+nimbu realtime grant --site my-site --json
+
 # Raw API remains an escape hatch
 nimbu api patch /unsupported_endpoint --data @payload.json
 
@@ -406,6 +412,54 @@ sends them through verbatim and does not rewrite them into a local patch.
 
 Accounts, regions, product types, and vendors are internal API resources and
 are intentionally not exposed as public CLI commands.
+
+### Realtime
+
+`nimbu channels entries watch --channel <channel>` opens a websocket to the site
+and streams entry changes as they happen. It mints a short-lived, single-use
+grant behind the scenes; the grant is never printed. `nimbu realtime grant`
+exposes the same grant for custom clients.
+
+```bash
+nimbu channels entries watch --channel blog --json
+nimbu channels entries watch --channel blog --filters status=published --filters author.ne=bob
+nimbu channels entries watch --channel blog --where "published=true" --for 2m
+nimbu channels entries watch --channel blog --once --json
+nimbu channels entries watch --channel blog --host localhost:3000 --insecure   # dev
+```
+
+Live queries are a filter, not a query language. `--filters` and `--where` use
+the same grammar as `channels entries list`, but pagination, sorting,
+projection, search and geo/regex operators are rejected locally before the
+socket opens (exit code 2). `--for` stops watching after a duration; the global
+`--timeout` stays the HTTP request timeout.
+
+With `--json`, stdout carries nothing but raw server event envelopes, one
+compact JSON object per line, so the stream pipes straight into `jq -c`.
+Status, reconnect and control lines always go to stderr.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `event_id` | string | Unique per delivery; duplicates are dropped client-side |
+| `event` | string | `added`, `changed`, `removed`, or `resync` |
+| `resource` | string | Always `channel_entries` |
+| `parent_id` | string | The channel you subscribed to |
+| `id` | string | Entry ID; may be absent on `resync` |
+| `type` | string | `channel_entries.created`, `.updated`, or `.deleted` |
+| `object` | object | Full entry body; absent on `removed` |
+| `changeset` | object | Changed fields only, when the server sends one |
+| `occurred_at` | string | ISO8601 timestamp |
+| `revision` | number | Monotonic revision for the entry |
+
+Delivery is at-least-once and the socket reconnects on its own. A `resync`
+event means the stream may have missed changes: `watch` does **not** re-read the
+channel for you, it prints the `channels entries list` command to run. A
+`resync` also does not satisfy `--once`.
+
+Exit codes: 0 for Ctrl-C, `--for` expiry and `--once`; 2 when the query is
+rejected (locally or by the server); 1 when the connection cannot be
+re-established within the retry budget. Grant failures map onto the usual auth
+codes (3 unauthorized, 4 forbidden/realtime disabled, 7 rate limited).
 
 ## Configuration
 

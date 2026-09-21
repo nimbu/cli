@@ -10,6 +10,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.11.6
+	github.com/coder/websocket v1.8.15
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/muesli/cancelreader v0.2.2
 	github.com/muesli/termenv v0.16.0
