@@ -1,6 +1,6 @@
 # Pages, Menus & Content Commands
 
-Quick-reference for content management commands. Covers gotchas that `--help` does not surface.
+Quick-reference for content management commands. Covers gotchas that `--help` does not surface. For the everyday page workflow read [pages-quickstart.md](pages-quickstart.md) first; this file is the full contract.
 
 ## Pages (`nimbu pages`)
 
@@ -12,13 +12,13 @@ Page versions are listed, fetched, and restored with `nimbu pages versions list|
 
 Prefer path verbs over a whole-document read-modify-write. Discover structure, then write one field or block. The CLI computes `If-Match` from the page `id` + `updated_at` and retries once on 412 by refetching; agents do not send or cache ETags. Drafts skip `If-Match`.
 
-Recipe: `pages schema --page P` → `pages get --page P --shape` → `pages set|insert|move|delete-block` or `pages batch`. Fall back to `pages get --json` → edit → `pages update --file` only for whole-document rewrites.
+Recipe: `pages get --page P --outline` (ids, paths and content in one screen) → `pages items --page P --path <path>` for a block you need in full → `pages set|insert|move|delete-block` or `pages batch`. `pages schema --page P` only when you need the allowed block slugs or select options. Fall back to `pages get --json --compact` → edit → `pages update --file` only for whole-document rewrites.
 
 `pages create` / `pages update --help` list `security_mechanism` (`none|humans|customers`) and `published` (`published:=true`).
 
 #### Path grammar
 
-Human paths resolve against the page document (ids/positions) plus the schema (candidates). Positions are **0-based**. A path that starts with `/` is a raw API path and is passed through unchanged.
+Human paths resolve against the page document (ids/positions) plus the schema (candidates). Positions are **0-based**. A path starting with `/` is a raw API path (a position where an id belongs is rewritten to the id).
 
 ```
 <path>   := "/" raw-api-path
@@ -40,7 +40,7 @@ field    := title|slug|seo_title|seo_description|seo_keywords|published|og_image
 | `"Left Button - Link"` | quote a name that contains `.` or `[` |
 | `/items/Blokken/repeatables/<id>/items/Title` | raw path, verbatim |
 
-`slug=` must match exactly one sibling. Unresolved selectors list candidates (`[index] slug id`, or `Name (type)` for editables) so the next command can use an index or `id=`. An empty canvas tells you to `pages insert --path <canvas> --slug <slug>` and lists allowed slugs from the schema.
+`slug=` must match exactly one sibling. Unresolved selectors list candidates (`[index] slug id`, or `Name (type)` for editables). An empty canvas lists the allowed slugs from the schema.
 
 #### `pages schema --page P`
 
@@ -50,21 +50,34 @@ field    := title|slug|seo_title|seo_description|seo_keywords|published|og_image
 nimbu pages schema --page about/team --json
 ```
 
-#### `pages get --page P --shape`
+#### `pages get --page P` read modes
 
-Emits the canvas/repeatable skeleton (no content). Repeatable lines include `slug [position] id`. Select fields append `type: option | option`. Combined with `--download-assets`, `--shape` wins and the CLI warns on stderr.
+| Flag | Output |
+|------|--------|
+| `--outline` | One line per entry: page fields first, then `Blokken[0] hero_stage <id>` per repeatable and `  Blokken[0].Title (text): <preview…>` per editable (full path on every line) (preview truncated at 120 chars). |
+| `--outline --json` | Flat array of `{path, raw_path, id, slug, type, content}`. `path` is a valid `pages set --path`; `content` is untruncated. |
+| `--shape` | Canvas/repeatable skeleton, no content. Repeatable lines include `slug [position] id`; select fields append `type: option \| option`. |
+| `--compact` (JSON only) | Drops editable timestamps, `slug`/`type`, the redundant default-locale `translations` entry and file noise. About 3x smaller (270 KB → 97 KB on a landing page). |
+| `--fields a,b` (JSON only) | Projects those top-level fields. |
+| `--draft` | Reads the draft with any of the above. |
+
+`--locale` is honoured by every mode, `--json` included. `--compact` and `--fields` are ignored with `--shape`/`--outline` (warning on stderr), and `--shape`/`--outline` win over `--download-assets`.
 
 ```bash
+nimbu pages get --page about/team --outline
+nimbu pages get --page about/team --outline --locale en --json
 nimbu pages get --page about/team --shape
-nimbu pages get --page about/team --shape --json
+nimbu pages get --page about/team --json --compact --fields title,items
+nimbu pages get --page about/team --outline --draft
 ```
 
 #### `pages items --page P --path <path>`
 
-`GET /pages/{id}/items/...` for one resolved subtree (human or raw path under `/items`). Page fields (`title`, …) are rejected — use `pages get`. Flags: `--page`, `--path` only.
+`GET /pages/{id}/items/...` for one resolved subtree (human or raw path under `/items`). Page fields (`title`, …) are rejected — use `pages get`. Flags: `--page`, `--path`, `--locale`. Human output renders HTML readably, so a leaf is well under 1 KB and a whole block around 15 KB — use this instead of fetching the document.
 
 ```bash
-nimbu pages items --page about/team --path Blokken[0]
+nimbu pages items --page about/team --path 'Blokken[0]'
+nimbu pages items --page about/team --path 'Blokken[0].Title' --locale en
 ```
 
 #### `pages set --page P --path <path> [value]`
@@ -92,7 +105,7 @@ nimbu pages insert --page about/team --path Blokken --slug item --position 0
 nimbu pages insert --page about/team --path Blokken --slug item --file items.json
 ```
 
-File editables in `--file` are stripped from the insert and applied as follow-up `set` ops (the API insert does not coerce FileRefs).
+File editables in `--file` are stripped from the insert and applied as follow-up `set` ops.
 
 #### `pages delete-block --page P --path <repeatable>`
 
@@ -122,7 +135,7 @@ Apply up to 10 operations atomically (default; `--no-atomic` to disable). `--fil
 | `value` | `set` / `insert` | set value, or insert `{slug, items}` |
 | `after` | insert / move | JSON `null` = first; string = sibling **id** (not an index) |
 
-Key flags: `--file`, `--[no-]atomic`, `--locale`, `--diff`, `--dry-run`, `--draft`. `pages draft batch` is the same as `pages batch --draft` (always atomic).
+Key flags: `--file`, `--[no-]atomic`, `--locale`, `--diff`, `--dry-run`, `--draft`. `pages draft batch` is the same as `pages batch --draft` (always atomic). `pages batch --help` prints this op table and a worked example, so it needs no lookup here.
 
 ```bash
 nimbu pages batch --page about/team --file ops.json --dry-run
@@ -139,17 +152,19 @@ nimbu pages batch --page about/team --file ops.json --dry-run
 }
 ```
 
-Human paths are resolved to raw API paths before POST. Raw paths that already start with `/` are sent unchanged. Insert wants the canvas `repeatables` collection (`/items/<canvas>/repeatables`).
+Paths are resolved client-side before POST, and `--dry-run` resolves exactly the way the write does. Insert addresses the canvas itself: the human form (`Blokken`, `Blokken[id=<id>].Items`) is accepted and resolved to `/items/<canvas>/repeatables`. A raw path that carries a position where an id belongs (`/items/Blokken/repeatables/1/items/Title`) is rewritten to the id for `batch`, `insert`, `set`, `move`, `delete-block` and `items`. Unknown `op` values and paths ending in `/content` are rejected before the request.
 
 `--file` accepts a path, `-`, a pipe, or process substitution (`--file <(echo '{"operations":[...]}')`).
 
 ### Drafts
 
-`pages draft` edits and previews without publishing. `--draft` on `set` / `insert` / `delete-block` / `move` / `batch` writes the draft instead of the live page. A 403 "Page drafts are not enabled" means the server has drafts disabled — write the live page instead.
+`pages draft` edits and previews without publishing. `--draft` on `set` / `insert` / `delete-block` / `move` / `batch` writes the draft instead of the live page; `pages get --draft` reads it with every read flag (`--outline`, `--shape`, `--compact`, `--fields`). A 403 "Page drafts are not enabled" means the server has drafts disabled — write the live page instead.
+
+**Do not pass `--locale` together with `--draft` on a write.** It reports ok but stores the default-locale text in `translations.<locale>`. Write the default locale on the draft, publish, then write the other locale on the live page.
 
 | Command | Flags | Notes |
 |---------|-------|-------|
-| `pages draft get --page P` | | Current draft document |
+| `pages draft get --page P` | `--locale`, `--shape`, `--raw` | Draft in the same document shape as `pages get`, plus a `draft` metadata key. `--raw` returns the old `content.page_items` envelope. |
 | `pages draft save --page P --file draft.json` | `--locale` | Whole-page draft from JSON (`-` for stdin) |
 | `pages draft batch --page P --file ops.json` | `--locale`, `--diff`, `--dry-run` | Alias for `pages batch --draft` |
 | `pages draft publish --page P` | `--confirm` | Promote draft to live |
@@ -164,17 +179,17 @@ nimbu pages draft publish --page about/team
 
 409 `draft_base_changed`: the live page changed after this draft was based on it. Re-run `pages draft publish --page P --confirm`, or `pages draft discard --page P --force`.
 
-`nimbu server --draft <page>` (repeatable) requests a preview token at startup and injects `?preview=` on matching local URLs (the page fullpath, locale prefixes, and `translations.*.fullpath`). Child paths are not matched. Startup fails if drafts are disabled or the page has no draft. The simulator already honours `?preview=<token>` when the browser URL carries it.
+`nimbu server --draft <page>` (repeatable) requests a preview token at startup and injects `?preview=` on matching local URLs (the page fullpath, locale prefixes, `translations.*.fullpath`; not child paths). Startup fails if drafts are disabled or the page has no draft.
 
 ### `--dry-run` and `--diff`
 
-Surgical `--dry-run` resolves paths and prints the planned operations (JSON `{operations, paths}`) without writing. `--diff` prints a unified diff of the changed subtree (canvas repeatables for insert/move/delete-block) after a successful write. Draft `--diff` needs a converted snapshot; otherwise the CLI prints `(diff unavailable for drafts)`.
+Surgical `--dry-run` resolves paths and prints the planned operations (JSON `{operations, paths}`) without writing, exactly as the write resolves them. `--diff` prints a unified diff of the changed subtree after a successful write; on drafts it may print `(diff unavailable for drafts)`.
 
 `pages update --dry-run` fetches, merges, and prints the PATCH body without sending it (stderr: `dry-run: no request sent`).
 
 ### 422 theme hint
 
-`pages create` / `pages update` (and surgical writes) map 422 `invalid editable <name>` / `invalid slug (<slug>) for repeatable in canvas '<canvas>'` to a hint: the editable or slug is not in the pushed theme. Push it first:
+A 422 `invalid editable <name>` / `invalid slug (<slug>) for repeatable in canvas '<canvas>'` means the editable or slug is not in the pushed theme. Push it first:
 
 ```bash
 nimbu themes push --only templates/<t>.liquid --dry-run
@@ -191,11 +206,11 @@ nimbu themes push --only templates/<t>.liquid
 { "parent": "archive", "slug": "old-stuff", "title": "Old Stuff" }
 ```
 
-The Go CLI learned this the hard way: the Node.js toolbelt does `data.parent = data.parent_path` and that works. Always use the fullpath string.
+Always use the fullpath string.
 
 ### get --download-assets DIR
 
-Downloads file editables into DIR and rewrites the JSON output to `attachment_path` refs (local file paths instead of URLs). Useful for round-tripping page content: `get --download-assets ./assets` then edit JSON and `update --file`.
+Downloads file editables into DIR and rewrites the JSON to `attachment_path` refs, for round-tripping: `get --download-assets ./assets`, edit, `update --file`.
 
 ### update inline limits
 
@@ -215,17 +230,16 @@ printf '%s\n' '{"seo_title":"Nederlandse titel"}' |
   nimbu pages update --page about --locale nl --file=-
 ```
 
-To update several locales together, send a top-level `translations` map.
-`--file`/stdin is clearest for complex payloads:
+To update several locales in one request, send a top-level `translations` map
+(`{"translations":{"nl":{"seo_title":"…"},"fr":{"seo_title":"…"}}}`) via
+`--file`/stdin, or inline as `translations:=@translations.json`. It recursively
+merges the supplied locale and field keys into the fetched translations,
+preserving omitted locales and sibling fields. Other deep page edits remain
+file-only.
 
-```json
-{
-  "translations": {
-    "nl": {"seo_title": "Nederlandse titel"},
-    "fr": {"seo_title": "Titre français"}
-  }
-}
-```
+Every output mode overlays the selected locale recursively (`--json` on `pages
+get`/`items` included) and falls back to the default value for fields without a
+translation; the `translations` map is always retained.
 
 The equivalent inline form is
 `translations:=@translations.json`. The block is sent exactly as supplied;
@@ -252,8 +266,10 @@ nimbu pages update --page over-ons translations:='{"en":{"slug":"about-us"}}'
 Verify with `pages get --page over-ons --locale en --json | jq '.translations.en | {slug, fullpath, public_url}'`.
 
 With `--json`, reads and mutations retain the complete API document, including
-all translations. Human/plain output overlays the selected locale recursively
-and falls back to the default value for fields without a translation.
+all translations. When `--locale` is given, `pages get`, `--outline` and
+`pages items` overlay that locale onto `content` (the `translations` map stays).
+Human/plain output overlays the selected locale recursively and falls back to
+the default value for fields without a translation.
 
 ### update --file / stdin: merge by default, --replace to rebuild
 
@@ -263,23 +279,11 @@ and falls back to the default value for fields without a translation.
 nimbu pages update --page about/team --file page.json   # merges
 ```
 
-**`--replace` does a full destructive rebuild from `--file`/stdin.** It sends `replace=1`, so the server discards the current canvas contents and rebuilds them from exactly what you send. Anything you omit is gone. Inline assignments are merge-only; `--replace` with inline assignments is rejected.
+**`--replace` (`nimbu pages update --page P --file page.json --replace`) is a full destructive rebuild.** It sends `replace=1`: the server discards the current canvas contents and rebuilds them from exactly what you send, so anything you omit is gone. Inline assignments are merge-only and rejected under `--replace`.
 
-```bash
-nimbu pages update --page about/team --file page.json --replace
-```
+Before sending, the CLI compares repeatable counts per canvas (nested ones too) and aborts a wipe: `refusing to update: canvas 'features' would be wiped from 7->0; pass --allow-empty-canvas to override`. Only the N->0 transition is blocked; 7->3 is allowed. After the write it prints `Updated page <id> (<N> editables, <M> attachments)` and, under `--replace`, warns on stderr when the server applied fewer editables than were submitted.
 
-`--replace` is guarded against the classic wipe. Before sending, the CLI fetches the current page and compares repeatable counts per canvas. If any canvas would go from N repeatables down to 0, it **aborts**:
-
-```
-refusing to update: canvas 'features' would be wiped from 7->0; pass --allow-empty-canvas to override
-```
-
-To intentionally clear a canvas, add `--allow-empty-canvas`. The guard checks nested canvases too (`sections.gallery`, etc.) and only blocks the N->0 transition; shrinking 7->3 is allowed.
-
-> **Never blind-resend a raw GET as a `--replace`.** A read-shape document is not a write-shape document (see "Page document shape" below) — re-sending it under `--replace` was the bug that silently wiped 12 pages. If you must replace, build the canvas payload deliberately. For round-trips, prefer plain merge (no `--replace`).
-
-**Applied-count check.** After a `--file` update the CLI prints `Updated page <id> (<N> editables, <M> attachments)`. In `--replace` mode, if the server returns fewer editables than you submitted, it warns on stderr (`warning: server applied X editables but Y were submitted`) so a destructive rebuild that drops content is visible.
+> **Never blind-resend a raw GET as a `--replace`.** A read-shape document is not a write-shape document (see "Page document shape" below) — that was the bug that silently wiped 12 pages. Prefer plain merge for round-trips.
 
 **Attachment expansion.** In any mode, file editables are auto-expanded before sending — see "File editable write shapes" below.
 
@@ -309,15 +313,7 @@ A page document is a top-level object. The editable content lives under `items`,
 - Nesting goes **2 levels deep**: a canvas repeatable can contain another canvas with its own repeatables, but no deeper.
 - An **empty page** shows `"items": {}`; an empty canvas shows `"repeatables": []`.
 
-Stop reverse-engineering this from a live reference site — ask the CLI:
-
-```bash
-nimbu pages get --page about/team --shape          # readable tree
-nimbu pages get --page about/team --shape --json   # machine-readable skeleton
-```
-
-`--shape` emits just the structure (editable name → `type`, and for canvases the `repeatables` with their `slug`, **0-based `position`**, **id**, and nested skeleton), no content. Select fields include their options. It is the fastest way to learn the exact repeatable slugs, ids, and positions before you write.
-If combined with `--download-assets`, `--shape` wins and the CLI warns on stderr instead of downloading files.
+Stop reverse-engineering this from a live reference site — ask the CLI: `pages get --page P --outline` for slugs, ids and content, `--shape` for the bare skeleton (see the read-modes table above).
 
 ### File editable write shapes
 
@@ -326,18 +322,18 @@ A file editable is `{ "type": "file", "file": { ... } }`. Pick one FileRef / fil
 | Form | Example | When to use | Notes |
 |------|---------|-------------|-------|
 | `attachment_path` | `{"attachment_path":"./logo.png"}` | Local file on disk | CLI reads the file, base64-encodes it, sets `__type: File` and `filename`. Surgical `--from-file` uses the equivalent `{data, filename, content_type}` shape. |
-| `attachment_url` | `{"attachment_url":"https://cdn.nimbu.io/s/oa8td8r/assets/…/logo.png"}` | Remote URL, including a CDN link copied from `uploads list` or a page document | Same-site `https://cdn.nimbu.io/s/<siteShortId>/…` URLs are looked up in `GET /uploads` and rewritten to `nimbu://<siteShortId>/uploads/<id>` so the server references the existing upload. Any other HTTP(S) URL (plain remote, another site's CDN URL, or a lookup miss) is downloaded by the CLI (30s timeout, 25 MiB cap) and inlined as a copy: `pages update` sends `{"__type":"File","attachment":"<base64>","filename":"…"}`; surgical `pages set`/`insert`/`batch` send `{data, filename, content_type}` like `--from-file`. The CLI warns `warning: <url> is not an upload of this site; downloading it and storing a copy`. |
+| `attachment_url` | `{"attachment_url":"https://cdn.nimbu.io/s/oa8td8r/assets/…/logo.png"}` | Remote URL, including a CDN link copied from `uploads list` or a page document | Same-site `https://cdn.nimbu.io/s/<siteShortId>/…` URLs are looked up in `GET /uploads` and rewritten to `nimbu://<siteShortId>/uploads/<id>`, referencing the existing upload. Any other HTTP(S) URL is downloaded (30s timeout, 25 MiB cap) and inlined as a copy — `__type: File` + `attachment` for `pages update`, `{data, filename, content_type}` for surgical writes — with a `not an upload of this site` warning. |
 | `nimbu://` source | `{"__type":"FileRef","source":"nimbu://oa8td8r/uploads/507f1f77bcf86cd799439014"}` | Reuse an upload you already know by id | Does not duplicate the asset. Site short id is the `/s/<id>/` segment of the site's CDN root (also `site_short_id` on `GET /themes/<id>/info`). |
-| `__type: FileRef` | `{"__type":"FileRef","source":"nimbu://oa8td8r/uploads/507f1f77bcf86cd799439014"}` | Send a FileRef object directly | Left untouched (user-explicit). `source` must be `nimbu://…` — the API rejects HTTP(S) FileRef sources with 422 (`Invalid FileRef URI: expected nimbu:// format`). To attach a remote HTTP(S) file, use `attachment_url` so the CLI downloads and inlines a copy. |
+| `__type: FileRef` | `{"__type":"FileRef","source":"nimbu://oa8td8r/uploads/507f1f77bcf86cd799439014"}` | Send a FileRef object directly | Left untouched. `source` must be `nimbu://…`; HTTP(S) sources are rejected with 422 (`Invalid FileRef URI`) — use `attachment_url` for those. |
 | `__type: File` + `attachment` | `{"__type":"File","attachment":"<base64>","filename":"logo.png"}` | Inline base64 bytes | `__type: File` is required; without it the server drops the upload. |
 | `data` | `{"data":"<base64>","filename":"logo.png","content_type":"image/png"}` | Surgical set/insert of raw bytes | Produced by `pages set --from-file`. |
 | read-only `url` | `items.<name>.file.url` | Do not write this | On *read*, the public CDN link. A bare `url` is not a write payload. Copy it into `attachment_url` to re-point the editable. |
 
-A file editable that ends up with none of attachment / `attachment_path` / `attachment_url` / `source` is an **error** — the CLI refuses to write it rather than silently clearing the asset. In default merge mode, the CLI drops URL-only file objects from the write payload so the existing asset is left unchanged; under `--replace`, provide a real write shape. To intentionally clear a file editable, pass `--allow-empty-file`.
+A file editable with none of attachment / `attachment_path` / `attachment_url` / `source` is an **error**: the CLI refuses rather than clearing the asset (merge mode drops URL-only file objects instead). Pass `--allow-empty-file` to clear one on purpose.
 
 ### create
 
-Accepts `--file` or inline assignments. No inline key restrictions -- the body is POSTed as-is. `--help` lists `security_mechanism` (`none|humans|customers`) and `published` (`published:=true`) among the supported top-level fields.
+Accepts `--file` or inline assignments; no inline key restrictions, the body is POSTed as-is. Top-level fields include `security_mechanism` (`none|humans|customers`) and `published`.
 
 ### copy
 
@@ -364,11 +360,11 @@ Inline assignments only accept:
 
 Shallow inline updates PATCH **only those fields** (no `items`, no `replace=1`), so renaming a menu cannot flatten the tree.
 
-Editing menu items requires `--file` or stdin with the full document. The body is normalized before write (`NormalizeMenuDocumentForWrite` strips `target_page` recursively and fills API aliases: `title`→`name`, `url`→`target_url`).
+Editing menu items requires `--file` or stdin with the full document. The body is normalized before write: `target_page` is stripped recursively and aliases filled (`title`→`name`, `url`→`target_url`).
 
 ### create / update with a nested tree
 
-Both `menus create --file` and `menus update --file` send nested `items[].children[]` through the menu contract and keep your ordering. Prefer these over raw `nimbu api` for menus so the CLI can normalize aliases and reject a write when verification shows that the server changed the tree.
+Both `menus create --file` and `menus update --file` send nested `items[].children[]` through the menu contract and keep your ordering. Prefer them over raw `nimbu api`: the CLI normalizes aliases and fails the write when verification shows the server changed the tree.
 
 Recipe for a nested menu (create in one shot, or create empty then replace):
 
@@ -428,17 +424,9 @@ Subcommands: `list`, `get`, `create`, `update`, `delete`, `count`, `copy`.
 
 ### Locale shorthand
 
-In `create` and `update`, bare locale keys are automatically rewritten to `values.<locale>`:
-
-```bash
-nimbu translations create key=home.title nl=Welkom fr=Bienvenue en=Welcome
-```
-
-This is equivalent to:
-
-```bash
-nimbu translations create key=home.title values.nl=Welkom values.fr=Bienvenue values.en=Welcome
-```
+In `create` and `update`, bare locale keys are rewritten to `values.<locale>`, so
+`nimbu translations create key=home.title nl=Welkom fr=Bienvenue` is the same as
+`nimbu translations create key=home.title values.nl=Welkom values.fr=Bienvenue`.
 
 Reserved keys (`key`, `value`, `values`, `locale`, `url`) are NOT rewritten.
 Locale keys are normalized, underscores become hyphens, and the result is

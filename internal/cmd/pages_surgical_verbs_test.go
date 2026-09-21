@@ -197,3 +197,66 @@ func TestPagesGetShapeShowsIndexIDAndSelectOptions(t *testing.T) {
 		t.Fatalf("repeatable = %#v", rep)
 	}
 }
+
+func TestPagesVerbsAcceptRawIndexPaths(t *testing.T) {
+	t.Run("set", func(t *testing.T) {
+		srvState := &surgicalServer{}
+		srv := srvState.start(t)
+		defer srv.Close()
+		ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{})
+		cmd := &PagesSetCmd{Page: "about", Path: "/items/Blokken/repeatables/1/items/Quote", Value: "Hi"}
+		if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		op := srvState.lastBody["operations"].([]any)[0].(map[string]any)
+		if op["path"] != "/items/Blokken/repeatables/"+surgicalBlockID2+"/items/Quote" {
+			t.Fatalf("set path = %#v", op["path"])
+		}
+	})
+
+	t.Run("move", func(t *testing.T) {
+		srvState := &surgicalServer{}
+		srv := srvState.start(t)
+		defer srv.Close()
+		one := 1
+		ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{})
+		cmd := &PagesMoveCmd{Page: "about", Path: "/items/Blokken/repeatables/0", Position: &one}
+		if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		op := srvState.lastBody["operations"].([]any)[0].(map[string]any)
+		if op["path"] != "/items/Blokken/repeatables/"+surgicalBlockID || op["after"] != surgicalBlockID2 {
+			t.Fatalf("move op = %#v", op)
+		}
+	})
+
+	t.Run("delete-block", func(t *testing.T) {
+		srvState := &surgicalServer{}
+		srv := srvState.start(t)
+		defer srv.Close()
+		ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{})
+		cmd := &PagesDeleteBlockCmd{Page: "about", Path: "/items/Blokken/repeatables/1"}
+		if err := cmd.Run(ctx, &RootFlags{Site: "demo", Force: true}); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		op := srvState.lastBody["operations"].([]any)[0].(map[string]any)
+		if op["op"] != "delete" || op["path"] != "/items/Blokken/repeatables/"+surgicalBlockID2 {
+			t.Fatalf("delete op = %#v", op)
+		}
+	})
+
+	t.Run("out of range index", func(t *testing.T) {
+		srvState := &surgicalServer{}
+		srv := srvState.start(t)
+		defer srv.Close()
+		ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{})
+		cmd := &PagesSetCmd{Page: "about", Path: "/items/Blokken/repeatables/11/items/Quote", Value: "Hi"}
+		err := cmd.Run(ctx, &RootFlags{Site: "demo"})
+		if err == nil || !strings.Contains(err.Error(), "index 11") {
+			t.Fatalf("error = %v", err)
+		}
+		if srvState.posts != 0 {
+			t.Fatal("bad index should not post")
+		}
+	})
+}

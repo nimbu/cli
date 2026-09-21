@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,7 +30,7 @@ func resolveProjectContext() (projectContext, error) {
 			ProjectRoot: filepath.Dir(projectFile),
 		}, nil
 	}
-	if err != nil && err != config.ErrNotFound {
+	if err != nil && !errors.Is(err, config.ErrNotFound) {
 		return projectContext{}, err
 	}
 	cwd, cwdErr := os.Getwd()

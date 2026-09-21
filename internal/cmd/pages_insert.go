@@ -170,7 +170,14 @@ func (c *PagesInsertCmd) resolveInsert(session *surgicalSession) (pagepath.Resol
 		return pagepath.Resolved{}, nil, "", fmt.Errorf("--slug %q does not match file slug %q", slug, slugFromFile)
 	}
 
-	input := strings.TrimSuffix(c.Path, "/repeatables")
+	input := strings.TrimSuffix(strings.TrimSpace(c.Path), "/repeatables")
+	if strings.HasPrefix(input, "/") {
+		normalized, err := normalizeRawRepeatableIndexes(session.doc, input)
+		if err != nil {
+			return pagepath.Resolved{}, nil, "", err
+		}
+		input = normalized
+	}
 	resolved, err := session.resolve(input)
 	if err != nil {
 		return pagepath.Resolved{}, nil, "", err

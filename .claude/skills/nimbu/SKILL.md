@@ -6,7 +6,7 @@ description: >
   cloud code, and local dev server for Nimbu sites. Use when building,
   querying, migrating, or deploying Nimbu CMS content and themes.
 metadata:
-  version: "0.5.0"
+  version: "0.6.0"
 ---
 
 # Nimbu CLI
@@ -43,9 +43,9 @@ Commands that require a site resolve it in this order:
 1. `--site` flag
 2. `NIMBU_SITE` env var
 3. `default_site` in `~/.config/nimbu/config.json`
-4. `site` in `nimbu.yml`, found by walking up from `NIMBU_PROJECT_DIR` (if set), then the current working directory, then the git top-level
+4. `site` in `nimbu.yml`, found by walking up from `NIMBU_PROJECT_DIR` (if set), else the current working directory, stopping at the git top-level
 
-If none is found, the command fails with a clear error. Always pass `--site` (or set `NIMBU_SITE`) in subagent briefs so resolution does not depend on CWD.
+Each walk stops at the first directory holding `.git` (that directory is still checked) or at the filesystem root. If nothing is found the error names that boundary: `nimbu.yml not found (searched up to /path/to/repo)`. A scratchpad CWD sits outside the repo, so the walk-up finds nothing — always pass `--site` (or set `NIMBU_SITE`) in subagent briefs.
 
 ## Output Modes
 
@@ -97,11 +97,12 @@ nimbu pages set --page about --path seo_title --locale nl "Nederlandse titel"
 nimbu pages update --page about --locale nl --file nl.json
 ```
 
-JSON output stays lossless: it retains the full API document and every
-`translations` map even when `--locale` is set. Human and plain output
-recursively overlay the selected translation; missing translated fields fall
-back to the default-locale value. Canonically equivalent keys such as `nl_BE`
-and `nl-BE` match during display projection.
+Human and plain output overlay the selected translation recursively; missing
+translated fields fall back to the default-locale value. On `pages get`,
+`pages get --outline` and `pages items`, `--json` projects the locale too
+(`pages get --locale en --json` returns the EN content) while keeping the
+`translations` map. Other resources return the raw document under `--json`.
+Canonically equivalent keys such as `nl_BE` and `nl-BE` match during projection.
 
 Use a nested `translations` object to write several locales in one
 `pages update --file` request:
@@ -293,33 +294,19 @@ Three resource types have special contracts beyond standard CRUD:
 ### Pages
 
 - **Identifier**: fullpath (e.g., `about/team`), not UUID
-- **Default recipe**: `pages schema --page P` → `pages get --page P --shape` → `pages set|insert|move|delete-block` or `pages batch`. `--shape` includes repeatable ids/positions and select options.
-- **Fallback** for whole-document rewrites: `pages get --json` → edit → `pages update --file` (merge by default; omitted canvases stay intact). `--replace` is a full destructive rebuild (file-only; guarded against wiping a canvas to 0 unless `--allow-empty-canvas`). Never blind-resend a raw GET under `--replace`.
+- **Read the recipe, the path grammar and the gotchas in [references/pages-quickstart.md](references/pages-quickstart.md)** — two screens, working commands, nothing else needed for a normal page edit.
+  - Read: `pages get --page P --outline [--locale xx]` for ids, paths and a content preview; `pages items --page P --path <path>` for one block; `pages schema` only for select options.
+  - Write: `pages set` for one field, `pages batch --file ops.json` for several, `--draft` + `pages draft preview-url` + `pages draft publish` for QA.
+  - Never put a raw `pages get --json` in context (270 KB for a landing page): use `--outline`, `--compact`, or `pages items`.
+  - The full contract (FileRef shapes, `--replace` guard, draft errors, menus, blogs) stays in [references/pages-menus-content.md](references/pages-menus-content.md).
+- **Fallback** for whole-document rewrites: `pages get --json --compact` → edit → `pages update --file` (merge by default; omitted canvases stay intact). `--replace` is a full destructive rebuild (file-only; guarded against wiping a canvas to 0 unless `--allow-empty-canvas`). Never blind-resend a raw GET under `--replace`.
 - `pages update` inline stays shallow (`title`, `template`, `published`, `locale`, or one top-level `translations` object)
 - `pages update --dry-run` prints the merged PATCH body without sending a request
 - `pages create`/`update` `--help` lists `security_mechanism` (`none|humans|customers`) and `published`
 - The CLI computes `If-Match` and retries once on 412; agents do not manage ETags
 - File editables: use the FileRef table in [references/pages-menus-content.md](references/pages-menus-content.md) — do not invent write shapes
 
-| Grammar | Example | Meaning |
-|---------|---------|---------|
-| page field | `title` | `title`, `slug`, `seo_title`, `seo_description`, `seo_keywords`, `published` (also `og_image`, `template`) |
-| `Canvas[i].Field` | `Blokken[2].Title` | 0-based index |
-| `Canvas[id=<oid>].Field` | `Blokken[id=6a6d…].Title` | ObjectId |
-| `Canvas[slug=<slug>]` | `Blokken[slug=hero]` | unique slug, else error lists matches |
-| nested | `Blokken[0].Photos[1].Image` | two canvas levels |
-| quoted name | `"Left Button - Link"` | quote when the name contains `.` or `[` |
-| raw `/items/…` | `/items/Blokken/repeatables/<id>/items/Title` | passed verbatim |
-
-```bash
-nimbu pages schema --page about/team --json
-nimbu pages get --page about/team --shape
-nimbu pages set --page about/team --path title --dry-run "Our Team"
-nimbu pages insert --page about/team --path Blokken --slug item --position 0
-nimbu pages move --page about/team --path Blokken[2] --position 0
-nimbu pages delete-block --page about/team --path Blokken[2] --force
-nimbu pages batch --page about/team --file ops.json --dry-run
-```
+Path grammar, the batch ops table and the locale gotchas: [references/pages-quickstart.md](references/pages-quickstart.md).
 
 ### Draft -> preview -> publish QA loop
 
@@ -399,13 +386,12 @@ See [references/channels-and-entries.md](references/channels-and-entries.md) for
 ### Edit a page (surgical, then fallback)
 
 ```bash
-nimbu pages schema --page about/team --json
-nimbu pages get --page about/team --shape
-nimbu pages set --page about/team --path Blokken[0].Title --dry-run --diff "Fast"
-nimbu pages set --page about/team --path Blokken[0].Title "Fast"
+nimbu pages get --page about/team --outline
+nimbu pages set --page about/team --path 'Blokken[0].Title' --dry-run --diff "Fast"
+nimbu pages set --page about/team --path 'Blokken[0].Title' "Fast"
 ```
 
-Whole-document rewrite fallback: `pages get --json` → edit → `pages update --file`. See [references/pages-menus-content.md](references/pages-menus-content.md).
+Full recipe: [references/pages-quickstart.md](references/pages-quickstart.md). Whole-document rewrite fallback: `pages get --json --compact` → edit → `pages update --file`. See [references/pages-menus-content.md](references/pages-menus-content.md).
 
 ### Upload a file and reuse its CDN URL
 
@@ -528,6 +514,7 @@ Default behavior returns the first page. Use `--all --json` for complete dataset
 | File | Covers |
 |------|--------|
 | [channels-and-entries.md](references/channels-and-entries.md) | Channel CRUD, entry CRUD, schema, info, copy, diff, locales |
+| [pages-quickstart.md](references/pages-quickstart.md) | **Start here for pages**: read/write recipe, path grammar, batch ops, locale gotchas |
 | [pages-menus-content.md](references/pages-menus-content.md) | Pages (surgical verbs, drafts, FileRef), menus, blogs, translations, notifications |
 | [products-orders-customers.md](references/products-orders-customers.md) | Products, shipping rates, orders, customers, collections, coupons |
 | [themes-and-local-dev.md](references/themes-and-local-dev.md) | Theme sync, `--only` deps, local `--draft` preview, cloud code apps |

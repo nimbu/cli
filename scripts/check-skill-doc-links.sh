@@ -18,7 +18,10 @@ while IFS= read -r skill_file; do
   fi
 done < <(find "${root}" -name SKILL.md -path '*/nimbu*/*' -print)
 
-mapfile -t urls < <(
+urls=()
+while IFS= read -r url; do
+  urls+=("${url}")
+done < <(
   rg --no-filename -o 'https://docs\.nimbu\.io[^\s)<>]+' "${root}" -g '*.md' \
     | sed 's/[.,;:]*$//' \
     | sort -u

@@ -38,3 +38,41 @@ To set a localized slug, send a minimal document for that locale:
 or an explicit translations block: translations:='{"en":{"slug":"about-us"}}'.
 `
 }
+
+func (c *PagesBatchCmd) Help() string {
+	return `
+--file takes {"operations":[...]} or a bare array, max 10 operations.
+
+Ops and required keys:
+
+  set     path, value    replace an editable or page field value
+  insert  path, value    add a repeatable; value is {slug, items}
+  delete  path           remove a repeatable
+  move    path, after    reorder a repeatable
+
+after (insert and move): omit it to append, null to place first, or a
+sibling repeatable id to place right after that sibling.
+
+Paths are human (Blokken[0].Title, Blokken[id=<id>].Items) or raw
+(/items/Blokken/repeatables/<id>/items/Title). They end at the editable
+name; never append /content. insert paths address the canvas itself:
+Blokken, Blokken[id=<id>].Items, or /items/Blokken/repeatables. A raw
+path may use a position where an id belongs; it is rewritten to the id.
+Raw paths are checked against the page before posting; shortened id paths
+are expanded to the full form.
+
+Example ops.json:
+
+  {"operations":[
+    {"op":"set","path":"Blokken[0].Title","value":"Hello"},
+    {"op":"insert","path":"Blokken","after":null,
+     "value":{"slug":"proof_strip","items":{"Quote":"Hi"}}},
+    {"op":"move","path":"Blokken[1]","after":null},
+    {"op":"delete","path":"Blokken[slug=proof_strip]"}
+  ]}
+
+The bare array form is the same list without the wrapper:
+
+  [{"op":"set","path":"title","value":"About"}]
+`
+}

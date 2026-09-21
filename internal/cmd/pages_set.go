@@ -56,7 +56,7 @@ func (c *PagesSetCmd) Run(ctx context.Context, flags *RootFlags) error {
 func (c *PagesSetCmd) plan(session *surgicalSession) (plannedOp, error) {
 	var kind pagepath.Kind
 	build := func(s *surgicalSession) (api.BatchOperation, error) {
-		resolved, err := s.resolve(c.Path)
+		resolved, err := s.resolveUserPath(c.Path)
 		if err != nil {
 			return api.BatchOperation{}, err
 		}

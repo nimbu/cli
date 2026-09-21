@@ -451,11 +451,12 @@ func RequireSite(ctx context.Context, site string) (string, error) {
 		return cfg.DefaultSite, nil
 	}
 
-	if proj, err := config.ReadProjectConfig(); err == nil && proj.Site != "" {
+	proj, projErr := config.ReadProjectConfig()
+	if projErr == nil && proj.Site != "" {
 		return proj.Site, nil
 	}
 
-	return "", fmt.Errorf("site required; use --site flag, NIMBU_SITE env, or nimbu.yml")
+	return "", fmt.Errorf("site required; use --site flag, NIMBU_SITE env, or %s", config.DescribeProjectLookup(projErr))
 }
 
 // MapAPIError maps API errors to exit codes.

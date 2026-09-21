@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,17 +12,18 @@ import (
 
 // PagesItemsCmd gets a resolved items subtree.
 type PagesItemsCmd struct {
-	Page string `required:"" help:"Page fullpath or id"`
-	Path string `required:"" help:"Human or raw path under /items"`
+	Page   string `required:"" help:"Page fullpath or id"`
+	Path   string `required:"" help:"Human or raw path under /items"`
+	Locale string `help:"Content locale; overlays translations for display"`
 }
 
 // Run executes pages items.
 func (c *PagesItemsCmd) Run(ctx context.Context) error {
-	session, err := openSurgicalPage(ctx, nil, c.Page, "")
+	session, err := openSurgicalPage(ctx, nil, c.Page, c.Locale)
 	if err != nil {
 		return err
 	}
-	resolved, err := session.resolve(c.Path)
+	resolved, err := session.resolveUserPath(c.Path)
 	if err != nil {
 		return err
 	}
@@ -36,7 +38,14 @@ func (c *PagesItemsCmd) Run(ctx context.Context) error {
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
-		return output.JSON(ctx, subtree)
+		if c.Locale == "" {
+			return output.JSON(ctx, subtree)
+		}
+		projected, err := output.ProjectLocale(subtree, c.Locale)
+		if err != nil {
+			return fmt.Errorf("project items locale: %w", err)
+		}
+		return output.JSON(ctx, projected)
 	}
 	if _, err := output.Fprintf(ctx, "Path:      %s\n", subtree.Path); err != nil {
 		return err
@@ -53,14 +62,44 @@ func (c *PagesItemsCmd) Run(ctx context.Context) error {
 	if len(subtree.Data) == 0 {
 		return nil
 	}
-	var data any
-	if err := json.Unmarshal(subtree.Data, &data); err != nil {
+	data, err := decodePageItemsData(subtree.Data)
+	if err != nil {
 		_, err := output.Fprintln(ctx, string(subtree.Data))
 		return err
+	}
+	if c.Locale != "" {
+		projected, err := output.ProjectLocale(data, c.Locale)
+		if err != nil {
+			return fmt.Errorf("project items locale: %w", err)
+		}
+		data = projected
 	}
 	if _, err := output.Fprintln(ctx); err != nil {
 		return err
 	}
-	_, err = output.Fprintln(ctx, prettyJSON(data))
+	_, err = output.Fprintln(ctx, rawJSONBlock(data))
 	return err
+}
+
+func decodePageItemsData(raw []byte) (any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var data any
+	if err := decoder.Decode(&data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// rawJSONBlock renders v as indented JSON without HTML escaping, so that
+// content editables stay readable: HTML tags and ampersands stay as typed.
+func rawJSONBlock(v any) string {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(v); err != nil {
+		return fmt.Sprint(v)
+	}
+	return strings.TrimRight(buf.String(), "\n")
 }

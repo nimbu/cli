@@ -1,11 +1,14 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -94,23 +97,80 @@ type SyncRootsConfig struct {
 	Templates []string `json:"templates,omitempty" yaml:"templates,omitempty"`
 }
 
+// ProjectLookupError reports a failed nimbu.yml lookup together with the
+// directory where the upward search stopped. It unwraps to ErrNotFound so
+// existing errors.Is checks keep working.
+type ProjectLookupError struct {
+	// StartDir is the directory the search started from.
+	StartDir string
+	// StoppedAt is the last directory that was inspected.
+	StoppedAt string
+	// EnvDriven reports whether the search started from NIMBU_PROJECT_DIR.
+	EnvDriven bool
+}
+
+func (e *ProjectLookupError) Error() string {
+	if e.EnvDriven {
+		return fmt.Sprintf("%s not found from %s=%s (searched up to %s)", ProjectFileName, ProjectDirEnv, e.StartDir, e.StoppedAt)
+	}
+	return fmt.Sprintf("%s not found (searched up to %s)", ProjectFileName, e.StoppedAt)
+}
+
+func (e *ProjectLookupError) Unwrap() error { return ErrNotFound }
+
+// DescribeProjectLookup renders the project file for user-facing error
+// messages, e.g. `nimbu.yml (searched up to /home/me/site)`. Pass the error
+// returned by a lookup; a nil or unrelated error falls back to a fresh search
+// boundary computed from the current working directory.
+func DescribeProjectLookup(err error) string {
+	var lookupErr *ProjectLookupError
+	if errors.As(err, &lookupErr) && lookupErr.StoppedAt != "" {
+		return fmt.Sprintf("%s (searched up to %s)", ProjectFileName, lookupErr.StoppedAt)
+	}
+	if limit := ProjectSearchLimit(); limit != "" {
+		return fmt.Sprintf("%s (searched up to %s)", ProjectFileName, limit)
+	}
+	return ProjectFileName
+}
+
+// ProjectSearchLimit returns the directory where an upward nimbu.yml search
+// would stop: the enclosing git root when there is one, else the filesystem
+// root. It returns "" when the start directory cannot be determined.
+func ProjectSearchLimit() string {
+	start := strings.TrimSpace(os.Getenv(ProjectDirEnv))
+	if start == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return ""
+		}
+		start = cwd
+	}
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return ""
+	}
+	_, stoppedAt := searchUpward(dir)
+	return stoppedAt
+}
+
 // FindProjectFile locates nimbu.yml. Precedence:
 //  1. Walk up from NIMBU_PROJECT_DIR, if set (error if nothing is found).
 //  2. Walk up from the current working directory.
 //  3. If still missing, try the git top-level directory as an extra candidate.
 //
-// The CWD walk is unbounded (it continues until the filesystem root), so the
-// git fallback only matters when that walk cannot see the repo root.
+// Each walk stops at the filesystem root, or at the first directory holding a
+// `.git` entry — that directory is still checked, nothing above it is.
 func FindProjectFile() (string, error) {
 	if raw := strings.TrimSpace(os.Getenv(ProjectDirEnv)); raw != "" {
 		dir, err := filepath.Abs(raw)
 		if err != nil {
 			return "", fmt.Errorf("resolve %s=%q: %w", ProjectDirEnv, raw, err)
 		}
-		path, err := findProjectFileFrom(dir)
-		if err != nil {
-			return "", fmt.Errorf("%s not found from %s=%s", ProjectFileName, ProjectDirEnv, dir)
+		path, stoppedAt := searchUpward(dir)
+		if path == "" {
+			return "", &ProjectLookupError{StartDir: dir, StoppedAt: stoppedAt, EnvDriven: true}
 		}
+		noteProjectFileFromParent(path, dir)
 		return path, nil
 	}
 
@@ -118,17 +178,38 @@ func FindProjectFile() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if path, err := findProjectFileFrom(dir); err == nil {
+	path, stoppedAt := searchUpward(dir)
+	if path != "" {
+		noteProjectFileFromParent(path, dir)
 		return path, nil
 	}
 
 	if top, ok := gitShowToplevel(dir); ok {
-		if path, err := findProjectFileFrom(top); err == nil {
+		if path, _ := searchUpward(top); path != "" {
+			noteProjectFileFromParent(path, dir)
 			return path, nil
 		}
 	}
 
-	return "", ErrNotFound
+	return "", &ProjectLookupError{StartDir: dir, StoppedAt: stoppedAt}
+}
+
+var projectFileNoteOnce sync.Once
+
+// noteProjectFileFromParent logs, at most once per process, that the project
+// file was picked up from a directory above the one we started in. It goes to
+// slog.Info so it only surfaces with --verbose or --debug.
+func noteProjectFileFromParent(path, startDir string) {
+	dir := filepath.Dir(path)
+	if dir == startDir {
+		return
+	}
+	projectFileNoteOnce.Do(func() {
+		slog.Info("using project config found in a parent directory",
+			"path", path,
+			"start_dir", startDir,
+		)
+	})
 }
 
 func gitShowToplevel(dir string) (string, bool) {
@@ -159,21 +240,35 @@ func withoutGitDirEnv(env []string) []string {
 	return filtered
 }
 
-func findProjectFileFrom(startDir string) (string, error) {
+// searchUpward walks from startDir towards the filesystem root looking for
+// nimbu.yml. It returns the file path (empty when not found) and the last
+// directory inspected, which is the boundary reported to users.
+func searchUpward(startDir string) (path string, stoppedAt string) {
 	dir := startDir
 	for {
 		candidate := filepath.Join(dir, ProjectFileName)
 		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
+			return candidate, dir
+		}
+
+		// The git root is inspected, but the search never climbs above it:
+		// a repo boundary is the outer edge of a project.
+		if isGitRoot(dir) {
+			return "", dir
 		}
 
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			// Reached root
-			return "", ErrNotFound
+			// Reached the filesystem root.
+			return "", dir
 		}
 		dir = parent
 	}
+}
+
+func isGitRoot(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, ".git"))
+	return err == nil
 }
 
 // ProjectRoot returns the directory containing the nearest nimbu.yml.

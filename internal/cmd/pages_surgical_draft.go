@@ -1,17 +1,33 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/output"
 )
+
+// draftLocaleWarning is printed whenever a draft write carries --locale. The
+// draft endpoints have been observed to store the default-locale text under the
+// requested locale (theme-zenjoy-2026 audit, Sep 2026); until the API fix lands,
+// agents should write translations on the live page after `draft publish`.
+const draftLocaleWarning = "warning: --draft with --locale may store the default-locale text under that locale; write translations on the live page after draft publish, then verify with pages get --locale"
+
+func warnDraftLocale(ctx context.Context, draft bool, locale string) {
+	if draft && locale != "" {
+		_, _ = fmt.Fprintln(output.WriterFromContext(ctx).Err, draftLocaleWarning)
+	}
+}
 
 func (s *surgicalSession) applyWriteMode(write surgicalWriteFlags) error {
 	if !write.Draft {
 		return nil
 	}
+	warnDraftLocale(s.ctx, true, write.Locale)
 	s.draftMode = true
 	draft, err := s.client.GetPageDraft(s.ctx, s.pageID, api.DraftOptions{ContentLocale: s.locale})
 	if err != nil {
