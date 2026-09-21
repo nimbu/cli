@@ -73,7 +73,7 @@ func TestPagesUpdateFromFilePreservesParentFullpath(t *testing.T) {
 	}
 }
 
-func TestPagesUpdateInlineDropsReadOnlyFileURL(t *testing.T) {
+func TestPagesUpdateInlineDoesNotEchoFetchedItems(t *testing.T) {
 	var gotBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -98,53 +98,24 @@ func TestPagesUpdateInlineDropsReadOnlyFileURL(t *testing.T) {
 	if gotBody["title"] != "New" {
 		t.Fatalf("expected title update, got %#v", gotBody["title"])
 	}
-	items := gotBody["items"].(map[string]any)
-	hero := items["hero"].(map[string]any)
-	if _, ok := hero["file"]; ok {
-		t.Fatalf("read-only file url should not be sent in merge payload, got %#v", hero["file"])
+	if _, ok := gotBody["items"]; ok {
+		t.Fatalf("fetched items (and their read-only file urls) must not be sent in an inline merge, got %#v", gotBody["items"])
 	}
 }
 
-func TestPagesUpdateInlineDropsEmptyFileMap(t *testing.T) {
+func TestPagesUpdateInlineTranslationsSendsOnlySuppliedBlock(t *testing.T) {
 	var gotBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/pages/about":
-			_, _ = w.Write([]byte(`{"id":"p1","fullpath":"about","title":"Old","items":{"hero":{"type":"file","file":{"filename":"hero.jpg"}}}}`))
-		case r.Method == http.MethodPatch && r.URL.Path == "/pages/about":
-			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-				t.Fatalf("decode body: %v", err)
-			}
-			_, _ = w.Write([]byte(`{"id":"p1","fullpath":"about","title":"New","items":{"hero":{"type":"file"}}}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
-
-	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
-	cmd := &PagesUpdateCmd{Page: "about", Assignments: []string{"title=New"}}
-	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
-		t.Fatalf("run pages update: %v", err)
-	}
-	items := gotBody["items"].(map[string]any)
-	hero := items["hero"].(map[string]any)
-	if _, ok := hero["file"]; ok {
-		t.Fatalf("empty file map should not be sent in inline merge payload, got %#v", hero["file"])
-	}
-}
-
-func TestPagesUpdateInlineTranslationsPreserveExistingLocales(t *testing.T) {
-	var gotBody map[string]any
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/pages/about":
+			// en.seo_title is a locale fallback of the nl value; the server
+			// does not mark it, so it must never be written back.
 			_, _ = w.Write([]byte(`{
 				"id":"p1",
 				"fullpath":"about",
 				"title":"About",
 				"translations":{
-					"en":{"seo_title":"English title"},
+					"en":{"seo_title":"Oude titel"},
 					"nl":{"seo_title":"Oude titel","seo_description":"Blijft behouden"}
 				}
 			}`))
@@ -169,17 +140,20 @@ func TestPagesUpdateInlineTranslationsPreserveExistingLocales(t *testing.T) {
 	}
 
 	translations := gotBody["translations"].(map[string]any)
-	en := translations["en"].(map[string]any)
+	if _, ok := translations["en"]; ok {
+		t.Fatalf("fetched (fallback) English translation must not be echoed back: %#v", translations)
+	}
 	nl := translations["nl"].(map[string]any)
-	fr := translations["fr"].(map[string]any)
-	if en["seo_title"] != "English title" {
-		t.Fatalf("existing English translation lost: %#v", translations)
+	if nl["seo_title"] != "Nieuwe titel" || len(nl) != 1 {
+		t.Fatalf("Dutch block should be sent as supplied: %#v", nl)
 	}
-	if nl["seo_title"] != "Nieuwe titel" || nl["seo_description"] != "Blijft behouden" {
-		t.Fatalf("Dutch translation was not merged: %#v", nl)
-	}
-	if fr["seo_title"] != "Titre" {
+	if fr := translations["fr"].(map[string]any); fr["seo_title"] != "Titre" {
 		t.Fatalf("French translation missing: %#v", fr)
+	}
+	for _, key := range []string{"title", "fullpath", "id"} {
+		if _, ok := gotBody[key]; ok {
+			t.Fatalf("fetched %q must not be written back: %#v", key, gotBody)
+		}
 	}
 }
 
@@ -466,5 +440,54 @@ func TestPagesUpdatePrintsAppliedCounts(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "Updated page p1 (2 editables, 1 attachment)") {
 		t.Fatalf("unexpected human output: %q", got)
+	}
+}
+
+func TestPagesUpdateInlineDoesNotEchoFetchedTranslations(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/pages/nl-slug":
+			// A nl-default site with no English translation: the API fills
+			// every locale value with the nl fallback and nothing marks it.
+			_, _ = w.Write([]byte(`{
+				"id":"p1",
+				"slug":"nl-slug",
+				"fullpath":"nl-slug",
+				"public_url":"https://demo.test/nl-slug",
+				"depth":0,
+				"title":"Nederlandse titel",
+				"template":"page",
+				"translations":{
+					"nl":{"slug":"nl-slug","title":"Nederlandse titel"},
+					"en":{"slug":"nl-slug","title":"Nederlandse titel"}
+				}
+			}`))
+		case r.Method == http.MethodPatch && r.URL.Path == "/pages/nl-slug":
+			if !strings.Contains(r.URL.RawQuery, "content_locale=en") {
+				t.Fatalf("missing content_locale: %q", r.URL.RawQuery)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"id":"p1","fullpath":"nl-slug","title":"English"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	cmd := &PagesUpdateCmd{QueryFlags: QueryFlags{Locale: "en"}, Page: "nl-slug", Assignments: []string{"title=English"}}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+		t.Fatalf("run pages update: %v", err)
+	}
+	if gotBody["title"] != "English" {
+		t.Fatalf("expected title update, got %#v", gotBody)
+	}
+	for _, key := range []string{"translations", "fullpath", "public_url", "depth", "slug"} {
+		if _, ok := gotBody[key]; ok {
+			t.Fatalf("fetched %q must not be written back, got %#v", key, gotBody)
+		}
 	}
 }

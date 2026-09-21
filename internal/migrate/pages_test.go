@@ -135,15 +135,18 @@ func TestCopyPagesAllowErrorsSkipsInvalidPage(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/pages" && r.Header.Get("X-Nimbu-Site") == "source":
 			_, _ = w.Write([]byte(`[{"fullpath":"bad-page"},{"fullpath":"good-page"}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/pages/bad-page" && r.Header.Get("X-Nimbu-Site") == "source":
-			_, _ = w.Write([]byte(`{"fullpath":"bad-page","title":"Bad","items":[]}`))
+			_, _ = w.Write([]byte(`{"fullpath":"bad-page","slug":"bad-page","title":"Bad","items":[]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/pages/good-page" && r.Header.Get("X-Nimbu-Site") == "source":
-			_, _ = w.Write([]byte(`{"fullpath":"good-page","title":"Good","items":[]}`))
+			_, _ = w.Write([]byte(`{"fullpath":"good-page","slug":"good-page","title":"Good","items":[]}`))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/pages/") && r.Header.Get("X-Nimbu-Site") == "target":
 			http.NotFound(w, r)
 		case r.Method == http.MethodPost && r.URL.Path == "/pages" && r.Header.Get("X-Nimbu-Site") == "target":
 			var doc map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&doc)
-			fullpath, _ := doc["fullpath"].(string)
+			if _, ok := doc["fullpath"]; ok {
+				t.Errorf("fullpath is server-derived and must not be sent: %#v", doc)
+			}
+			fullpath, _ := doc["slug"].(string)
 			if fullpath == "bad-page" {
 				w.WriteHeader(http.StatusUnprocessableEntity)
 				_, _ = w.Write([]byte(`{"message":"invalid editable Intro ehbo"}`))

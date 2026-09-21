@@ -40,18 +40,6 @@ func validateShallowInlineAssignments(resource string, assignments []string, all
 	return nil
 }
 
-func mergeTopLevel(dst map[string]any, src map[string]any) {
-	for key, value := range src {
-		dstMap, dstIsMap := dst[key].(map[string]any)
-		srcMap, srcIsMap := value.(map[string]any)
-		if dstIsMap && srcIsMap {
-			mergeTopLevel(dstMap, srcMap)
-			continue
-		}
-		dst[key] = value
-	}
-}
-
 // verifyMenuNesting rejects writes whose response or verification read flattened
 // a submitted nested tree.
 func verifyMenuNesting(ctx context.Context, client *api.Client, submitted api.MenuDocumentStats, menu api.MenuDocument, opts ...api.RequestOption) error {

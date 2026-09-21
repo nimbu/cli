@@ -64,17 +64,22 @@ func (c *PagesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 			return err
 		}
 
-		body, err = api.GetPageDocument(ctx, client, c.Page, opts...)
+		// Fetch for existence, canvas guards, and the 422 template hint only.
+		// The fetched document is never merged into the PATCH body: the API
+		// resolves every locale with fallbacks (an untranslated `en` echoes
+		// the `nl` title, slug, ...) and processes `translations` after the
+		// top-level fields, so writing it back materializes fallback copies
+		// and silently reverts localized slugs.
+		current, err = api.GetPageDocument(ctx, client, c.Page, opts...)
 		if err != nil {
 			return fmt.Errorf("fetch current page: %w", err)
 		}
-		current = body
 
 		updates, err := readJSONBodyInput("", c.Assignments)
 		if err != nil {
 			return err
 		}
-		mergeTopLevel(body, updates)
+		body = api.PageDocument(updates)
 	} else {
 		rawBody, err := readRichDocumentInput(c.File)
 		if err != nil {
