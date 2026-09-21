@@ -208,3 +208,121 @@ func runGit(t *testing.T, dir string, args ...string) {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 }
+
+func TestFindProjectFileWalksUpToParent(t *testing.T) {
+	t.Setenv(ProjectDirEnv, "")
+
+	root := t.TempDir()
+	nested := filepath.Join(root, "theme", "templates", "deep")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	want := writeProjectFile(t, root, "site: parent\n")
+	t.Chdir(nested)
+
+	got, err := FindProjectFile()
+	if err != nil {
+		t.Fatalf("FindProjectFile: %v", err)
+	}
+	if got != want {
+		t.Fatalf("FindProjectFile() = %q, want %q", got, want)
+	}
+}
+
+func TestFindProjectFileChecksGitRootButNotAbove(t *testing.T) {
+	t.Setenv(ProjectDirEnv, "")
+
+	outer := t.TempDir()
+	repo := filepath.Join(outer, "repo")
+	nested := filepath.Join(repo, "src", "deep")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// nimbu.yml only above the repo: the search must stop at the git root.
+	writeProjectFile(t, outer, "site: above-git-root\n")
+	t.Chdir(nested)
+
+	got, err := FindProjectFile()
+	if err == nil {
+		t.Fatalf("FindProjectFile() = %q, want error", got)
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("error %v, want ErrNotFound", err)
+	}
+	var lookupErr *ProjectLookupError
+	if !errors.As(err, &lookupErr) {
+		t.Fatalf("error %v, want *ProjectLookupError", err)
+	}
+	if lookupErr.StoppedAt != repo {
+		t.Fatalf("StoppedAt = %q, want %q", lookupErr.StoppedAt, repo)
+	}
+	if want := "searched up to " + repo; !strings.Contains(err.Error(), want) {
+		t.Fatalf("error %q, want substring %q", err, want)
+	}
+
+	// The git root itself is still checked.
+	want := writeProjectFile(t, repo, "site: at-git-root\n")
+	found, err := FindProjectFile()
+	if err != nil {
+		t.Fatalf("FindProjectFile: %v", err)
+	}
+	if found != want {
+		t.Fatalf("FindProjectFile() = %q, want %q", found, want)
+	}
+}
+
+func TestFindProjectFileProjectDirEnvBeatsCWDWalk(t *testing.T) {
+	cwdRoot := t.TempDir()
+	nested := filepath.Join(cwdRoot, "a", "b")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeProjectFile(t, cwdRoot, "site: from-cwd-walk\n")
+
+	envDir := t.TempDir()
+	want := writeProjectFile(t, envDir, "site: from-env\n")
+
+	t.Chdir(nested)
+	t.Setenv(ProjectDirEnv, envDir)
+
+	got, err := FindProjectFile()
+	if err != nil {
+		t.Fatalf("FindProjectFile: %v", err)
+	}
+	if got != want {
+		t.Fatalf("FindProjectFile() = %q, want %q", got, want)
+	}
+}
+
+func TestDescribeProjectLookupReportsSearchBoundary(t *testing.T) {
+	t.Setenv(ProjectDirEnv, "")
+
+	repo := t.TempDir()
+	nested := filepath.Join(repo, "scratch")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(nested)
+
+	_, err := FindProjectFile()
+	if err == nil {
+		t.Fatal("expected lookup error")
+	}
+	want := ProjectFileName + " (searched up to " + repo + ")"
+	if got := DescribeProjectLookup(err); got != want {
+		t.Fatalf("DescribeProjectLookup() = %q, want %q", got, want)
+	}
+	if got := DescribeProjectLookup(nil); got != want {
+		t.Fatalf("DescribeProjectLookup(nil) = %q, want %q", got, want)
+	}
+	if got := ProjectSearchLimit(); got != repo {
+		t.Fatalf("ProjectSearchLimit() = %q, want %q", got, repo)
+	}
+}

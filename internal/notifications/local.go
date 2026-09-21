@@ -1,6 +1,7 @@
 package notifications
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,7 +17,7 @@ func ResolveProjectRoot() (string, error) {
 	if err == nil {
 		return filepath.Dir(projectFile), nil
 	}
-	if err != nil && err != config.ErrNotFound {
+	if err != nil && !errors.Is(err, config.ErrNotFound) {
 		return "", err
 	}
 	return os.Getwd()
