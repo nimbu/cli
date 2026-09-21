@@ -32,7 +32,7 @@ func TestPagesUpdateRejectsDeepInlineAssignments(t *testing.T) {
 	}
 }
 
-func TestPagesUpdateMergesByDefaultAndPreservesDocument(t *testing.T) {
+func TestPagesUpdateMergesByDefaultWithAssignedKeysOnly(t *testing.T) {
 	var gotMethod string
 	var gotReplace string
 	var gotBody map[string]any
@@ -74,8 +74,8 @@ func TestPagesUpdateMergesByDefaultAndPreservesDocument(t *testing.T) {
 	if gotBody["title"] != "New" {
 		t.Fatalf("expected merged title, got %#v", gotBody["title"])
 	}
-	if _, ok := gotBody["items"]; !ok {
-		t.Fatalf("expected existing document preserved, got %#v", gotBody)
+	if _, ok := gotBody["items"]; ok {
+		t.Fatalf("inline merge must send only the assigned keys and let the API merge, got %#v", gotBody)
 	}
 }
 

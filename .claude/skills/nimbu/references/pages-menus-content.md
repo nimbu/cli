@@ -203,7 +203,7 @@ Inline assignments (`nimbu pages update --page <fullpath> key=value`) only accep
 - `title`, `template`, `published`, `locale`
 - one complete top-level `translations` object
 
-Any deeper field (editables, nested content) requires `--file` or stdin. The CLI fetches the current document, merges inline assignments on top, and PATCHes. This is a read-modify-write cycle, not a blind overwrite.
+Any deeper field (editables, nested content) requires `--file` or stdin. The CLI fetches the current document (existence check, canvas guards, 422 template hint) but PATCHes **only the assigned keys**; the API merges them. The fetched document is never written back, see below.
 
 ### Locale-specific and multi-locale writes
 
@@ -228,9 +228,28 @@ To update several locales together, send a top-level `translations` map.
 ```
 
 The equivalent inline form is
-`translations:=@translations.json`. It recursively merges the supplied locale
-and field keys into the fetched translations, preserving omitted locales and
-sibling fields. Other deep page edits remain file-only.
+`translations:=@translations.json`. The block is sent exactly as supplied;
+locales and fields you omit are left alone by the API. Other deep page edits
+remain file-only.
+
+**Fetched `translations` are never written back.** A `GET` resolves every
+locale with fallbacks: on a nl-default site without an `en` translation,
+`translations.en.slug` and `.title` contain the Dutch values and nothing marks
+them as fallbacks. The API also applies `translations` after the top-level
+fields, so echoing that map would (a) materialize Dutch copies as real `en`
+translations and (b) overwrite a new `--locale en` slug with the fallback.
+`fullpath`, `public_url`, and `depth` are server-derived and are stripped from
+every write, including `--file` documents.
+
+To set a localized slug, send a minimal document for that locale or an
+explicit translations block:
+
+```bash
+echo '{"slug":"about-us"}' | nimbu pages update --page over-ons --locale en --file -
+nimbu pages update --page over-ons translations:='{"en":{"slug":"about-us"}}'
+```
+
+Verify with `pages get --page over-ons --locale en --json | jq '.translations.en | {slug, fullpath, public_url}'`.
 
 With `--json`, reads and mutations retain the complete API document, including
 all translations. Human/plain output overlays the selected locale recursively

@@ -341,7 +341,7 @@ A 409 `draft_base_changed` means the live page moved after the draft was based o
 - `security_mechanism` (`none|humans|customers`): `none` is public; `customers` requires a logged-in customer; `humans` is the intermediate access level. Set it explicitly instead of guessing what the site default is; `pages get --json` shows the current value.
 - FileRef write shapes: [pages-menus-content.md](references/pages-menus-content.md) table. Do not repeat it.
 - Push the theme before content that uses new editables: `nimbu themes push --only templates/<t>.liquid --dry-run`, then without `--dry-run`.
-- Prefer `--dry-run` / `--diff` before writes. Surgical `--dry-run` prints resolved ops; `pages update --dry-run` prints the merged body.
+- Prefer `--dry-run` / `--diff` before writes. Surgical `--dry-run` prints resolved ops; `pages update --dry-run` prints the exact PATCH body.
 - The CLI owns ETags (`If-Match`, one 412 refetch). Do not send or cache them.
 - `--file` accepts pipes and process substitution (`--file <(echo '{...}')`).
 
@@ -377,6 +377,8 @@ A 409 `draft_base_changed` means the live page moved after the draft was based o
 8. **Copy commands use `--from`/`--to` refs**: Format is `site` for site-level ops, `site/channel` for channel-level ops.
 
 9. **Jobs are site-level**: `jobs run --wait` resolves the owning app from the server-side job registry; no `--app` or `nimbu.yml` needed.
+
+10. **Fetched page `translations` are fallback-filled**: `pages get` resolves every locale with the default-locale values and does not mark fallbacks. Never write a fetched `translations` map (or `fullpath`/`public_url`/`depth`) back; `pages update` sends only what you assign. To set a localized slug: `echo '{"slug":"about-us"}' | nimbu pages update --page P --locale en --file -`.
 
 10. **Shipping-rate translations are per-locale**: The API rejects nested `translations`. No `count`/`copy`. Keep `region_id` opaque (site-specific).
 

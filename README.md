@@ -278,7 +278,11 @@ nimbu pages update --page about --file translations.json
 
 Prefer `--file` for nested page content and multi-locale payloads. A complete
 top-level map is also supported as `translations:=@translations.json`; other
-deep page edits remain file-only. JSON output always preserves the complete API
+deep page edits remain file-only. Inline updates send only the assigned keys;
+the fetched document (whose `translations` map is locale-resolved with
+fallbacks) is never written back, and `fullpath`, `public_url`, and `depth`
+are always stripped from writes. To set a localized slug, pipe a minimal
+document: `echo '{"slug":"about-us"}' | nimbu pages update --page over-ons --locale en --file -`. JSON output always preserves the complete API
 response, including every `translations` map. Human and plain output
 recursively overlay the selected locale and fall back to the default value when
 a translated field is absent.

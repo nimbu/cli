@@ -37,7 +37,9 @@ func PatchPageDocument(ctx context.Context, c *Client, fullpath string, doc Page
 	return out, nil
 }
 
-// pageReadOnlyKeys are server-managed top-level keys that must never be written back.
+// pageReadOnlyKeys are server-managed top-level keys that must never be
+// written back. fullpath, public_url, and depth are derived from slug and
+// parent; echoing a locale-resolved fullpath would pin the fallback path.
 var pageReadOnlyKeys = []string{
 	"id",
 	"created_at",
@@ -45,6 +47,9 @@ var pageReadOnlyKeys = []string{
 	"creator_id",
 	"updater_id",
 	"parent_path",
+	"fullpath",
+	"public_url",
+	"depth",
 }
 
 // NormalizePageDocumentForWrite removes server-managed top-level keys so the
