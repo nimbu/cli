@@ -171,6 +171,9 @@ func (c *Client) buildRequest(ctx context.Context, method, path string, body any
 
 	meta := operationMetaFromOptions(method, reqOpts)
 	req = req.WithContext(withOperationMeta(req.Context(), meta))
+	if reqOpts.RedactResponse {
+		req = req.WithContext(withRedactedResponseLog(req.Context()))
+	}
 	if contentLength >= 0 {
 		req.ContentLength = contentLength
 	}
@@ -247,9 +250,13 @@ func (c *Client) do(req *http.Request, result any) error {
 	}
 
 	if c.Debug {
+		logged := string(body)
+		if redactedResponseLog(req.Context()) {
+			logged = "<redacted>"
+		}
 		slog.Debug("API response",
 			"status", resp.StatusCode,
-			"body", string(body),
+			"body", logged,
 		)
 	}
 

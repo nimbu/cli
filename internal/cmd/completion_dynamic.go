@@ -382,6 +382,8 @@ var completionValueFlags = map[string]bool{
 	"from":                true,
 	"from-file":           true,
 	"from-host":           true,
+	"for":                 true,
+	"host":                true,
 	"id":                  true,
 	"image":               true,
 	"image-id":            true,

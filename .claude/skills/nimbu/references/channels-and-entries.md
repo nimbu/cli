@@ -67,6 +67,7 @@ All entry commands take the channel slug or ID via `--channel`.
 | `delete` | `nimbu channels entries delete --channel <channel> --entry <entry>` | `--force` (required) | Requires both `--force` and write mode. |
 | `count` | `nimbu channels entries count --channel <channel>` | `--locale` (global) | Returns integer count. |
 | `copy` | `nimbu channels entries copy --from <ref> --to <ref>` | See table below | Most complex command. Requires write mode (unless `--dry-run`). |
+| `watch` | `nimbu channels entries watch --channel <channel>` | `--filters`, `--where`, `--once`, `--for`, `--host`, `--insecure` | Live websocket stream of entry changes. Read-only. See below. |
 
 ### Locales
 
@@ -102,6 +103,76 @@ nimbu channels entries update --channel blog --entry welcome --locale en title="
 | `--copy-customers` | bool | Also copy related customers (owner/customer fields) |
 | `--allow-errors` | bool | Continue on per-item validation errors instead of aborting |
 | `--dry-run` | bool | Report planned selection without writing |
+
+## Live Queries (`entries watch`)
+
+`nimbu channels entries watch --channel <channel>` subscribes to a live query
+over a websocket and prints entry changes as they happen. It mints a
+single-use, two-minute realtime grant behind the scenes and never prints it.
+`nimbu realtime grant` returns a grant for custom clients (single use, treat as
+a secret; the CLI warns on stderr).
+
+```bash
+nimbu channels entries watch --channel blog --site my-site --json
+nimbu channels entries watch --channel blog --filters status=published --once --json
+nimbu channels entries watch --channel blog --where "published=true" --for 2m
+nimbu channels entries watch --channel blog --host localhost:3000 --insecure
+```
+
+| Flag | Purpose |
+|------|---------|
+| `--channel` | Channel ID or slug (required; the live query is always scoped to it) |
+| `--filters` | `key=value` / `key.op=value`, repeatable, same grammar as `entries list` |
+| `--where` | Where expression; equivalent to `--filters where=...`. Kong splits `--filters` on commas, so any value containing a comma belongs in `--where` |
+| `--once` | Exit after the first event (a `resync` does not count) |
+| `--for` | Stop watching after a duration, e.g. `30s`. The global `--timeout` stays the HTTP request timeout |
+| `--host` | Override the websocket host (dev: `localhost:3000`) |
+| `--insecure` | Skip TLS verification for the socket (dev only) |
+
+### What a live query cannot do
+
+Validated locally before the socket opens; each rejection exits 2:
+
+- pagination, sort, projection, search: `limit`, `page`, `per_page`, `skip`, `sort`, `fields`, `only`, `search`, `include_slugs`, `resolve`, `explain`, `direction`, `content_locale`, and the other reserved base keys
+- `regex` (use `contains`, `start`, `end`); `near`, `geoWithin`, `geoIntersects`, `maxDistance`, `minDistance`
+- `_acl` / `_owner` filters, `inverse_of_*` relations
+- negated operators (`ne`, `nin`, `not_contains`) on a dotted sub-field path such as `color.title.ne` — use the positive form
+
+Everything else passes through: `_status`, `slug`, `in`, `nin`, `all`,
+`contains`, `not_contains`, `exists`, `start`, `end`, `matches`, `gt`, `gte`,
+`lt`, `lte`, `ne`, and `where` with `and`/`or`/`not`. Limits: 20 keys, key
+<= 100 chars, value <= 1000 chars.
+
+### `--json` event envelope
+
+One compact JSON object per line on stdout, exactly as the server sent it.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `event_id` | string | Unique per delivery; duplicates are dropped client-side |
+| `event` | string | `added`, `changed`, `removed`, `resync` |
+| `resource` | string | Always `channel_entries` |
+| `parent_id` | string | The channel subscribed to |
+| `id` | string | Entry ID; may be absent on `resync` |
+| `type` | string | `channel_entries.created` / `.updated` / `.deleted` |
+| `object` | object | Full entry body; absent on `removed` |
+| `changeset` | object | Changed fields only, when sent |
+| `occurred_at` | string | ISO8601 |
+| `revision` | number | Monotonic per entry |
+
+Status, reconnect and control lines always go to stderr (controls only under
+`--verbose`), so `--json 2>/dev/null | jq -c` stays clean.
+
+### Delivery guarantees
+
+Delivery is at-least-once and the socket reconnects on its own with a fresh
+grant. A `resync` event means changes may have been missed: `watch` does **not**
+re-read the channel, it prints the `channels entries list` command to run.
+
+Exit codes: 0 on Ctrl-C, `--for` expiry and `--once`; 2 on a rejected query
+(local or server `invalid_query`); 1 when the connection cannot be
+re-established within the retry budget; grant failures use the normal auth
+codes (3, 4, 7).
 
 ## Gotchas
 
@@ -174,6 +245,9 @@ nimbu channels entries copy --from staging/blog --to production/blog \
 
 # Dry-run to preview what would be copied
 nimbu channels entries copy --from staging/blog --to production/blog --dry-run --json
+
+# Watch a channel for 30 seconds, JSON lines
+nimbu channels entries watch --channel blog --site my-site --json --for 30s
 
 # Filter source entries during copy
 nimbu channels entries copy --from staging/blog --to production/blog \

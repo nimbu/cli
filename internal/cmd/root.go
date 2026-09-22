@@ -95,6 +95,7 @@ type CLI struct {
 	DomainRegistrations DomainRegistrationsCmd `cmd:"" name:"domain-registrations" help:"Manage domain registrations"`
 	Settings            SettingsCmd            `cmd:"" help:"Manage site settings"`
 	Events              EventsCmd              `cmd:"" help:"Track and ingest events"`
+	Realtime            RealtimeCmd            `cmd:"" help:"Realtime grants and live queries"`
 	Notifications       NotificationsCmd       `cmd:"" help:"Manage notifications"`
 	Roles               RolesCmd               `cmd:"" help:"Manage roles"`
 	Redirects           RedirectsCmd           `cmd:"" help:"Manage redirects"`
