@@ -377,6 +377,9 @@ before adding `--prune`, which removes omitted fields and options. Creating
 circular channel references may leave placeholder fields; remove those with a
 reviewed `--prune` apply.
 
+Fingerprints reject stale plans but do not lock schema writes. Avoid simultaneous
+admin schema edits or applies during deployment.
+
 After a failure, inspect the reported completed and failed targets or stages,
 then re-plan before retrying. Earlier changes remain applied. There is no
 automatic rollback: deploying an older commit does not reverse a field rename
