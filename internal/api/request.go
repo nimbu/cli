@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"io"
 )
@@ -14,7 +15,10 @@ type requestOptions struct {
 	Headers        map[string]string
 	OperationClass OperationClass
 	Idempotent     *bool
+	RedactResponse bool
 }
+
+type redactResponseLogKey struct{}
 
 // RequestBody supplies a custom request stream instead of JSON-marshaled data.
 type RequestBody struct {
@@ -22,6 +26,26 @@ type RequestBody struct {
 	GetBody       func() (io.ReadCloser, error)
 	ContentType   string
 	ContentLength int64
+}
+
+// WithRedactedResponseLog replaces the response body in debug logs with a
+// placeholder. Use it for responses carrying secrets, such as realtime grants.
+func WithRedactedResponseLog() RequestOption {
+	return func(o *requestOptions) {
+		o.RedactResponse = true
+	}
+}
+
+func withRedactedResponseLog(ctx context.Context) context.Context {
+	return context.WithValue(ctx, redactResponseLogKey{}, true)
+}
+
+func redactedResponseLog(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	redacted, _ := ctx.Value(redactResponseLogKey{}).(bool)
+	return redacted
 }
 
 // WithSite sets the site for this request.

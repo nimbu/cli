@@ -6,7 +6,7 @@ description: >
   cloud code, and local dev server for Nimbu sites. Use when building,
   querying, migrating, or deploying Nimbu CMS content and themes.
 metadata:
-  version: "0.6.0"
+  version: "0.6.1"
 ---
 
 # Nimbu CLI
@@ -182,7 +182,7 @@ nimbu pages update --page about --file payload.json
 |---------|-------------|-------|
 | `channels` | list, get, create, info, copy, diff, empty, delete, fields | `create` from JSON/inline; `delete` needs `--force` |
 | `channels fields` | list, add, update, delete, apply, replace, diff | Channel field schema workflows |
-| `channels entries` | list, get, create, update, delete, count, copy, gallery | Entry CRUD within a channel |
+| `channels entries` | list, get, create, update, delete, count, copy, gallery, watch | Entry CRUD within a channel; `watch` streams live changes over a websocket |
 | `pages` | list, get, create, update, delete, set, insert, delete-block, move, batch, items, schema, draft, count, copy, versions | Fullpath as identifier. Surgical path verbs; `draft get\|save\|batch\|publish\|discard\|preview-url`; `--draft` on writes |
 | `menus` | list, get, create, update, delete, count, copy | Nested tree structure |
 | `blogs` | list, get, create, update, delete, count, copy | Has `posts` subcommand |
@@ -232,6 +232,7 @@ nimbu pages update --page about --file payload.json
 | `init` | *(run directly)* | Bootstrap theme project with TUI |
 | `config` | list, get, set, unset, banner, path | CLI configuration |
 | `functions` | run | Execute cloud functions |
+| `realtime` | grant | Mint a single-use realtime grant for custom websocket clients |
 | `jobs` | list, run | Inspect and execute cloud jobs |
 | `api` | get, post, put, patch, delete | Raw escape hatch: `nimbu api get /path`; legacy `--method/--path` remains valid |
 | `commands` | *(run directly)* | Export the machine-readable CLI contract |
@@ -382,6 +383,17 @@ nimbu channels entries list --channel blog --site my-site --json --sort created_
 ```
 
 See [references/channels-and-entries.md](references/channels-and-entries.md) for copy, diff, and schema workflows.
+
+### Watch a channel for live changes
+
+```bash
+nimbu channels entries watch --channel blog --site my-site --json --for 30s
+```
+
+Streams one raw event envelope per line on stdout; status/control lines go to
+stderr. Pagination, sort, projection, search and regex/geo operators are not
+live-query operators and fail with exit code 2. See
+[references/channels-and-entries.md](references/channels-and-entries.md).
 
 ### Edit a page (surgical, then fallback)
 
