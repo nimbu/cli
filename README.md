@@ -351,8 +351,8 @@ nimbu uploads create --site target-site --file-ref nimbu://archive-site/uploads/
 
 ## Declarative Schemas and Releases
 
-Deploy the Rails API with `NIMBU_DECLARATIVE_SCHEMA_ENABLED=true` before using
-these commands. Run them from a project containing `nimbu.yml`:
+Deploy the Rails schema and release API before using these commands. Run them
+from a project containing `nimbu.yml`:
 
 ```bash
 nimbu env add staging --host api.nimbu.io --site acme-staging
