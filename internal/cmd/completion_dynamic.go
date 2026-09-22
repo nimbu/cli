@@ -334,6 +334,8 @@ func completionStringInSlice(values []string, want string) bool {
 }
 
 var completionValueFlags = map[string]bool{
+	"env":                 true,
+	"host":                true,
 	"apiurl":              true,
 	"app":                 true,
 	"account":             true,

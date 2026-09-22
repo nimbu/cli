@@ -82,6 +82,11 @@ func (c *ThemeCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 func parseThemeCopyRef(ctx context.Context, raw, hostOverride string) (themes.CopyRef, error) {
+	resolved, host, err := resolveEnvironmentReference(raw, hostOverride)
+	if err != nil {
+		return themes.CopyRef{}, err
+	}
+	raw, hostOverride = resolved, host
 	site, theme := splitThemeTarget(raw)
 	if site == "" {
 		return themes.CopyRef{}, fmt.Errorf("invalid site/theme: %s", raw)

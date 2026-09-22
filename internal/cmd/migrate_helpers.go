@@ -11,6 +11,11 @@ import (
 )
 
 func parseSiteRefForCommand(ctx context.Context, raw, hostOverride string) (migrate.SiteRef, error) {
+	resolved, host, resolveErr := resolveEnvironmentReference(raw, hostOverride)
+	if resolveErr != nil {
+		return migrate.SiteRef{}, resolveErr
+	}
+	raw, hostOverride = resolved, host
 	flags := ctx.Value(rootFlagsKey{}).(*RootFlags)
 	defaultSite, err := RequireSite(ctx, "")
 	if err != nil && strings.TrimSpace(raw) == "" {
@@ -20,6 +25,13 @@ func parseSiteRefForCommand(ctx context.Context, raw, hostOverride string) (migr
 }
 
 func parseChannelRefForCommand(ctx context.Context, raw, hostOverride string) (migrate.ChannelRef, error) {
+	if strings.Contains(strings.Trim(strings.TrimSpace(raw), "/"), "/") {
+		resolved, host, resolveErr := resolveEnvironmentReference(raw, hostOverride)
+		if resolveErr != nil {
+			return migrate.ChannelRef{}, resolveErr
+		}
+		raw, hostOverride = resolved, host
+	}
 	flags := ctx.Value(rootFlagsKey{}).(*RootFlags)
 	defaultSite := ""
 	if site, err := RequireSite(ctx, ""); err == nil {

@@ -49,6 +49,8 @@ type CountQueryFlags struct {
 
 // RootFlags contains global flags available to all commands.
 type RootFlags struct {
+	Environment                  string `name:"env" help:"Named project environment (overrides site and API URL)"`
+	SelectedEnvironmentProtected bool   `kong:"-"`
 	// Essential (ungrouped — always visible in help)
 	Site    string `help:"Site ID or subdomain, else nimbu.yml site" env:"NIMBU_SITE"`
 	JSON    bool   `help:"Output JSON to stdout" default:"${json}" env:"NIMBU_JSON"`
@@ -80,6 +82,9 @@ type CLI struct {
 	Auth                AuthCmd                `cmd:"" help:"Authentication and credentials"`
 	Init                InitCmd                `cmd:"" help:"Bootstrap a local theme project"`
 	Sites               SitesCmd               `cmd:"" help:"Manage sites"`
+	Schema              SchemaCmd              `cmd:"" help:"Manage declarative schemas"`
+	Release             ReleaseCmd             `cmd:"" help:"Release schema, cloud code and theme"`
+	Releases            ReleasesCmd            `cmd:"" help:"List successful releases"`
 	Channels            ChannelsCmd            `cmd:"" help:"Manage channels and entries"`
 	Pages               PagesCmd               `cmd:"" help:"Manage pages"`
 	Menus               MenusCmd               `cmd:"" help:"Manage navigation menus"`
@@ -108,6 +113,7 @@ type CLI struct {
 	Webhooks            WebhooksCmd            `cmd:"" help:"Manage webhooks"`
 	Translations        TranslationsCmd        `cmd:"" help:"Manage translations"`
 	Server              ServerCmd              `cmd:"" help:"Run local simulator proxy with child dev server"`
+	Env                 EnvCmd                 `cmd:"" help:"Manage project environments"`
 	Config              ConfigCmd              `cmd:"" help:"Manage configuration"`
 	API                 APICmd                 `cmd:"" help:"Raw API access"`
 	Commands            CommandsCmd            `cmd:"" help:"Export the machine-readable command contract"`
@@ -221,6 +227,9 @@ func execute(args []string) (err error) {
 		_, _ = fmt.Fprintf(os.Stderr, "warning: %v\n", cfgErr)
 	}
 	cli.RootFlags = applyRootConfigDefaults(cli.RootFlags, cfg, args)
+	if err := applyEnvironment(&cli.RootFlags); err != nil {
+		return emitCommandError(ctx, err)
+	}
 
 	// Set up auth resolver after config defaults so APIURL is finalized
 	host := apps.NormalizeHost(cli.APIURL)
