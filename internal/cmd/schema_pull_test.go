@@ -116,7 +116,7 @@ func TestSchemaPullListsCheckoutProfiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(paths) != 1 || !strings.HasSuffix(paths[0], "schema/checkout_profiles/gift.yml") {
+	if len(paths) != 1 || paths[0] != filepath.Join(root, "schema", "checkout_profiles", "gift.yml") {
 		t.Fatalf("paths: %v", paths)
 	}
 }
