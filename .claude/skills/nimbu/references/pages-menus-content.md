@@ -137,6 +137,10 @@ Apply up to 10 operations atomically (default; `--no-atomic` to disable). `--fil
 
 Key flags: `--file`, `--[no-]atomic`, `--locale`, `--diff`, `--dry-run`, `--draft`. `pages draft batch` is the same as `pages batch --draft` (always atomic). `pages batch --help` prints this op table and a worked example, so it needs no lookup here.
 
+File values take the FileRef table forms in both `set` values and insert `items`: the CLI expands `attachment_url` / `attachment_path` for file-typed items in place, on live pages and drafts alike.
+
+A failed batch exits with the API message (drafts: `Draft batch failed: operation <i> (<path>): <message>`) and every per-operation failure in `--json` `error.details.results[]` (`index`, `path`, `error.code`, `error.message`). A per-operation `unauthorized` maps to `auth.forbidden`: the token cannot read that FileRef source (e.g. another site's upload); use an upload of this site, `attachment_url`, or `attachment_path`.
+
 ```bash
 nimbu pages batch --page about/team --file ops.json --dry-run
 ```

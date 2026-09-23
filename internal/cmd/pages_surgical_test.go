@@ -105,6 +105,9 @@ type surgicalServer struct {
 	draftsOff    bool
 	batchFn      func(http.ResponseWriter, *http.Request, int)
 	draftBatchFn func(http.ResponseWriter, *http.Request, int)
+	// otherFn serves routes the fake does not know (e.g. /themes, /uploads);
+	// it returns false to fall through to 404.
+	otherFn func(http.ResponseWriter, *http.Request) bool
 }
 
 func (s *surgicalServer) pageBody() string {
@@ -222,6 +225,9 @@ func (s *surgicalServer) start(t *testing.T) *httptest.Server {
 				"page":` + surgicalPageJSON() + `
 			}`))
 		default:
+			if s.otherFn != nil && s.otherFn(w, r) {
+				return
+			}
 			http.NotFound(w, r)
 		}
 	}))

@@ -187,14 +187,37 @@ func (s *surgicalSession) postBatch(ops []plannedOp) (*api.BatchResult, error) {
 		batch[i] = op.Op
 	}
 	if s.draftMode {
-		return s.postDraftBatch(ops, batch)
+		result, err := s.postDraftBatch(batch)
+		return result, batchPermissionError(err)
 	}
-	return s.client.PostPageBatch(s.ctx, s.pageID, batch, api.BatchOptions{
+	result, err := s.client.PostPageBatch(s.ctx, s.pageID, batch, api.BatchOptions{
 		Atomic:        true,
 		IncludeResult: true,
 		ContentLocale: s.locale,
 		IfMatch:       s.etag,
 	})
+	return result, batchPermissionError(err)
+}
+
+// batchPermissionError maps a batch whose operation the API rejected as
+// "unauthorized" to a permission error. That code comes from a FileRef whose
+// upload the token cannot read, e.g. another site's upload with a site token.
+// The API error stays wrapped, so the envelope keeps its message and results.
+func batchPermissionError(err error) error {
+	var apiErr *api.Error
+	if !errors.As(err, &apiErr) {
+		return err
+	}
+	for _, result := range apiErr.BatchResults() {
+		if result.Error == nil || result.Error.Code != "unauthorized" {
+			continue
+		}
+		hint := fmt.Sprintf("operation %d (%s) references a file this token cannot read; "+
+			"use an upload of this site, an http(s) URL (downloaded and stored as a copy), or attachment_path",
+			result.Index, displayRawPath(result.Path))
+		return newHintedError(err, errorAuthForbidden, ExitAuthz, hint)
+	}
+	return err
 }
 
 func (s *surgicalSession) absorbResult(result *api.BatchResult) {

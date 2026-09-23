@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/nimbu/cli/internal/api"
@@ -103,6 +104,11 @@ func (c *PagesBatchCmd) plan(session *surgicalSession) ([]plannedOp, error) {
 			}
 			if next.Op == "insert" {
 				next.Path = insertRepeatablesPath(next.Path)
+				expanded, err := expandInsertFileItems(s, next.Path, next.Value)
+				if err != nil {
+					return api.BatchOperation{}, err
+				}
+				next.Value = expanded
 			}
 			if next.Op == "set" {
 				expanded, err := expandSetFileValue(s, next.Value)
@@ -141,7 +147,7 @@ func (c *PagesBatchCmd) post(session *surgicalSession, ops []plannedOp) (*api.Ba
 	}
 	var apiErr *api.Error
 	if !errors.As(err, &apiErr) || apiErr.StatusCode != 412 {
-		return nil, err
+		return nil, batchPermissionError(err)
 	}
 	if refetchErr := session.reload(); refetchErr != nil {
 		return nil, refetchErr
@@ -165,12 +171,60 @@ func (c *PagesBatchCmd) post(session *surgicalSession, ops []plannedOp) (*api.Ba
 	for i, op := range retried {
 		batch[i] = op.Op
 	}
-	return session.client.PostPageBatch(session.ctx, session.pageID, batch, api.BatchOptions{
+	result, err = session.client.PostPageBatch(session.ctx, session.pageID, batch, api.BatchOptions{
 		Atomic:        c.Atomic,
 		IncludeResult: true,
 		ContentLocale: session.locale,
 		IfMatch:       session.etag,
 	})
+	return result, batchPermissionError(err)
+}
+
+// expandInsertFileItems expands the file-typed value.items of a batch insert
+// in place: attachment_url, url, and attachment_path become a FileRef or
+// inline data. The server stores file items inside an insert, so unlike
+// pages insert they are not split into follow-up set operations. raw is never
+// mutated, because rebuild expands the same op again after a 412.
+func expandInsertFileItems(session *surgicalSession, canvasPath string, raw any) (any, error) {
+	value, ok := raw.(map[string]any)
+	if !ok {
+		return raw, nil
+	}
+	items, ok := value["items"].(map[string]any)
+	if !ok || !anyFileEditablePayload(items) {
+		return raw, nil
+	}
+	schema, err := session.ensureSchema()
+	if err != nil {
+		// Without a schema no item is known to be a file; send the op as
+		// written and let the API reject a file item it cannot store.
+		return raw, nil
+	}
+	canvas := canvasNameFromRaw(canvasPath)
+	slug := stringAny(value["slug"])
+	expandedItems := make(map[string]any, len(items))
+	for name, item := range items {
+		if schema.FieldType(canvas, slug, name) == "file" && isFileEditablePayload(item) {
+			expanded, err := expandInsertFileValue(session, item)
+			if err != nil {
+				return nil, fmt.Errorf("items.%s: %w", name, err)
+			}
+			item = expanded
+		}
+		expandedItems[name] = item
+	}
+	out := maps.Clone(value)
+	out["items"] = expandedItems
+	return out, nil
+}
+
+func anyFileEditablePayload(items map[string]any) bool {
+	for _, item := range items {
+		if isFileEditablePayload(item) {
+			return true
+		}
+	}
+	return false
 }
 
 func batchOperationsFromFile(raw any) ([]map[string]any, error) {

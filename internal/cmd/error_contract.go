@@ -162,6 +162,20 @@ func classifyError(err error) errorDescriptor {
 		}
 		desc.Details = detailed.details
 		desc.Hint = detailed.hint
+		// A hint must not hide what the API said: keep its status, field
+		// errors, and per-operation batch results.
+		var apiErr *api.Error
+		if errors.As(detailed.err, &apiErr) {
+			desc.HTTPStatus = apiErr.StatusCode
+			desc.ValidationErrors = apiErr.Errors
+			if results := apiErr.BatchResults(); len(results) > 0 && desc.Details["results"] == nil {
+				desc.Details = cloneDetails(desc.Details)
+				if desc.Details == nil {
+					desc.Details = map[string]any{}
+				}
+				desc.Details["results"] = results
+			}
+		}
 		return desc
 	}
 
