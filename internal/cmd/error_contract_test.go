@@ -68,3 +68,25 @@ func TestClassifyErrorRateLimit(t *testing.T) {
 		t.Fatal("expected retryable=true")
 	}
 }
+
+func TestClassifyErrorHintedKeepsAPIFields(t *testing.T) {
+	apiErr := &api.Error{
+		StatusCode: 409,
+		Code:       "draft_base_changed",
+		Message:    "draft base changed",
+		Errors:     []api.ValidationError{{Field: "base", Message: "is stale"}},
+	}
+	desc := classifyError(draftAPIError(apiErr, "about"))
+	if desc.Code != errorConflict {
+		t.Fatalf("code = %s", desc.Code)
+	}
+	if desc.Hint == "" {
+		t.Fatal("expected hint")
+	}
+	if desc.HTTPStatus != 409 {
+		t.Fatalf("http_status = %d", desc.HTTPStatus)
+	}
+	if len(desc.ValidationErrors) != 1 || desc.ValidationErrors[0].Field != "base" {
+		t.Fatalf("validation_errors = %#v", desc.ValidationErrors)
+	}
+}
