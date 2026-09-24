@@ -105,7 +105,7 @@ nimbu pages insert --page about/team --path Blokken --slug item --position 0
 nimbu pages insert --page about/team --path Blokken --slug item --file items.json
 ```
 
-File editables in `--file` are stripped from the insert and applied as follow-up `set` ops.
+File editables in `--file` are expanded in place inside the insert (same forms as `pages set`), so the insert is a single request.
 
 #### `pages delete-block --page P --path <repeatable>`
 
@@ -152,6 +152,8 @@ nimbu pages batch --page about/team --file ops.json --dry-run
 }
 ```
 
+Insert `items` whose schema field type is `file` are expanded in place, the same way as a `set` value: `attachment_url` becomes a same-site FileRef or an inline `{data, filename, content_type}`, and `attachment_path` is read from disk. They stay inside the insert op.
+
 Paths are resolved client-side before POST, and `--dry-run` resolves exactly the way the write does. Insert addresses the canvas itself: the human form (`Blokken`, `Blokken[id=<id>].Items`) is accepted and resolved to `/items/<canvas>/repeatables`. A raw path that carries a position where an id belongs (`/items/Blokken/repeatables/1/items/Title`) is rewritten to the id for `batch`, `insert`, `set`, `move`, `delete-block` and `items`. Unknown `op` values and paths ending in `/content` are rejected before the request.
 
 `--file` accepts a path, `-`, a pipe, or process substitution (`--file <(echo '{"operations":[...]}')`).
@@ -159,6 +161,8 @@ Paths are resolved client-side before POST, and `--dry-run` resolves exactly the
 ### Drafts
 
 `pages draft` edits and previews without publishing. `--draft` on `set` / `insert` / `delete-block` / `move` / `batch` writes the draft instead of the live page; `pages get --draft` reads it with every read flag (`--outline`, `--shape`, `--compact`, `--fields`). A 403 "Page drafts are not enabled" means the server has drafts disabled — write the live page instead.
+
+FileRef and upload-URL values work on drafts the same as on the live page. A failed draft batch is a 422 whose message names the failing op (`Draft batch failed: operation <i> (<path>): …`); per-op details are in `details.results[].error` under `--json`. When exactly one op fails on its FileRef source, `not_found` (the source site, upload or entry does not exist, or "Source file is missing from storage" when the upload's file is gone) maps to `resource.not_found`, and `unauthorized` (the token may not copy from that source) maps to `auth.forbidden`. This applies to live batches too.
 
 **Do not pass `--locale` together with `--draft` on a write.** It reports ok but stores the default-locale text in `translations.<locale>`. Write the default locale on the draft, publish, then write the other locale on the live page.
 

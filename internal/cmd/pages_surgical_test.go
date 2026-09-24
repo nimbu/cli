@@ -105,6 +105,8 @@ type surgicalServer struct {
 	draftsOff    bool
 	batchFn      func(http.ResponseWriter, *http.Request, int)
 	draftBatchFn func(http.ResponseWriter, *http.Request, int)
+	// extraFn serves routes outside the page endpoints; it returns false to fall through to 404.
+	extraFn func(http.ResponseWriter, *http.Request) bool
 }
 
 func (s *surgicalServer) pageBody() string {
@@ -222,6 +224,9 @@ func (s *surgicalServer) start(t *testing.T) *httptest.Server {
 				"page":` + surgicalPageJSON() + `
 			}`))
 		default:
+			if s.extraFn != nil && s.extraFn(w, r) {
+				return
+			}
 			http.NotFound(w, r)
 		}
 	}))

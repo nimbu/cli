@@ -48,56 +48,134 @@ func TestPagesInsertPositionAndAfter(t *testing.T) {
 	})
 }
 
-func TestPagesInsertFileEditableUsesTwoBatches(t *testing.T) {
-	var etags []string
-	var firstItems map[string]any
-	srvState := &surgicalServer{}
-	srvState.batchFn = func(w http.ResponseWriter, r *http.Request, n int) {
-		etags = append(etags, r.Header.Get("If-Match"))
-		if n == 1 {
-			firstItems = insertOpItems(t, srvState.lastBody)
+func TestPagesInsertKeepsFileEditablesInsideInsert(t *testing.T) {
+	newAsset := func(t *testing.T, hits *int) *httptest.Server {
+		t.Helper()
+		asset := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if hits != nil {
+				*hits++
+			}
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write([]byte("jpeg-bytes"))
+		}))
+		t.Cleanup(asset.Close)
+		return asset
+	}
+	runInsert := func(t *testing.T, srvState *surgicalServer, items string, dryRun bool) string {
+		t.Helper()
+		srv := srvState.start(t)
+		defer srv.Close()
+		ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: dryRun})
+		cmd := &PagesInsertCmd{Page: "about", Path: "Blokken", Slug: "hero_stage", File: writePageFile(t, items), DryRun: dryRun}
+		if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		return out.String()
+	}
+	singleInsertItems := func(t *testing.T, srvState *surgicalServer) map[string]any {
+		t.Helper()
+		if srvState.posts != 1 {
+			t.Fatalf("posts = %d, want one batch with the file inside the insert", srvState.posts)
+		}
+		ops := srvState.lastBody["operations"].([]any)
+		if len(ops) != 1 || ops[0].(map[string]any)["op"] != "insert" {
+			t.Fatalf("operations = %#v", ops)
+		}
+		return insertOpItems(t, srvState.lastBody)
+	}
+
+	t.Run("foreign url is inlined as data", func(t *testing.T) {
+		asset := newAsset(t, nil)
+		srvState := &surgicalServer{}
+		runInsert(t, srvState, `{"Title":"Hi","Image":{"attachment_url":"`+asset.URL+`/a.jpg"}}`, false)
+		items := singleInsertItems(t, srvState)
+		image, _ := items["Image"].(map[string]any)
+		if image["data"] == nil || image["filename"] != "a.jpg" || image["content_type"] != "image/jpeg" {
+			t.Fatalf("Image = %#v, want {data,filename,content_type}", items["Image"])
+		}
+		if items["Title"] != "Hi" || items["Enabled"] != nil || items["Ref"] != nil {
+			t.Fatalf("seeded insert items = %#v", items)
+		}
+	})
+
+	t.Run("same-site upload url becomes a FileRef", func(t *testing.T) {
+		srvState := &surgicalServer{extraFn: serveSameSiteUpload}
+		runInsert(t, srvState, `{"Image":{"attachment_url":"`+fileRefCDNURL+`"}}`, false)
+		items := singleInsertItems(t, srvState)
+		image, _ := items["Image"].(map[string]any)
+		want := "nimbu://" + fileRefSiteShort + "/uploads/" + fileRefUploadID
+		if image["__type"] != "FileRef" || image["source"] != want || len(image) != 2 {
+			t.Fatalf("Image = %#v, want FileRef %s", items["Image"], want)
+		}
+	})
+
+	t.Run("attachment_path is read from disk", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "img.webp")
+		if err := os.WriteFile(path, []byte("webp-bytes"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		srvState := &surgicalServer{}
+		pathJSON, _ := json.Marshal(path)
+		runInsert(t, srvState, `{"Image":{"attachment_path":`+string(pathJSON)+`}}`, false)
+		items := singleInsertItems(t, srvState)
+		image, _ := items["Image"].(map[string]any)
+		if image["data"] == nil || image["filename"] != "img.webp" || image["content_type"] == "" {
+			t.Fatalf("Image = %#v", items["Image"])
+		}
+	})
+
+	t.Run("dry-run prints one insert op carrying the file", func(t *testing.T) {
+		asset := newAsset(t, nil)
+		srvState := &surgicalServer{}
+		out := runInsert(t, srvState, `{"Image":{"attachment_url":"`+asset.URL+`/a.jpg"}}`, true)
+		if srvState.posts != 0 {
+			t.Fatalf("dry-run posted %d times", srvState.posts)
+		}
+		var body map[string]any
+		if err := json.Unmarshal([]byte(out), &body); err != nil {
+			t.Fatal(err)
+		}
+		ops := body["operations"].([]any)
+		if len(ops) != 1 || ops[0].(map[string]any)["op"] != "insert" {
+			t.Fatalf("operations = %#v", ops)
+		}
+		image, _ := insertOpItems(t, body)["Image"].(map[string]any)
+		if image["data"] == nil {
+			t.Fatalf("dry-run Image = %#v", image)
+		}
+	})
+
+	t.Run("412 retry reuses the downloaded file", func(t *testing.T) {
+		hits := 0
+		asset := newAsset(t, &hits)
+		var etags []string
+		srvState := &surgicalServer{}
+		srvState.batchFn = func(w http.ResponseWriter, r *http.Request, n int) {
+			etags = append(etags, r.Header.Get("If-Match"))
+			if n == 1 {
+				w.WriteHeader(http.StatusPreconditionFailed)
+				_, _ = w.Write([]byte(`{"message":"Precondition Failed","code":"precondition_failed","current_etag":"deadbeef"}`))
+				return
+			}
 			_, _ = w.Write([]byte(`{
 				"results":[{"index":0,"status":"ok","path":"/items/Blokken/repeatables","id":"newblock000000000000001"}],
 				"etag":"etag-from-insert",
 				"updated_at":"2026-09-10T16:00:00.000Z",
 				"page":` + surgicalPageJSON() + `
 			}`))
-			return
 		}
-		_, _ = w.Write([]byte(`{
-			"results":[{"index":0,"status":"ok","path":"/items/Blokken/repeatables/newblock000000000000001/items/Image"}],
-			"etag":"etag-from-fileset",
-			"updated_at":"2026-09-10T16:00:01.000Z",
-			"page":` + surgicalPageJSON() + `
-		}`))
-	}
-	srv := srvState.start(t)
-	defer srv.Close()
-
-	asset := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "image/jpeg")
-		_, _ = w.Write([]byte("jpeg-bytes"))
-	}))
-	t.Cleanup(asset.Close)
-	file := writePageFile(t, `{"Title":"Hi","Image":{"attachment_url":"`+asset.URL+`/a.jpg"}}`)
-	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{})
-	cmd := &PagesInsertCmd{Page: "about", Path: "Blokken", Slug: "hero_stage", File: file}
-	if err := cmd.Run(ctx, &RootFlags{Site: "demo"}); err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if srvState.posts != 2 {
-		t.Fatalf("posts = %d, want 2", srvState.posts)
-	}
-	if etags[1] != `"etag-from-insert"` {
-		t.Fatalf("second If-Match = %s", etags[1])
-	}
-	if firstItems["Title"] != "Hi" || firstItems["Image"] != nil || firstItems["Enabled"] != nil || firstItems["Ref"] != nil {
-		t.Fatalf("seeded insert items = %#v", firstItems)
-	}
-	second := srvState.lastBody["operations"].([]any)[0].(map[string]any)
-	if second["op"] != "set" || !strings.Contains(second["path"].(string), "newblock000000000000001/items/Image") {
-		t.Fatalf("second op = %#v", second)
-	}
+		runInsert(t, srvState, `{"Image":{"attachment_url":"`+asset.URL+`/a.jpg"}}`, false)
+		if srvState.posts != 2 || etags[1] != `"deadbeef"` {
+			t.Fatalf("posts=%d etags=%v, want a single 412 retry", srvState.posts, etags)
+		}
+		if hits != 1 {
+			t.Fatalf("asset downloaded %d times, want 1", hits)
+		}
+		image, _ := insertOpItems(t, srvState.lastBody)["Image"].(map[string]any)
+		if image["data"] == nil {
+			t.Fatalf("retried Image = %#v", image)
+		}
+	})
 }
 
 func TestPagesInsertBadSlugListsAllowed(t *testing.T) {

@@ -170,23 +170,3 @@ func shortETag(etag string) string {
 	}
 	return etag
 }
-
-func mergeBatchResults(parts ...*api.BatchResult) *api.BatchResult {
-	merged := &api.BatchResult{}
-	for _, part := range parts {
-		if part == nil {
-			continue
-		}
-		merged.Results = append(merged.Results, part.Results...)
-		if part.ETag != "" {
-			merged.ETag = part.ETag
-		}
-		if part.UpdatedAt != "" {
-			merged.UpdatedAt = part.UpdatedAt
-		}
-		if len(part.Page) > 0 {
-			merged.Page = part.Page
-		}
-	}
-	return merged
-}

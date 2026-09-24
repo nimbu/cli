@@ -3,9 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -58,10 +56,10 @@ func mergeDraftResolutionDoc(live, draftDoc map[string]any) map[string]any {
 	return out
 }
 
-func (s *surgicalSession) postDraftBatch(ops []plannedOp, batch []api.BatchOperation) (*api.BatchResult, error) {
+func (s *surgicalSession) postDraftBatch(batch []api.BatchOperation) (*api.BatchResult, error) {
 	res, err := s.client.PostPageDraftBatch(s.ctx, s.pageID, batch, api.DraftBatchOptions{ContentLocale: s.locale})
 	if err != nil {
-		return nil, hintDraftFileRef(draftAPIError(err, s.fullpath), ops)
+		return nil, draftAPIError(err, s.fullpath)
 	}
 	s.absorbDraftResult(res)
 	return &api.BatchResult{Results: res.Results}, nil
@@ -84,45 +82,4 @@ func (s *surgicalSession) absorbDraftResult(res *api.DraftBatchResult) {
 		return
 	}
 	s.draftConverted = false
-}
-
-func hintDraftFileRef(err error, ops []plannedOp) error {
-	if err == nil || !opsHaveFileRef(ops) {
-		return err
-	}
-	var apiErr *api.Error
-	if !errors.As(err, &apiErr) {
-		return err
-	}
-	for _, result := range apiErr.BatchResults() {
-		if result.Error == nil {
-			continue
-		}
-		text := strings.ToLower(result.Error.Code + " " + result.Error.Message)
-		if strings.Contains(text, "unauthorized") {
-			return newHintedError(err, errorAuthForbidden, ExitAuthz,
-				"FileRef uploads are not supported on drafts yet; use --from-file or attachment_path")
-		}
-	}
-	return err
-}
-
-func opsHaveFileRef(ops []plannedOp) bool {
-	for _, op := range ops {
-		if valueIsFileRef(op.Op.Value) {
-			return true
-		}
-	}
-	return false
-}
-
-func valueIsFileRef(value any) bool {
-	object, ok := value.(map[string]any)
-	if !ok {
-		return false
-	}
-	if stringAny(object["__type"]) == "FileRef" {
-		return true
-	}
-	return strings.HasPrefix(stringAny(object["source"]), "nimbu://")
 }

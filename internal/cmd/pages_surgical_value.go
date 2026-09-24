@@ -127,6 +127,52 @@ func expandInsertFileValue(session *surgicalSession, raw any) (any, error) {
 	return surgicalInlineFile(payload), nil
 }
 
+// expandInsertFileItems expands file editables in place. Batch inserts keep
+// them inside the insert: the server stores {data,filename,content_type} and
+// FileRef items, but rejects unexpanded shapes like {attachment_url}.
+func expandInsertFileItems(session *surgicalSession, canvas string, value any) (any, error) {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return value, nil
+	}
+	items, ok := object["items"].(map[string]any)
+	if !ok || !hasFileEditablePayload(items) {
+		return value, nil
+	}
+	schema, err := session.ensureSchema()
+	if err != nil {
+		return nil, err
+	}
+	slug := stringAny(object["slug"])
+	expanded := make(map[string]any, len(items))
+	for name, item := range items {
+		if schema.FieldType(canvas, slug, name) == "file" && isFileEditablePayload(item) {
+			file, err := expandInsertFileValue(session, item)
+			if err != nil {
+				return nil, err
+			}
+			expanded[name] = file
+			continue
+		}
+		expanded[name] = item
+	}
+	out := make(map[string]any, len(object))
+	for key, v := range object {
+		out[key] = v
+	}
+	out["items"] = expanded
+	return out, nil
+}
+
+func hasFileEditablePayload(items map[string]any) bool {
+	for _, item := range items {
+		if isFileEditablePayload(item) {
+			return true
+		}
+	}
+	return false
+}
+
 func surgicalInlineFile(payload map[string]any) map[string]any {
 	if stringAny(payload["__type"]) != "File" {
 		return payload
