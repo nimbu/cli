@@ -187,7 +187,7 @@ func (s *surgicalSession) postBatch(ops []plannedOp) (*api.BatchResult, error) {
 		batch[i] = op.Op
 	}
 	if s.draftMode {
-		return s.postDraftBatch(ops, batch)
+		return s.postDraftBatch(batch)
 	}
 	return s.client.PostPageBatch(s.ctx, s.pageID, batch, api.BatchOptions{
 		Atomic:        true,

@@ -236,6 +236,9 @@ func classifyError(err error) errorDescriptor {
 		if desc.Message == "" {
 			desc.Message = apiErr.Error()
 		}
+		if apiErr.StatusCode == 422 {
+			applyFileRefOpError(&desc, apiErr.BatchResults())
+		}
 		if hint := overlayHintFrom(err); hint != "" {
 			desc.Hint = hint
 			desc.Code = errorRequestValidation
@@ -328,6 +331,35 @@ func cloneDetails(in map[string]any) map[string]any {
 		out[key] = value
 	}
 	return out
+}
+
+// applyFileRefOpError reclassifies a batch that failed on a single FileRef
+// copy. The server reports only FileRef copier failures with the bare
+// "not_found" and "unauthorized" op codes; path misses use "path_not_found".
+func applyFileRefOpError(desc *errorDescriptor, results []api.BatchOpResult) {
+	var failed *api.BatchOpError
+	for _, result := range results {
+		if result.Error == nil {
+			continue
+		}
+		if failed != nil {
+			return
+		}
+		failed = result.Error
+	}
+	if failed == nil {
+		return
+	}
+	switch failed.Code {
+	case "not_found":
+		desc.Code = errorNotFound
+		desc.ExitCode = ExitNotFound
+		desc.Hint = "the FileRef source does not exist; check the site and upload id, or re-upload the file and use the new upload URL"
+	case "unauthorized":
+		desc.Code = errorAuthForbidden
+		desc.ExitCode = ExitAuthz
+		desc.Hint = "this token may not copy from the FileRef source; use an upload from this site, or a user token with access to the source site"
+	}
 }
 
 func batchResultsFromError(err error) []api.BatchOpResult {

@@ -80,6 +80,8 @@ func (c *PagesBatchCmd) plan(session *surgicalSession) ([]plannedOp, error) {
 		if err != nil {
 			return nil, err
 		}
+		var expandedValue any
+		valueExpanded := false
 		build := func(s *surgicalSession) (api.BatchOperation, error) {
 			next := op
 			switch {
@@ -104,13 +106,16 @@ func (c *PagesBatchCmd) plan(session *surgicalSession) ([]plannedOp, error) {
 			if next.Op == "insert" {
 				next.Path = insertRepeatablesPath(next.Path)
 			}
-			if next.Op == "set" {
-				expanded, err := expandSetFileValue(s, next.Value)
+			// A 412 rebuild reuses the first expansion: re-expanding would
+			// download remote files and print their warnings again.
+			if !valueExpanded {
+				value, err := expandBatchFileValue(s, next)
 				if err != nil {
 					return api.BatchOperation{}, err
 				}
-				next.Value = expanded
+				expandedValue, valueExpanded = value, true
 			}
+			next.Value = expandedValue
 			return next, nil
 		}
 		built, err := build(session)
@@ -120,6 +125,19 @@ func (c *PagesBatchCmd) plan(session *surgicalSession) ([]plannedOp, error) {
 		ops = append(ops, plannedOp{Human: human, Op: built, rebuild: build})
 	}
 	return ops, nil
+}
+
+// expandBatchFileValue expands file payloads in set values and in insert
+// items; other ops keep their value as-is.
+func expandBatchFileValue(s *surgicalSession, op api.BatchOperation) (any, error) {
+	switch op.Op {
+	case "insert":
+		return expandInsertFileItems(s, canvasNameFromRaw(op.Path), op.Value)
+	case "set":
+		return expandSetFileValue(s, op.Value)
+	default:
+		return op.Value, nil
+	}
 }
 
 func (c *PagesBatchCmd) post(session *surgicalSession, ops []plannedOp) (*api.BatchResult, error) {

@@ -25,15 +25,9 @@ type PagesInsertCmd struct {
 
 type insertPlan struct {
 	insert    plannedOp
-	files     []plannedFileSet
 	slug      string
 	canvas    string
 	canvasRaw string
-}
-
-type plannedFileSet struct {
-	Field string
-	Value any
 }
 
 // Run executes pages insert.
@@ -56,49 +50,18 @@ func (c *PagesInsertCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
+	ops := []plannedOp{plan.insert}
 	if write.DryRun {
-		ops := []plannedOp{plan.insert}
-		for _, file := range plan.files {
-			ops = append(ops, plannedOp{
-				Human: file.Field,
-				Op: api.BatchOperation{
-					Op:    "set",
-					Path:  insertItemPath(plan.canvasRaw, "<new-id>", file.Field),
-					Value: file.Value,
-				},
-			})
-		}
 		return printDryRun(ctx, ops)
 	}
 
-	insertResult, err := session.runBatch([]plannedOp{plan.insert}, write)
+	result, err := session.runBatch(ops, write)
 	if err != nil {
 		return err
 	}
-	result := insertResult
-	ops := []plannedOp{plan.insert}
-	if len(plan.files) > 0 {
-		newID := insertResultID(insertResult)
-		if newID == "" {
-			return fmt.Errorf("insert succeeded but the new repeatable id was missing")
-		}
-		fileOps := make([]plannedOp, 0, len(plan.files))
-		for _, file := range plan.files {
-			fileOps = append(fileOps, plannedOp{
-				Human: file.Field,
-				Op:    api.BatchOperation{Op: "set", Path: insertItemPath(plan.canvasRaw, newID, file.Field), Value: file.Value},
-			})
-		}
-		fileResult, err := session.runBatch(fileOps, write)
-		if err != nil {
-			return err
-		}
-		result = mergeBatchResults(insertResult, fileResult)
-		ops = append(ops, fileOps...)
-	}
-
-	index := repeatableIndexAt(session.doc, plan.canvasRaw, insertResultID(insertResult))
-	extra := fmt.Sprintf("Inserted %s at %s[%d] (id %s)", plan.slug, plan.canvas, index, insertResultID(insertResult))
+	newID := insertResultID(result)
+	index := repeatableIndexAt(session.doc, plan.canvasRaw, newID)
+	extra := fmt.Sprintf("Inserted %s at %s[%d] (id %s)", plan.slug, plan.canvas, index, newID)
 	return printSurgicalResult(ctx, session, ops, result, before, write, extra)
 }
 
@@ -119,10 +82,13 @@ func (c *PagesInsertCmd) plan(session *surgicalSession) (insertPlan, error) {
 		return insertPlan{}, err
 	}
 
-	cleanItems, files, err := splitInsertFileItems(session, schema, canvas, slug, seeded)
+	// Expand file editables once here, not in build: a 412 rebuild would
+	// otherwise download remote files again.
+	expanded, err := expandInsertFileItems(session, canvas, map[string]any{"slug": slug, "items": seeded})
 	if err != nil {
 		return insertPlan{}, err
 	}
+	insertItems := expanded.(map[string]any)["items"]
 
 	build := func(s *surgicalSession) (api.BatchOperation, error) {
 		current, _, _, err := c.resolveInsert(s)
@@ -137,7 +103,7 @@ func (c *PagesInsertCmd) plan(session *surgicalSession) (insertPlan, error) {
 		return api.BatchOperation{
 			Op:    "insert",
 			Path:  path,
-			Value: map[string]any{"slug": slug, "items": cleanItems},
+			Value: map[string]any{"slug": slug, "items": insertItems},
 			After: after,
 		}, nil
 	}
@@ -147,7 +113,6 @@ func (c *PagesInsertCmd) plan(session *surgicalSession) (insertPlan, error) {
 	}
 	return insertPlan{
 		insert:    plannedOp{Human: c.Path, Op: op, rebuild: build},
-		files:     files,
 		slug:      slug,
 		canvas:    canvas,
 		canvasRaw: canvasRaw,
@@ -292,37 +257,11 @@ func insertAfter(resolved pagepath.Resolved, after string, position *int) (*api.
 	return &api.Anchor{Set: true, ID: id}, nil
 }
 
-func splitInsertFileItems(session *surgicalSession, schema *pagepath.Schema, canvas, slug string, items map[string]any) (map[string]any, []plannedFileSet, error) {
-	if len(items) == 0 {
-		return map[string]any{}, nil, nil
-	}
-	clean := make(map[string]any, len(items))
-	var files []plannedFileSet
-	for name, value := range items {
-		if value != nil && schema.FieldType(canvas, slug, name) == "file" && isFileEditablePayload(value) {
-			expanded, err := expandInsertFileValue(session, value)
-			if err != nil {
-				return nil, nil, err
-			}
-			files = append(files, plannedFileSet{Field: name, Value: expanded})
-			clean[name] = nil
-			continue
-		}
-		clean[name] = value
-	}
-	return clean, files, nil
-}
-
 func insertResultID(result *api.BatchResult) string {
 	if result == nil || len(result.Results) == 0 {
 		return ""
 	}
 	return result.Results[0].ID
-}
-
-func insertItemPath(canvasRaw, repeatableID, field string) string {
-	base := strings.TrimSuffix(canvasRaw, "/repeatables")
-	return base + "/repeatables/" + repeatableID + "/items/" + pagepath.EscapeName(field)
 }
 
 func repeatableIndexAt(doc map[string]any, canvasRaw, id string) int {
