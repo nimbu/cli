@@ -349,6 +349,42 @@ nimbu channels empty --channel news --site my-site --confirm news --force
 nimbu uploads create --site target-site --file-ref nimbu://archive-site/uploads/507f1f77bcf86cd799439014
 ```
 
+## Declarative Schemas and Releases
+
+Deploy the Rails schema and release API before using these commands. Run them
+from a project containing `nimbu.yml`:
+
+```bash
+nimbu env add staging --host api.nimbu.io --site acme-staging
+nimbu env add production --host api.nimbu.io --site acme --protected
+nimbu schema pull --env staging
+# Edit and commit schema/*.yml and schema/{channels,blogs,checkout_profiles}/*.yml
+nimbu schema plan --env production
+nimbu schema apply --env production
+nimbu release --env production --dry-run
+nimbu release --env production
+```
+
+`schema pull` reads each target's canonical `/schema` endpoint into `schema/`.
+Use `--env` to select host and site together; it takes precedence over explicit
+site and API URL flags. A release applies schemas, pushes cloud code, then
+pushes the theme. Commit your changes first; use `--allow-dirty` for a deliberate
+uncommitted deployment.
+
+Protected environments require confirmation. In CI, pass `--no-input --yes` to
+`schema apply` or `release`; `--force` does not bypass protection. Review `plan`
+before adding `--prune`, which removes omitted fields and options. Creating
+circular channel references may leave placeholder fields; remove those with a
+reviewed `--prune` apply.
+
+Fingerprints reject stale plans, and declarative schema applies are serialized
+per site. Avoid concurrent admin or legacy API schema edits during deployment.
+
+After a failure, inspect the reported completed and failed targets or stages,
+then re-plan before retrying. Earlier changes remain applied. There is no
+automatic rollback: deploying an older commit does not reverse a field rename
+or recover pruned data.
+
 ## Advanced Workflows
 
 ```bash

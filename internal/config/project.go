@@ -20,11 +20,12 @@ const (
 
 // ProjectConfig holds project-specific configuration.
 type ProjectConfig struct {
-	Apps  []AppProjectConfig `json:"apps,omitempty" yaml:"apps,omitempty"`
-	Site  string             `json:"site,omitempty" yaml:"site,omitempty"`
-	Theme string             `json:"theme,omitempty" yaml:"theme,omitempty"`
-	Dev   *DevConfig         `json:"dev,omitempty" yaml:"dev,omitempty"`
-	Sync  *SyncConfig        `json:"sync,omitempty" yaml:"sync,omitempty"`
+	Environments map[string]EnvironmentConfig `json:"environments,omitempty" yaml:"environments,omitempty"`
+	Apps         []AppProjectConfig           `json:"apps,omitempty" yaml:"apps,omitempty"`
+	Site         string                       `json:"site,omitempty" yaml:"site,omitempty"`
+	Theme        string                       `json:"theme,omitempty" yaml:"theme,omitempty"`
+	Dev          *DevConfig                   `json:"dev,omitempty" yaml:"dev,omitempty"`
+	Sync         *SyncConfig                  `json:"sync,omitempty" yaml:"sync,omitempty"`
 }
 
 // AppProjectConfig configures one local cloud-code app mapping.
