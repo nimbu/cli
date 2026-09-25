@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/output"
 )
 
 func TestSchemaPlanExit(t *testing.T) {
@@ -235,5 +237,47 @@ func TestSchemaRefreshRetainsOriginalFingerprintGuard(t *testing.T) {
 	err := applySchemaDocuments(context.Background(), api.New(server.URL, "test"), []schemaDocument{doc}, []schemaPlan{{Fingerprint: "approved", Warnings: []string{"reference 'pending' not found on target; apply it first"}}}, false)
 	if err == nil || !strings.Contains(err.Error(), "changed since approval") {
 		t.Fatalf("unexpected error %v", err)
+	}
+}
+
+func TestSchemaPlanRendersACLOps(t *testing.T) {
+	var stdout bytes.Buffer
+	ctx := output.WithWriter(context.Background(), &output.Writer{Out: &stdout, Err: &bytes.Buffer{}})
+	plans := []schemaPlan{{Target: "channel:events", Fingerprint: "abc", Ops: []map[string]any{
+		{"kind": "update_target", "attr": "acl.read", "from": "none", "to": "public", "risk": "destructive", "reason": "widens access"},
+		{"kind": "update_target", "attr": "acl.update", "to": "none", "risk": "safe"},
+	}}}
+	if err := renderSchemaPlans(ctx, plans); err != nil {
+		t.Fatal(err)
+	}
+	want := "channel:events: 2 operation(s)\n" +
+		"  destructive update_target acl.read: none -> public (widens access)\n" +
+		"  safe update_target acl.update: (unset) -> none\n"
+	if stdout.String() != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", stdout.String(), want)
+	}
+	if code := schemaPlanExit(plans); code != 3 {
+		t.Fatalf("widening acl must exit 3 (destructive), got %d", code)
+	}
+}
+
+func TestSchemaApplySendsACLWithConfirmation(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"applied":true}`))
+	}))
+	defer server.Close()
+	docs := []schemaDocument{{Target: "channel:events", Endpoint: "/channels/events", Body: map[string]any{"slug": "events", "acl": map[string]any{"read": "public"}, "fields": []any{}}}}
+	plans := []schemaPlan{{Fingerprint: "abc", Ops: []map[string]any{{"kind": "update_target", "attr": "acl.read", "risk": "destructive"}}}}
+	ctx := output.WithWriter(context.Background(), &output.Writer{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}})
+	if err := applySchemaDocuments(ctx, api.New(server.URL, "test"), docs, plans, false); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(body["acl"], map[string]any{"read": "public"}) || body["confirm_destructive"] != true || body["fingerprint"] != "abc" {
+		t.Fatalf("apply body: %#v", body)
 	}
 }
