@@ -61,7 +61,7 @@ make build
 ## Quick Start
 
 ```bash
-# Login to your Nimbu account
+# Log in to your Nimbu account in the browser
 nimbu auth login
 
 # List your sites
@@ -497,13 +497,46 @@ rejected (locally or by the server); 1 when the connection cannot be
 re-established within the retry budget. Grant failures map onto the usual auth
 codes (3 unauthorized, 4 forbidden/realtime disabled, 7 rate limited).
 
+## Authentication
+
+`nimbu auth login` opens your browser on the Nimbu login and consent page
+(OAuth 2.0 with PKCE and a one-time callback on `127.0.0.1`). Your password and
+two-factor code stay in the browser; the CLI never sees them. The URL is also
+printed, so you can open it by hand when no browser starts.
+
+```bash
+nimbu auth login                          # Browser login (default)
+nimbu auth login --device                 # One-time code for SSH, containers, remote machines
+nimbu auth login --scopes read_channels   # Ask for fewer permissions than the default
+nimbu auth status                         # Who you are, how you logged in, token expiry, scopes
+nimbu auth token                          # Print a current access token for scripts
+nimbu auth logout                         # Revoke the session on the server and forget it locally
+```
+
+- **Device login** prints a verification page and a code such as `BCDF-GHJK`.
+  Open the page on any device, enter the code and confirm with your password or
+  two-factor code. Only enter codes for logins you started yourself; Nimbu never
+  asks you for one. Over SSH, or on Linux without a display, `nimbu auth login`
+  picks device login automatically.
+- **Sessions** use a 30-minute access token and a rotating refresh token, both in
+  the OS keychain. The CLI refreshes them on its own, also when several `nimbu`
+  processes run at once. A session lasts at most 90 days, and ends early when you
+  log out, change your password, or revoke it under your account's CLI sessions
+  in the Nimbu admin. After that, commands fail with `auth.not_logged_in`
+  (exit code 3); run `nimbu auth login` again.
+- **CI and scripts** should keep using an API token: `NIMBU_TOKEN=... nimbu ...`,
+  or `nimbu auth login --token <token>` to store one. These tokens are never
+  refreshed.
+- Password login (`nimbu auth login --email you@example.com`) still works for
+  now, but is deprecated and prints a warning.
+
 ## Configuration
 
 ### Environment Variables
 
 ```bash
 NIMBU_SITE           # Default site ID
-NIMBU_TOKEN          # Bearer token (overrides keychain)
+NIMBU_TOKEN          # API token (overrides the keychain; never refreshed)
 NIMBU_API_URL        # API endpoint (default: https://api.nimbu.io)
 NIMBU_JSON           # Default JSON output (1/true)
 NIMBU_PLAIN          # Default TSV output (1/true)

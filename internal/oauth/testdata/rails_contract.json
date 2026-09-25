@@ -1,0 +1,29 @@
+{
+  "_comment": "Responses recorded from the Nimbu Rails OAuth endpoints (spec/api/oauth2_cli_spec.rb, spec/api/oauth2_device_spec.rb setups, rack-oauth2 1.21.3). Hosts are http://api.nimbu.test (REST issuer) and http://www.nimbu.test (admin); tokens are shortened. Keep in sync when the server contract changes.",
+  "metadata": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {"issuer":"http://api.nimbu.test","authorization_endpoint":"http://www.nimbu.test/admin/oauth2/authorize","token_endpoint":"http://api.nimbu.test/oauth2/tokens","jwks_uri":"http://api.nimbu.test/oauth2/certs","registration_endpoint":"http://api.nimbu.test/oauth2/register","scopes_supported":["read_site","read_channels","write_site","write_channels","openid","skip_confirmation"],"response_types_supported":["code"],"grant_types_supported":["authorization_code","refresh_token","urn:ietf:params:oauth:grant-type:device_code"],"code_challenge_methods_supported":["S256"],"token_endpoint_auth_methods_supported":["none","client_secret_basic","client_secret_post"],"client_id_metadata_document_supported":true,"device_authorization_endpoint":"http://api.nimbu.test/oauth2/device_authorization","revocation_endpoint":"http://api.nimbu.test/oauth2/revoke"}
+  },
+  "token": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {"access_token":"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEifQ.c2lnbmF0dXJl","refresh_token":"b0d1c3a3f0e24d8a9c7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c","token_type":"bearer","expires_in":1800,"scope":"write_channels write_content write_themes"}
+  },
+  "invalid_grant": {
+    "status": 400,
+    "content_type": "application/json",
+    "body": {"error":"invalid_grant","error_description":"The provided access grant is invalid, expired, or revoked (e.g. invalid assertion, expired authorization token, bad end-user password credentials, or mismatching authorization code and redirection URI)."}
+  },
+  "device_authorization": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "body": {"device_code":"k3yJ5v0o4dXn9Qe2mWlZ8rTgYhBuC1aFsE6iPx7NqL0","user_code":"RDQR-RDRS","verification_uri":"http://www.nimbu.test/admin/oauth2/device","expires_in":600,"interval":5}
+  },
+  "authorization_pending": {"status": 400, "content_type": "application/json", "body": {"error":"authorization_pending"}},
+  "slow_down": {"status": 400, "content_type": "application/json", "body": {"error":"slow_down"}},
+  "access_denied": {"status": 400, "content_type": "application/json", "body": {"error":"access_denied"}},
+  "expired_token": {"status": 400, "content_type": "application/json", "body": {"error":"expired_token"}},
+  "device_invalid_grant": {"status": 400, "content_type": "application/json", "body": {"error":"invalid_grant"}},
+  "revoke": {"status": 200, "content_type": "application/json; charset=utf-8", "body": {}}
+}

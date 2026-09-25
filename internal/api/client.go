@@ -13,10 +13,23 @@ import (
 	"time"
 )
 
+// TokenSource supplies bearer tokens that expire and can be renewed, such as
+// an OAuth session. Implementations must be safe for concurrent use.
+type TokenSource interface {
+	// Token returns a token to send, renewing it first when it is about to expire.
+	Token(ctx context.Context) (string, error)
+	// Renew replaces a token the API rejected with 401 and returns the new one.
+	Renew(ctx context.Context, rejected string) (string, error)
+}
+
 // Client is the Nimbu API client.
 type Client struct {
-	BaseURL    string
-	Token      string
+	BaseURL string
+	// Token is a static bearer token; Tokens takes precedence when set.
+	Token string
+	// Tokens is shared by every copy of the client, so a refresh made through
+	// one copy serves all of them.
+	Tokens     TokenSource
 	Site       string
 	Version    string
 	HTTPClient *http.Client
@@ -57,6 +70,13 @@ func (c *Client) WithTimeout(timeout time.Duration) *Client {
 func (c *Client) WithVersion(version string) *Client {
 	clone := *c
 	clone.Version = version
+	return &clone
+}
+
+// WithTokenSource returns a copy of the client that authenticates with ts.
+func (c *Client) WithTokenSource(ts TokenSource) *Client {
+	clone := *c
+	clone.Tokens = ts
 	return &clone
 }
 
@@ -190,8 +210,12 @@ func (c *Client) buildRequest(ctx context.Context, method, path string, body any
 	}
 
 	// Auth header
-	if c.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.Token)
+	token, err := c.bearer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	// Client version header (triggers rich serialization with __type metadata)
@@ -233,13 +257,9 @@ func (c *Client) do(req *http.Request, result any) error {
 		)
 	}
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := c.send(req)
 	if err != nil {
-		return &Error{
-			StatusCode: 0,
-			Message:    err.Error(),
-			Err:        err,
-		}
+		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -310,13 +330,19 @@ func (c *Client) DownloadURL(ctx context.Context, rawURL string) (*http.Response
 	if err != nil {
 		return nil, "", err
 	}
-	if attachAuth && c.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.Token)
+	if attachAuth {
+		token, err := c.bearer(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		if c.Site != "" {
+			req.Header.Set("X-Nimbu-Site", c.Site)
+		}
 	}
-	if attachAuth && c.Site != "" {
-		req.Header.Set("X-Nimbu-Site", c.Site)
-	}
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := c.send(req)
 	if err != nil {
 		return nil, "", err
 	}
@@ -330,14 +356,54 @@ func (c *Client) RawRequest(ctx context.Context, method, path string, body any, 
 		return nil, err
 	}
 
+	return c.send(req)
+}
+
+func (c *Client) bearer(ctx context.Context) (string, error) {
+	if c.Tokens != nil {
+		return c.Tokens.Token(ctx)
+	}
+	return c.Token, nil
+}
+
+// send performs req. When the API rejects the token source's bearer token
+// with 401, it renews the token once and replays the request. Transport
+// failures come back as *Error; a failed renewal comes back as is, so an
+// expired session surfaces as "log in again" rather than a network error.
+func (c *Client) send(req *http.Request) (*http.Response, error) {
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, &Error{
-			StatusCode: 0,
-			Message:    err.Error(),
-			Err:        err,
-		}
+		return nil, &Error{StatusCode: 0, Message: err.Error(), Err: err}
+	}
+	if resp.StatusCode != http.StatusUnauthorized || c.Tokens == nil {
+		return resp, nil
+	}
+	rejected, ok := strings.CutPrefix(req.Header.Get("Authorization"), "Bearer ")
+	if !ok || rejected == "" || (req.Body != nil && req.Body != http.NoBody && req.GetBody == nil) {
+		return resp, nil
 	}
 
+	token, err := c.Tokens.Renew(req.Context(), rejected)
+	if err == nil && token == rejected {
+		return resp, nil
+	}
+	_ = resp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	retry := req.Clone(req.Context())
+	if req.GetBody != nil {
+		body, err := req.GetBody()
+		if err != nil {
+			return nil, fmt.Errorf("replay request body: %w", err)
+		}
+		retry.Body = body
+	}
+	retry.Header.Set("Authorization", "Bearer "+token)
+	resp, err = c.HTTPClient.Do(retry)
+	if err != nil {
+		return nil, &Error{StatusCode: 0, Message: err.Error(), Err: err}
+	}
 	return resp, nil
 }

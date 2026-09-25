@@ -29,12 +29,16 @@ Install via Homebrew (`brew install nimbu/tap/nimbu`), Go (`go install github.co
 Authenticate before use:
 
 ```bash
-nimbu auth login          # Interactive browser OAuth — stores token in OS keychain
-nimbu auth status         # Verify current credentials
+nimbu auth login          # Browser OAuth login — session stored in the OS keychain
+nimbu auth login --device # One-time code instead (SSH/headless; auto-picked there)
+nimbu auth status         # Verify credentials, auth method, token expiry
 nimbu auth scopes         # List granted scopes
 ```
 
-Or set `NIMBU_TOKEN` env var to skip the keychain.
+Login needs a human in a browser; agents cannot complete it. The session refreshes
+itself; `auth.not_logged_in` (exit 3) means it ended — ask the user to run
+`nimbu auth login`. Never use or suggest password login (`--email`/`--password`).
+For CI, set the `NIMBU_TOKEN` env var to an API token to skip the keychain.
 
 ## Site Resolution
 
