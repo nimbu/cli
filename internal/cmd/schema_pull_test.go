@@ -187,3 +187,38 @@ func TestSchemaPullRejectsMultipleLocalDocuments(t *testing.T) {
 		t.Fatalf("file changed: %s; %v", got, err)
 	}
 }
+
+func TestSchemaPullKeepsChannelACL(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"slug":"events","name":"Events","acl":{"create":"none","read":"public","update":"private","delete":"none"},"fields":[]}`))
+	}))
+	defer server.Close()
+	root := t.TempDir()
+	path := filepath.Join(root, "schema", "channels", "events.yml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A stale local acl must be replaced by the live one, not merged as a local extension.
+	if err := os.WriteFile(path, []byte("slug: events\nacl:\n  read: none\n  x-note: stale\nfields: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pullSchemas(context.Background(), api.New(server.URL, "token"), root, []string{"channels/events"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := yaml.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"create": "none", "read": "public", "update": "private", "delete": "none"}
+	if !reflect.DeepEqual(got["acl"], want) {
+		t.Fatalf("acl: %#v", got["acl"])
+	}
+	if !strings.Contains(string(data), "acl:\n    create: none\n    delete: none\n    read: public\n    update: private\n") {
+		t.Fatalf("acl keys not written in stable order:\n%s", data)
+	}
+}
