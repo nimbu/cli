@@ -10,12 +10,15 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.11.6
+	github.com/cli/browser v1.3.0
 	github.com/coder/websocket v1.8.15
 	github.com/fsnotify/fsnotify v1.7.0
+	github.com/gofrs/flock v0.13.1
 	github.com/muesli/cancelreader v0.2.2
 	github.com/muesli/termenv v0.16.0
 	golang.org/x/mod v0.34.0
-	golang.org/x/sys v0.41.0
+	golang.org/x/oauth2 v0.37.0
+	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.40.0
 	gopkg.in/yaml.v3 v3.0.1
 )

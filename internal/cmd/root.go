@@ -383,18 +383,13 @@ const (
 func GetAPIClient(ctx context.Context) (*api.Client, error) {
 	flags := ctx.Value(rootFlagsKey{}).(*RootFlags)
 
-	token, err := ResolveAuthToken(ctx)
+	client, err := newAuthenticatedClient(ctx, flags.APIURL)
 	if err != nil {
 		if errors.Is(err, auth.ErrNoToken) {
 			return nil, fmt.Errorf("%w: run 'nimbu auth login' first", auth.ErrNoToken)
 		}
 		return nil, err
 	}
-
-	client := api.New(flags.APIURL, token)
-	client = client.WithVersion(version)
-	client = client.WithTimeout(flags.Timeout)
-	client = client.WithDebug(flags.Debug)
 	client = client.WithReadonly(flags.Readonly)
 
 	// Get resolved site
@@ -426,18 +421,13 @@ func GetAPIClientWithBaseURL(ctx context.Context, baseURL, site string) (*api.Cl
 		apiURL = flags.APIURL
 	}
 
-	token, err := ResolveAuthTokenForHost(ctx, apiURL)
+	client, err := newAuthenticatedClient(ctx, apiURL)
 	if err != nil {
 		if errors.Is(err, auth.ErrNoToken) {
 			return nil, fmt.Errorf("%w for %s: run 'NIMBU_API_URL=%s nimbu auth login' first", auth.ErrNoToken, apiURL, apiURL)
 		}
 		return nil, err
 	}
-
-	client := api.New(apiURL, token)
-	client = client.WithVersion(version)
-	client = client.WithTimeout(flags.Timeout)
-	client = client.WithDebug(flags.Debug)
 	client = client.WithReadonly(flags.Readonly)
 	if site != "" {
 		client = client.WithSite(site)

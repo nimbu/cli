@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/auth"
+	"github.com/nimbu/cli/internal/oauth"
 	"github.com/nimbu/cli/internal/output"
 	"github.com/nimbu/cli/internal/pagepath"
 )
@@ -279,10 +281,35 @@ func classifyError(err error) errorDescriptor {
 		return desc
 	}
 
+	var refreshErr *oauth.RefreshError
+	if errors.As(err, &refreshErr) {
+		desc.HTTPStatus = refreshErr.Status
+		switch {
+		case refreshErr.Rejected():
+			desc.Code = errorAuthUnauthorized
+			desc.ExitCode = ExitAuth
+			desc.Hint = "run `nimbu auth login`"
+		case refreshErr.Status == http.StatusTooManyRequests:
+			desc.Code = errorRateLimited
+			desc.ExitCode = ExitRateLimit
+			desc.Retryable = true
+			desc.Hint = "retry later"
+		default:
+			desc.Code = errorServerError
+			desc.ExitCode = ExitGeneral
+			desc.Retryable = true
+			desc.Hint = "server-side failure; retry may succeed"
+		}
+		return desc
+	}
+
 	if errors.Is(err, auth.ErrNoToken) || strings.Contains(strings.ToLower(err.Error()), "not logged in") {
 		desc.Code = errorAuthNotLoggedIn
 		desc.ExitCode = ExitAuth
 		desc.Message = "not logged in"
+		if errors.Is(err, oauth.ErrSessionExpired) {
+			desc.Message = "login session expired or was revoked"
+		}
 		desc.Hint = "run `nimbu auth login`"
 		return desc
 	}
