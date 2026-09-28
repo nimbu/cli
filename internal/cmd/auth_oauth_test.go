@@ -28,6 +28,7 @@ type oauthAPI struct {
 	revoked   atomic.Value // url.Values
 	polls     atomic.Int32
 	logouts   atomic.Int32 // legacy POST /auth/logout
+	users     atomic.Int32 // GET /user
 }
 
 func newOAuthAPI(t *testing.T) *oauthAPI {
@@ -72,6 +73,7 @@ func newOAuthAPI(t *testing.T) *oauthAPI {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /user", func(w http.ResponseWriter, r *http.Request) {
+		fake.users.Add(1)
 		switch r.Header.Get("Authorization") {
 		case "Bearer access-1", "Bearer access-2":
 			writeTestJSON(w, http.StatusOK, map[string]any{"id": "u1", "email": "me@example.com", "name": "Me"})
@@ -205,11 +207,12 @@ func TestAuthLoginDeviceShowsCodeAndStoresSession(t *testing.T) {
 func TestAPIClientRefreshesOAuthSessionOn401(t *testing.T) {
 	t.Setenv("NIMBU_TOKEN", "")
 	fake := newOAuthAPI(t)
+	// Near expiry: the server's clock may already consider it expired.
 	store := &fakeAuthStore{credential: auth.Credential{
 		Token:        "revoked-access",
 		AuthMethod:   auth.AuthMethodOAuth,
 		RefreshToken: "refresh-1",
-		ExpiresAt:    time.Now().Add(20 * time.Minute),
+		ExpiresAt:    time.Now().Add(3 * time.Minute),
 		Email:        "me@example.com",
 	}}
 	withFakeAuthStore(t, store)
@@ -226,11 +229,42 @@ func TestAPIClientRefreshesOAuthSessionOn401(t *testing.T) {
 	if fake.refreshes.Load() != 1 || store.lastCredential.Token != "access-2" || store.lastCredential.RefreshToken != "refresh-2" {
 		t.Fatalf("refreshes = %d, stored = %+v", fake.refreshes.Load(), store.lastCredential)
 	}
+	if fake.users.Load() != 2 {
+		t.Fatalf("requests = %d, want the rejected one plus a single replay", fake.users.Load())
+	}
 	if store.lastCredential.Email != "me@example.com" {
 		t.Fatalf("refresh dropped the email: %+v", store.lastCredential)
 	}
 	if token, err := ResolveAuthToken(ctx); err != nil || token != "access-2" {
 		t.Fatalf("ResolveAuthToken after refresh = %q, %v", token, err)
+	}
+}
+
+// TestAPIClientKeepsAFreshSessionOn401: a 401 while the session has plenty
+// of time left is not a token expiry, so it is returned as is.
+func TestAPIClientKeepsAFreshSessionOn401(t *testing.T) {
+	t.Setenv("NIMBU_TOKEN", "")
+	fake := newOAuthAPI(t)
+	store := &fakeAuthStore{credential: auth.Credential{
+		Token:        "rejected-access",
+		AuthMethod:   auth.AuthMethodOAuth,
+		RefreshToken: "refresh-1",
+		ExpiresAt:    time.Now().Add(20 * time.Minute),
+	}}
+	withFakeAuthStore(t, store)
+	ctx, _, _ := oauthTestContext(t, fake.URL, output.Mode{})
+
+	client, err := GetAPIClient(ctx)
+	if err != nil {
+		t.Fatalf("GetAPIClient: %v", err)
+	}
+	err = client.Get(ctx, "/user", nil)
+	if desc := classifyError(err); desc.Code != errorAuthUnauthorized {
+		t.Fatalf("error = %v (%+v), want the 401", err, desc)
+	}
+	if fake.refreshes.Load() != 0 || fake.users.Load() != 1 || store.deleteCredentialCalls != 0 {
+		t.Fatalf("refreshes = %d, requests = %d, deletes = %d; want 0, 1, 0",
+			fake.refreshes.Load(), fake.users.Load(), store.deleteCredentialCalls)
 	}
 }
 
@@ -241,7 +275,7 @@ func TestAPIClientInvalidGrantMeansLoggedOut(t *testing.T) {
 		Token:        "revoked-access",
 		AuthMethod:   auth.AuthMethodOAuth,
 		RefreshToken: "revoked-refresh",
-		ExpiresAt:    time.Now().Add(20 * time.Minute),
+		ExpiresAt:    time.Now().Add(3 * time.Minute),
 	}}
 	withFakeAuthStore(t, store)
 	ctx, _, _ := oauthTestContext(t, fake.URL, output.Mode{})

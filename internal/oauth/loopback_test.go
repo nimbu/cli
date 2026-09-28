@@ -3,6 +3,7 @@ package oauth
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,20 +17,27 @@ import (
 // the loopback callback with the given query, and reports the status. It runs
 // on its own goroutine, so it reports failures with t.Errorf.
 func browserVisit(t *testing.T, authURL string, query func(state string) url.Values) int {
+	status, _ := browserPage(t, authURL, query)
+	return status
+}
+
+// browserPage is browserVisit that also returns the page the browser shows.
+func browserPage(t *testing.T, authURL string, query func(state string) url.Values) (int, string) {
 	parsed, err := url.Parse(authURL)
 	if err != nil {
 		t.Errorf("parse auth url: %v", err)
-		return 0
+		return 0, ""
 	}
 	params := parsed.Query()
 	callback := params.Get("redirect_uri") + "?" + query(params.Get("state")).Encode()
 	resp, err := http.Get(callback)
 	if err != nil {
 		t.Errorf("callback: %v", err)
-		return 0
+		return 0, ""
 	}
-	_ = resp.Body.Close()
-	return resp.StatusCode
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(body)
 }
 
 func TestLoginWithBrowserExchangesCodeWithPKCE(t *testing.T) {
@@ -184,5 +192,38 @@ func TestLoginWithBrowserTimesOut(t *testing.T) {
 	}
 	if announced == "" {
 		t.Fatal("authorization URL was not announced")
+	}
+}
+
+// TestLoginWithBrowserShowsExchangeFailure: the browser page reports the
+// outcome of the code exchange, not just that the callback arrived.
+func TestLoginWithBrowserShowsExchangeFailure(t *testing.T) {
+	fs := newFakeServer(t)
+	fs.setToken(func(url.Values) (int, map[string]any) {
+		return http.StatusBadRequest, map[string]any{"error": "invalid_grant"}
+	})
+
+	type page struct {
+		status int
+		body   string
+	}
+	shown := make(chan page, 1)
+	_, err := fs.client().LoginWithBrowser(context.Background(), BrowserLogin{
+		Open: func(authURL string) error {
+			go func() {
+				status, body := browserPage(t, authURL, func(state string) url.Values {
+					return url.Values{"code": {"code-1"}, "state": {state}}
+				})
+				shown <- page{status, body}
+			}()
+			return nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "exchange authorization code") {
+		t.Fatalf("error = %v, want the exchange failure", err)
+	}
+	got := <-shown
+	if got.status == http.StatusOK || !strings.Contains(got.body, "Login failed") || strings.Contains(got.body, "You are logged in") {
+		t.Fatalf("browser page = %d %q, want a failure page", got.status, got.body)
 	}
 }

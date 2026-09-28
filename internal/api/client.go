@@ -20,6 +20,10 @@ type TokenSource interface {
 	Token(ctx context.Context) (string, error)
 	// Renew replaces a token the API rejected with 401 and returns the new one.
 	Renew(ctx context.Context, rejected string) (string, error)
+	// MaybeExpired reports whether a 401 for token may mean it expired. Only
+	// then is it renewed and the request replayed: other 401s (a customer
+	// login's wrong password) must not be sent twice.
+	MaybeExpired(token string) bool
 }
 
 // Client is the Nimbu API client.
@@ -194,6 +198,9 @@ func (c *Client) buildRequest(ctx context.Context, method, path string, body any
 	if reqOpts.RedactResponse {
 		req = req.WithContext(withRedactedResponseLog(req.Context()))
 	}
+	if reqOpts.TokenRejection {
+		req = req.WithContext(context.WithValue(req.Context(), tokenRejectionKey{}, true))
+	}
 	if contentLength >= 0 {
 		req.ContentLength = contentLength
 	}
@@ -366,10 +373,21 @@ func (c *Client) bearer(ctx context.Context) (string, error) {
 	return c.Token, nil
 }
 
+// mayRenew reports whether a 401 for rejected is worth a renewal: the
+// endpoint says a 401 always means the token (WithTokenRejection), or the
+// token may have expired.
+func (c *Client) mayRenew(req *http.Request, rejected string) bool {
+	if forced, _ := req.Context().Value(tokenRejectionKey{}).(bool); forced {
+		return true
+	}
+	return c.Tokens.MaybeExpired(rejected)
+}
+
 // send performs req. When the API rejects the token source's bearer token
-// with 401, it renews the token once and replays the request. Transport
-// failures come back as *Error; a failed renewal comes back as is, so an
-// expired session surfaces as "log in again" rather than a network error.
+// with 401 and that token may have expired (see mayRenew), it renews the
+// token once and replays the request. Transport failures come back as *Error;
+// a failed renewal comes back as is, so an expired session surfaces as "log
+// in again" rather than a network error.
 func (c *Client) send(req *http.Request) (*http.Response, error) {
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -379,7 +397,7 @@ func (c *Client) send(req *http.Request) (*http.Response, error) {
 		return resp, nil
 	}
 	rejected, ok := strings.CutPrefix(req.Header.Get("Authorization"), "Bearer ")
-	if !ok || rejected == "" || (req.Body != nil && req.Body != http.NoBody && req.GetBody == nil) {
+	if !ok || rejected == "" || (req.Body != nil && req.Body != http.NoBody && req.GetBody == nil) || !c.mayRenew(req, rejected) {
 		return resp, nil
 	}
 

@@ -18,6 +18,14 @@ import (
 // RefreshMargin is how long before expiry an access token is renewed.
 const RefreshMargin = 60 * time.Second
 
+// ExpirySkew is how close to expiry an access token the API rejected may be
+// for the rejection to count as an expiry. It absorbs clock skew between
+// this machine and the server.
+const ExpirySkew = 5 * time.Minute
+
+// refreshTimeout bounds a refresh request, which the caller cannot cancel.
+const refreshTimeout = 2 * time.Minute
+
 // lockWait bounds how long a refresh waits for another process's refresh.
 const lockWait = 30 * time.Second
 
@@ -94,6 +102,20 @@ func (s *TokenSource) Renew(ctx context.Context, rejected string) (string, error
 	return s.refreshLocked(ctx, rejected)
 }
 
+// MaybeExpired reports whether the API may have rejected token because it
+// expired: it is no longer the current token, its expiry is unknown, or it
+// expires within ExpirySkew. A 401 for a token with time left is about
+// something else (e.g. a customer login's wrong password) and must not
+// trigger a refresh and replay.
+func (s *TokenSource) MaybeExpired(token string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if token != s.cred.Token || s.cred.ExpiresAt.IsZero() {
+		return true
+	}
+	return !s.now().Add(ExpirySkew).Before(s.cred.ExpiresAt)
+}
+
 func (s *TokenSource) fresh(cred auth.Credential) bool {
 	if cred.Token == "" {
 		return false
@@ -117,7 +139,12 @@ func (s *TokenSource) refreshLocked(ctx context.Context, stale string) (string, 
 	case errors.Is(err, auth.ErrNoToken):
 		s.cred = auth.Credential{}
 		return "", ErrSessionExpired
-	case err == nil && stored.Token != s.cred.Token:
+	case err != nil:
+		// Without the stored session this one's refresh token may already
+		// be spent by another process; presenting it again would revoke the
+		// whole session.
+		return "", fmt.Errorf("refresh session: read stored session: %w", err)
+	case stored.Token != s.cred.Token:
 		s.cred = stored
 		if stored.Token != stale && s.fresh(stored) {
 			return stored.Token, nil
@@ -128,14 +155,21 @@ func (s *TokenSource) refreshLocked(ctx context.Context, stale string) (string, 
 	if used == "" {
 		return "", ErrSessionExpired
 	}
-	tok, err := s.client.Refresh(ctx, used)
+	// Once sent, the server may rotate the refresh token, so the request and
+	// saving its result must not stop when the caller gives up (a deadline,
+	// Ctrl-C): that would lose the new token and the next refresh would
+	// present the spent one. The HTTP client's timeout bounds it, and
+	// refreshTimeout does when that is off (--timeout 0).
+	refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
+	defer cancel()
+	tok, err := s.client.Refresh(refreshCtx, used)
 	if err != nil && !IsInvalidGrant(err) {
 		return "", refreshFailure(err)
 	}
 
 	// Only replace or delete the session this refresh started from. A login
-	// or logout that could not take the lock, or a keyring read that failed
-	// above, may have changed the store during the request.
+	// or logout that could not take the lock may have changed the store
+	// during the request.
 	current, readErr := s.store.GetCredential()
 	switch {
 	case errors.Is(readErr, auth.ErrNoToken):

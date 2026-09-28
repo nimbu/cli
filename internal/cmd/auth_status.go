@@ -43,7 +43,7 @@ func (c *AuthStatusCmd) Run(ctx context.Context, flags *RootFlags) error {
 	var user api.User
 	var verifyErr error
 	if client, err := GetAPIClient(ctx); err == nil {
-		verifyErr = client.Get(ctx, "/user", &user)
+		verifyErr = client.Get(ctx, "/user", &user, api.WithTokenRejection())
 	} else {
 		verifyErr = err
 	}

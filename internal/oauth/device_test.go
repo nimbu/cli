@@ -213,3 +213,48 @@ func TestLoginWithDeviceExplainsALostApproval(t *testing.T) {
 		t.Fatalf("error = %v, want invalid_grant explaining the lost approval", err)
 	}
 }
+
+func rawPoll(status int, body string) func() (int, map[string]any) {
+	return func() (int, map[string]any) { return status, map[string]any{"raw": body} }
+}
+
+// TestLoginWithDeviceBacksOffOnRateLimit: a 429 without an OAuth body (a
+// rate limiter in front of the server) is a slow_down, not the end.
+func TestLoginWithDeviceBacksOffOnRateLimit(t *testing.T) {
+	t.Parallel()
+	fs, polls := deviceServer(t, rawPoll(http.StatusTooManyRequests, "Retry later\n"), pollSuccess)
+
+	start := time.Now()
+	tok, err := fs.client().LoginWithDevice(context.Background(), DeviceLogin{DeviceName: "build-box"})
+	if err != nil || tok.AccessToken != "access-1" {
+		t.Fatalf("LoginWithDevice = %+v, %v", tok, err)
+	}
+	if elapsed := time.Since(start); elapsed < 6*time.Second {
+		t.Fatalf("second poll after %v, want the interval raised by 5s", elapsed)
+	}
+	if polls.Load() != 2 {
+		t.Fatalf("polls = %d, want 2", polls.Load())
+	}
+}
+
+// TestLoginWithDeviceRetriesServerErrors: a 5xx without an OAuth error code
+// (a proxy's HTML error page) is transient, within the retry bound.
+func TestLoginWithDeviceRetriesServerErrors(t *testing.T) {
+	t.Parallel()
+	badGateway := rawPoll(http.StatusBadGateway, "<html>bad gateway</html>")
+
+	fs, polls := deviceServer(t, badGateway, pollSuccess)
+	tok, err := fs.client().LoginWithDevice(context.Background(), DeviceLogin{DeviceName: "build-box"})
+	if err != nil || tok.AccessToken != "access-1" || polls.Load() != 2 {
+		t.Fatalf("LoginWithDevice = %+v, %v after %d polls", tok, err, polls.Load())
+	}
+
+	fs, polls = deviceServer(t, badGateway)
+	_, err = fs.client().LoginWithDevice(context.Background(), DeviceLogin{DeviceName: "build-box"})
+	if err == nil || strings.Contains(err.Error(), "html") {
+		t.Fatalf("error = %v, want a failure without the response body", err)
+	}
+	if got := polls.Load(); got != maxPollRetries+1 {
+		t.Fatalf("polls = %d, want %d", got, maxPollRetries+1)
+	}
+}

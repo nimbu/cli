@@ -21,7 +21,7 @@ func (c *AuthWhoamiCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var user api.User
-	if err := client.Get(ctx, "/user", &user); err != nil {
+	if err := client.Get(ctx, "/user", &user, api.WithTokenRejection()); err != nil {
 		return fmt.Errorf("get user: %w", err)
 	}
 

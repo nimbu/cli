@@ -68,7 +68,8 @@ const (
 	// slowDownStep is how much slow_down raises the poll interval, for this
 	// and every later poll (RFC 8628 §3.5).
 	slowDownStep = 5 * time.Second
-	// maxPollRetries bounds how many polls in a row may fail in transit.
+	// maxPollRetries bounds how many polls in a row may fail in transit or
+	// with a server error.
 	maxPollRetries = 3
 )
 
@@ -99,10 +100,12 @@ func (c *Client) pollDevice(ctx context.Context, tokenURL string, da *oauth2.Dev
 
 		tok, err := c.pollDeviceOnce(ctx, tokenURL, da.DeviceCode)
 		var transport *url.Error
+		status := pollStatus(err)
 		switch {
 		case err == nil:
 			return tok, nil
-		case errors.As(err, &transport):
+		case errors.As(err, &transport), status >= 500 && errorCode(err) == "":
+			// Lost in transit, or a proxy error page: try again.
 			failures++
 			if ctx.Err() != nil || failures > maxPollRetries {
 				return nil, err
@@ -114,13 +117,23 @@ func (c *Client) pollDevice(ctx context.Context, tokenURL string, da *oauth2.Dev
 			// the code came back, so the only way on is a new login.
 			return nil, fmt.Errorf("%w: a dropped response may have carried the approval; run `nimbu auth login` again", err)
 		case errorCode(err) == "authorization_pending":
-		case errorCode(err) == "slow_down":
+		case errorCode(err) == "slow_down", status == http.StatusTooManyRequests:
+			// A rate limiter's 429 carries no OAuth body; back off the same way.
 			interval += slowDownStep
 		default:
 			return nil, err
 		}
 		failures = 0
 	}
+}
+
+// pollStatus is the HTTP status of a poll the server answered with an error.
+func pollStatus(err error) int {
+	var re *oauth2.RetrieveError
+	if errors.As(err, &re) && re.Response != nil {
+		return re.Response.StatusCode
+	}
+	return 0
 }
 
 // pollDeviceOnce makes one device access token request. Transport failures

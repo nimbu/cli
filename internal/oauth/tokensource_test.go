@@ -313,9 +313,11 @@ func TestTokenSourceOnlyReplacesTheSessionItRefreshed(t *testing.T) {
 
 func TestTokenSourceInvalidGrantKeepsStoreItCannotRead(t *testing.T) {
 	store := newMemStore(session("access-0", "refresh-0", time.Now().Add(-time.Minute)))
-	store.getErr = errors.New("keyring locked")
 	fs := newFakeServer(t)
 	fs.setToken(func(url.Values) (int, map[string]any) {
+		store.mu.Lock()
+		store.getErr = errors.New("keyring locked")
+		store.mu.Unlock()
 		return http.StatusBadRequest, map[string]any{"error": "invalid_grant"}
 	})
 	ts := NewTokenSource(fs.client(), store, store.cred, "")
@@ -358,6 +360,83 @@ func TestTokenSourceRefreshFailuresKeepTheSession(t *testing.T) {
 			}
 			if store.deletes != 0 {
 				t.Fatal("a refresh failure other than invalid_grant must keep the session")
+			}
+		})
+	}
+}
+
+// TestTokenSourceDoesNotRefreshFromAnUnreadableStore: when the keyring read
+// before a refresh fails, the in-memory refresh token may already be spent
+// by another process; presenting it would revoke the whole session.
+func TestTokenSourceDoesNotRefreshFromAnUnreadableStore(t *testing.T) {
+	fs := newFakeServer(t) // no token handler: any refresh request fails the test
+	keyringErr := errors.New("keyring locked")
+
+	expired := newMemStore(session("access-0", "refresh-0", time.Now().Add(-time.Minute)))
+	expired.getErr = keyringErr
+	ts := NewTokenSource(fs.client(), expired, expired.cred, "")
+	if _, err := ts.Token(context.Background()); !errors.Is(err, keyringErr) {
+		t.Fatalf("Token error = %v, want the keyring error", err)
+	}
+	if _, err := ts.Renew(context.Background(), "access-0"); !errors.Is(err, keyringErr) {
+		t.Fatalf("Renew error = %v, want the keyring error", err)
+	}
+
+	// Inside the refresh margin the current token still works.
+	expiring := newMemStore(session("access-0", "refresh-0", time.Now().Add(30*time.Second)))
+	expiring.getErr = keyringErr
+	ts = NewTokenSource(fs.client(), expiring, expiring.cred, "")
+	if token, err := ts.Token(context.Background()); err != nil || token != "access-0" {
+		t.Fatalf("Token = %q, %v; want the still-valid token", token, err)
+	}
+	if expired.deletes+expiring.deletes != 0 {
+		t.Fatal("an unreadable store must not be deleted")
+	}
+}
+
+// TestTokenSourceKeepsARotationTheCallerStoppedWaitingFor: once the refresh
+// request is sent the server may rotate the session, so a caller that gives
+// up (deadline, Ctrl-C) must not lose the new refresh token.
+func TestTokenSourceKeepsARotationTheCallerStoppedWaitingFor(t *testing.T) {
+	store := newMemStore(session("access-0", "refresh-0", time.Now().Add(-time.Minute)))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	fs := newFakeServer(t)
+	fs.setToken(func(form url.Values) (int, map[string]any) {
+		cancel()
+		time.Sleep(50 * time.Millisecond) // let the client notice the cancel
+		return http.StatusOK, tokenResponse("access-1", "refresh-1")
+	})
+	ts := NewTokenSource(fs.client(), store, store.cred, "")
+
+	token, err := ts.Token(ctx)
+	if err != nil || token != "access-1" {
+		t.Fatalf("Token = %q, %v; want the rotated token", token, err)
+	}
+	if saved, _ := store.GetCredential(); saved.RefreshToken != "refresh-1" {
+		t.Fatalf("saved = %+v, want the rotated session persisted", saved)
+	}
+}
+
+func TestTokenSourceMaybeExpired(t *testing.T) {
+	cases := []struct {
+		name      string
+		expiresAt time.Time
+		rejected  string
+		want      bool
+	}{
+		{"fresh token", time.Now().Add(30 * time.Minute), "access-0", false},
+		{"near expiry", time.Now().Add(3 * time.Minute), "access-0", true},
+		{"expired", time.Now().Add(-time.Minute), "access-0", true},
+		{"unknown expiry", time.Time{}, "access-0", true},
+		{"already rotated", time.Now().Add(30 * time.Minute), "access-old", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newMemStore(session("access-0", "refresh-0", tc.expiresAt))
+			ts := NewTokenSource(newFakeServer(t).client(), store, store.cred, "")
+			if got := ts.MaybeExpired(tc.rejected); got != tc.want {
+				t.Fatalf("MaybeExpired(%q) = %v, want %v", tc.rejected, got, tc.want)
 			}
 		})
 	}

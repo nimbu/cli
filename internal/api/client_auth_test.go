@@ -6,17 +6,26 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 )
 
-// stubTokens is a TokenSource that renews to a fixed token.
+// stubTokens is a TokenSource that renews to a fixed token. Its tokens are
+// near expiry unless fresh is set.
 type stubTokens struct {
 	mu       sync.Mutex
 	current  string
 	next     string
+	fresh    bool
 	renewErr error
 	renewals []string
+}
+
+func (s *stubTokens) MaybeExpired(string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !s.fresh
 }
 
 func (s *stubTokens) Token(context.Context) (string, error) {
@@ -128,5 +137,55 @@ func TestDownloadURLRenewsRejectedToken(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || len(seen) != 2 {
 		t.Fatalf("status = %d after %d requests", resp.StatusCode, len(seen))
+	}
+}
+
+// TestClientDoesNotRenewAFreshToken: a 401 while the token is far from
+// expiry is not about the CLI token (e.g. a wrong customer password on
+// /customers/login), so the request is neither renewed nor replayed.
+func TestClientDoesNotRenewAFreshToken(t *testing.T) {
+	var seen []string
+	srv := authServer(t, &seen)
+	tokens := &stubTokens{current: "stale", next: "good", fresh: true}
+
+	err := New(srv.URL, "").WithTokenSource(tokens).Post(context.Background(), "/customers/login", map[string]string{"a": "b"}, nil)
+	var apiErr *Error
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("error = %v, want the 401", err)
+	}
+	if len(seen) != 1 || len(tokens.renewals) != 0 {
+		t.Fatalf("requests = %q, renewals = %q; want one request and no renewal", seen, tokens.renewals)
+	}
+}
+
+func TestClientDoesNotReplayANonRewindableBody(t *testing.T) {
+	var seen []string
+	srv := authServer(t, &seen)
+	tokens := &stubTokens{current: "stale", next: "good"}
+
+	body := RequestBody{Reader: io.MultiReader(strings.NewReader("payload")), ContentType: "text/plain", ContentLength: -1}
+	resp, err := New(srv.URL, "").WithTokenSource(tokens).RawRequest(context.Background(), http.MethodPost, "/things", body)
+	if err != nil {
+		t.Fatalf("RawRequest: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized || len(seen) != 1 || len(tokens.renewals) != 0 {
+		t.Fatalf("status = %d, requests = %q, renewals = %q; want the 401 without a replay", resp.StatusCode, seen, tokens.renewals)
+	}
+}
+
+// TestClientRenewsAFreshTokenWhenTheEndpointSaysSo: on endpoints where a 401
+// can only be about the bearer token (GET /user), a fresh token is renewed
+// too, so a session revoked on the server is noticed at once.
+func TestClientRenewsAFreshTokenWhenTheEndpointSaysSo(t *testing.T) {
+	var seen []string
+	srv := authServer(t, &seen)
+	tokens := &stubTokens{current: "stale", next: "good", fresh: true}
+
+	if err := New(srv.URL, "").WithTokenSource(tokens).Get(context.Background(), "/user", nil, WithTokenRejection()); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(seen) != 2 || len(tokens.renewals) != 1 {
+		t.Fatalf("requests = %q, renewals = %q; want a renewal and one replay", seen, tokens.renewals)
 	}
 }

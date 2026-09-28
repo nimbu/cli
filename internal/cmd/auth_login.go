@@ -19,6 +19,9 @@ import (
 	"github.com/nimbu/cli/internal/output"
 )
 
+// loginStdinIsTerminal reports whether someone can answer a login; swapped in tests.
+var loginStdinIsTerminal = stdinIsTerminal
+
 // AuthLoginCmd logs in to Nimbu.
 type AuthLoginCmd struct {
 	Device bool   `help:"Log in with a one-time code entered in a browser on any device (SSH, containers)"`
@@ -37,6 +40,13 @@ type AuthLoginCmd struct {
 func (c *AuthLoginCmd) Run(ctx context.Context, flags *RootFlags) error {
 	host := apps.NormalizeHost(flags.APIURL)
 	if envToken() != "" {
+		// In CI a browser or device login would wait minutes for nobody.
+		oauthLogin := c.Token == "" && c.Email == "" && c.Password == ""
+		if oauthLogin && (flags.NoInput || !loginStdinIsTerminal()) {
+			return newDetailedError(
+				errors.New("NIMBU_TOKEN is set and overrides stored credentials; unset it, or pass --token to store it"),
+				errorUsageInvalid, ExitUsage, nil)
+		}
 		_, _ = fmt.Fprintln(output.WriterFromContext(ctx).Err,
 			"warning: NIMBU_TOKEN is set and overrides this login; unset it to use the new session")
 	}

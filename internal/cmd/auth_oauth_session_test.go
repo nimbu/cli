@@ -53,6 +53,8 @@ func TestAuthStatusReportsRevokedSessionAsLoggedOut(t *testing.T) {
 	store := &fakeAuthStore{credential: oauthSession("revoked-access", "revoked-refresh")}
 	withFakeAuthStore(t, store)
 
+	// The access token has time left: a 401 on /user is still about the CLI
+	// token, so status refreshes and finds the session revoked.
 	for _, mode := range []output.Mode{{JSON: true}, {}} {
 		store.credential, store.credentialErr = oauthSession("revoked-access", "revoked-refresh"), nil
 		ctx, stdout, _ := oauthTestContext(t, fake.URL, mode)
@@ -70,6 +72,22 @@ func TestAuthStatusReportsRevokedSessionAsLoggedOut(t *testing.T) {
 	}
 	if store.deleteCredentialCalls != 2 {
 		t.Fatalf("delete credential calls = %d, want 2", store.deleteCredentialCalls)
+	}
+}
+
+func TestAuthWhoamiReportsRevokedSessionAsLoggedOut(t *testing.T) {
+	t.Setenv("NIMBU_TOKEN", "")
+	fake := newOAuthAPI(t)
+	store := &fakeAuthStore{credential: oauthSession("revoked-access", "revoked-refresh")}
+	withFakeAuthStore(t, store)
+	ctx, _, _ := oauthTestContext(t, fake.URL, output.Mode{})
+
+	err := (&AuthWhoamiCmd{}).Run(ctx, ctx.Value(rootFlagsKey{}).(*RootFlags))
+	if !errors.Is(err, oauth.ErrSessionExpired) {
+		t.Fatalf("auth whoami error = %v, want ErrSessionExpired", err)
+	}
+	if store.deleteCredentialCalls != 1 {
+		t.Fatalf("delete credential calls = %d, want 1", store.deleteCredentialCalls)
 	}
 }
 
@@ -173,6 +191,7 @@ func TestAuthLoginIgnoresNIMBUTokenEnv(t *testing.T) {
 func TestAuthLoginWithNIMBUTokenSetLogsInAndWarns(t *testing.T) {
 	withBrowserEnv(t)
 	t.Setenv("NIMBU_TOKEN", "ci-token")
+	withLoginTerminal(t, true)
 	fake := newOAuthAPI(t)
 	store := &fakeAuthStore{credentialErr: auth.ErrNoToken}
 	withFakeAuthStore(t, store)
@@ -187,6 +206,52 @@ func TestAuthLoginWithNIMBUTokenSetLogsInAndWarns(t *testing.T) {
 	if !strings.Contains(stderr.String(), "NIMBU_TOKEN is set and overrides this login") {
 		t.Fatalf("stderr = %q, want a NIMBU_TOKEN warning", stderr.String())
 	}
+}
+
+// TestAuthLoginWithNIMBUTokenFailsFastWithoutATerminal: in CI an exported
+// NIMBU_TOKEN plus `nimbu auth login` must not start a login that waits
+// minutes for a browser nobody will open.
+func TestAuthLoginWithNIMBUTokenFailsFastWithoutATerminal(t *testing.T) {
+	cases := map[string]struct {
+		noInput  bool
+		terminal bool
+	}{
+		"--no-input":      {noInput: true, terminal: true},
+		"stdin not a TTY": {noInput: false, terminal: false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			withBrowserEnv(t)
+			t.Setenv("NIMBU_TOKEN", "ci-token")
+			withLoginTerminal(t, tc.terminal)
+			fake := newOAuthAPI(t)
+			store := &fakeAuthStore{credentialErr: auth.ErrNoToken}
+			withFakeAuthStore(t, store)
+			ctx, _, _ := oauthTestContext(t, fake.URL, output.Mode{})
+			flags := ctx.Value(rootFlagsKey{}).(*RootFlags)
+			flags.NoInput = tc.noInput
+
+			err := (&AuthLoginCmd{Device: true}).Run(ctx, flags)
+			if err == nil || !strings.Contains(err.Error(), "NIMBU_TOKEN is set") || !strings.Contains(err.Error(), "--token") {
+				t.Fatalf("auth login error = %v, want a NIMBU_TOKEN error naming --token", err)
+			}
+			if fake.polls.Load() != 0 || store.lastCredential.Token != "" {
+				t.Fatalf("login ran: polls = %d, stored = %+v", fake.polls.Load(), store.lastCredential)
+			}
+
+			// --token still stores the token.
+			if err := (&AuthLoginCmd{Token: "api-token"}).Run(ctx, flags); err != nil || store.lastCredential.Token != "api-token" {
+				t.Fatalf("auth login --token = %v, stored = %+v", err, store.lastCredential)
+			}
+		})
+	}
+}
+
+func withLoginTerminal(t *testing.T, terminal bool) {
+	t.Helper()
+	old := loginStdinIsTerminal
+	loginStdinIsTerminal = func() bool { return terminal }
+	t.Cleanup(func() { loginStdinIsTerminal = old })
 }
 
 // TestAuthLoginWithTokenRevokesReplacedOAuthSession covers every non-OAuth

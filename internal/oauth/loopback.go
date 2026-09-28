@@ -19,6 +19,9 @@ import (
 // DefaultBrowserTimeout bounds how long the loopback flow waits for the user.
 const DefaultBrowserTimeout = 5 * time.Minute
 
+// callbackWait bounds how long the browser page waits for the code exchange.
+const callbackWait = 30 * time.Second
+
 // ErrLoginTimeout means the user did not finish the browser login in time.
 var ErrLoginTimeout = errors.New("timed out waiting for the browser login to finish")
 
@@ -58,8 +61,10 @@ func (c *Client) LoginWithBrowser(ctx context.Context, opts BrowserLogin) (*oaut
 	authURL := cfg.AuthCodeURL(state, params...)
 
 	results := make(chan callbackResult, 1)
+	outcome := make(chan error, 1)
+	done := make(chan struct{})
 	server := &http.Server{
-		Handler:           callbackHandler(state, c.Endpoints(ctx).Issuer, results),
+		Handler:           callbackHandler(state, c.Endpoints(ctx).Issuer, results, outcome, done),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() { _ = server.Serve(listener) }()
@@ -68,6 +73,8 @@ func (c *Client) LoginWithBrowser(ctx context.Context, opts BrowserLogin) (*oaut
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
 	}()
+	// Runs before Shutdown: a callback still waiting for the outcome stops.
+	defer close(done)
 
 	if opts.Announce != nil {
 		opts.Announce(authURL)
@@ -96,16 +103,18 @@ func (c *Client) LoginWithBrowser(ctx context.Context, opts BrowserLogin) (*oaut
 	}
 
 	tok, err := cfg.Exchange(c.oauthContext(ctx), result.code, oauth2.VerifierOption(verifier))
+	outcome <- err
 	if err != nil {
 		return nil, fmt.Errorf("exchange authorization code: %w", err)
 	}
 	return tok, nil
 }
 
-// callbackHandler accepts exactly one callback carrying the expected state.
-// Requests with a missing or wrong state (stray tabs, other local software)
-// get an error page but do not end the flow.
-func callbackHandler(state, issuer string, results chan<- callbackResult) http.Handler {
+// callbackHandler accepts exactly one callback carrying the expected state
+// and answers it with the outcome of the code exchange. Requests with a
+// missing or wrong state (stray tabs, other local software) get an error
+// page but do not end the flow.
+func callbackHandler(state, issuer string, results chan<- callbackResult, outcome <-chan error, done <-chan struct{}) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
@@ -124,7 +133,21 @@ func callbackHandler(state, issuer string, results chan<- callbackResult) http.H
 			writeCallbackPage(w, http.StatusBadRequest, "Login failed: "+result.err.Error()+". Return to your terminal.")
 			return
 		}
-		writeCallbackPage(w, http.StatusOK, "You are logged in to the Nimbu CLI. You can close this tab and return to your terminal.")
+		timer := time.NewTimer(callbackWait)
+		defer timer.Stop()
+		select {
+		case err := <-outcome:
+			if err != nil {
+				writeCallbackPage(w, http.StatusBadGateway, "Login failed: the Nimbu CLI could not complete the login. Return to your terminal for details.")
+				return
+			}
+			writeCallbackPage(w, http.StatusOK, "You are logged in to the Nimbu CLI. You can close this tab and return to your terminal.")
+		case <-timer.C:
+			writeCallbackPage(w, http.StatusAccepted, "The Nimbu CLI is still finishing the login. Return to your terminal to see the result.")
+		case <-done:
+			writeCallbackPage(w, http.StatusServiceUnavailable, "The Nimbu CLI stopped before finishing the login. Return to your terminal.")
+		case <-r.Context().Done():
+		}
 	})
 	return mux
 }
