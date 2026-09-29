@@ -11,6 +11,9 @@ declare -a stale_patterns=(
   'nimbu translations pull'
   'nimbu apps:code:'
   '--write'
+  'nimbu auth login --password'
+  'nimbu auth login -p'
+  'nimbu auth login --email'
 )
 
 for pattern in "${stale_patterns[@]}"; do

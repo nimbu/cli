@@ -466,6 +466,10 @@ func TestResolveAuthCredentialNoTokenAlsoCachesTokenMiss(t *testing.T) {
 func TestAuthLoginStoreTokenWritesCombinedCredential(t *testing.T) {
 	store := &fakeAuthStore{}
 	withFakeAuthStore(t, store)
+	lockDir := t.TempDir()
+	oldLockDir := refreshLockDir
+	refreshLockDir = func() (string, error) { return lockDir, nil }
+	t.Cleanup(func() { refreshLockDir = oldLockDir })
 
 	cmd := &AuthLoginCmd{}
 	if err := cmd.storeToken(context.Background(), "tok", "me@example.com", "api.example.test"); err != nil {

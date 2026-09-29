@@ -16,9 +16,22 @@ type requestOptions struct {
 	OperationClass OperationClass
 	Idempotent     *bool
 	RedactResponse bool
+	TokenRejection bool
 }
 
 type redactResponseLogKey struct{}
+
+type tokenRejectionKey struct{}
+
+// WithTokenRejection marks an endpoint where a 401 can only mean the bearer
+// token was rejected, such as GET /user. The client then renews the token
+// and replays the request even when the token looks fresh, so a session
+// revoked on the server is noticed at once.
+func WithTokenRejection() RequestOption {
+	return func(o *requestOptions) {
+		o.TokenRejection = true
+	}
+}
 
 // RequestBody supplies a custom request stream instead of JSON-marshaled data.
 type RequestBody struct {

@@ -34,11 +34,27 @@ type KeyringStore struct {
 	ring keyring.Keyring
 }
 
-// Credential holds stored authentication data.
+// AuthMethodOAuth marks a credential obtained through the OAuth login flows.
+// Credentials without an auth method are legacy opaque API tokens.
+const AuthMethodOAuth = "oauth"
+
+// Credential holds stored authentication data. OAuth credentials carry a
+// short-lived access token in Token plus the rotating refresh token; older
+// CLI versions ignore the extra fields and keep using Token until it expires.
 type Credential struct {
-	Token     string    `json:"token"`
-	Email     string    `json:"email,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
+	Token        string    `json:"token"`
+	Email        string    `json:"email,omitempty"`
+	CreatedAt    time.Time `json:"created_at,omitempty"`
+	AuthMethod   string    `json:"auth_method,omitempty"`
+	RefreshToken string    `json:"refresh_token,omitempty"`
+	ExpiresAt    time.Time `json:"expires_at,omitzero"`
+	Scopes       []string  `json:"scopes,omitempty"`
+	ClientID     string    `json:"client_id,omitempty"`
+}
+
+// IsOAuth reports whether the credential is a refreshable OAuth session.
+func (c Credential) IsOAuth() bool {
+	return c.AuthMethod == AuthMethodOAuth
 }
 
 const (

@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/nimbu/cli/internal/apps"
 	"github.com/nimbu/cli/internal/auth"
 	"github.com/nimbu/cli/internal/config"
+	"github.com/nimbu/cli/internal/oauth"
 )
 
 type authResolverKey struct{}
@@ -33,6 +33,9 @@ type authCredentialResolver struct {
 	credential    auth.Credential
 	credentialErr error
 	credLoaded    bool
+
+	tokens *oauth.TokenSource                 // shared OAuth session, see session()
+	others map[string]*authCredentialResolver // resolvers for other API hosts
 }
 
 func newAuthCredentialResolver(host string) *authCredentialResolver {
@@ -48,30 +51,45 @@ func resolverFromContext(ctx context.Context) *authCredentialResolver {
 	return newAuthCredentialResolver(config.DefaultAPIHost)
 }
 
+// ResolveAuthToken returns a usable bearer token for the session's API host.
+// OAuth sessions are refreshed first when the access token is about to expire.
 func ResolveAuthToken(ctx context.Context) (string, error) {
-	if token := strings.TrimSpace(os.Getenv("NIMBU_TOKEN")); token != "" {
-		return token, nil
+	flags, _ := ctx.Value(rootFlagsKey{}).(*RootFlags)
+	baseURL := ""
+	if flags != nil {
+		baseURL = flags.APIURL
 	}
-	return resolverFromContext(ctx).Token()
+	return ResolveAuthTokenForHost(ctx, baseURL)
 }
 
 // ResolveAuthTokenForHost resolves the token for the host of baseURL, so
 // cross-host commands (--from-host/--to-host) authenticate against each API
 // with its own stored credential instead of the session default's.
 func ResolveAuthTokenForHost(ctx context.Context, baseURL string) (string, error) {
-	if token := strings.TrimSpace(os.Getenv("NIMBU_TOKEN")); token != "" {
+	if token := envToken(); token != "" {
 		return token, nil
 	}
-	resolver := resolverFromContext(ctx)
-	host := apps.NormalizeHost(baseURL)
-	if host == "" || host == resolver.host {
-		return resolver.Token()
+	resolver := resolverForBaseURL(ctx, baseURL)
+	token, err := resolver.Token()
+	if err != nil || strings.TrimSpace(baseURL) == "" {
+		return token, err
 	}
-	return newAuthCredentialResolver(host).Token()
+	session, err := resolver.session(baseURL, requestTimeout(ctx))
+	if err != nil || session == nil {
+		return token, err
+	}
+	return session.Token(ctx)
+}
+
+func requestTimeout(ctx context.Context) time.Duration {
+	if flags, ok := ctx.Value(rootFlagsKey{}).(*RootFlags); ok && flags != nil && flags.Timeout > 0 {
+		return flags.Timeout
+	}
+	return 30 * time.Second
 }
 
 func ResolveAuthCredential(ctx context.Context) (auth.Credential, error) {
-	if token := strings.TrimSpace(os.Getenv("NIMBU_TOKEN")); token != "" {
+	if token := envToken(); token != "" {
 		return auth.Credential{Token: token}, nil
 	}
 	return resolverFromContext(ctx).Credential()
@@ -151,6 +169,7 @@ func (r *authCredentialResolver) DeleteStoredCredentials() error {
 	r.credential = auth.Credential{}
 	r.credentialErr = auth.ErrNoToken
 	r.credLoaded = true
+	r.tokens = nil
 	return nil
 }
 
