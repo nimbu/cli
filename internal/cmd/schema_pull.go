@@ -230,7 +230,7 @@ func schemaPullBasePath(kind string) string {
 
 const (
 	schemaPullFieldKeys   = "name label type hint required localized unique auto_expand immutable encrypted required_expression geo_type calculated_expression calculation_type private_storage text_formatting reference options"
-	schemaPullChannelKeys = "slug name description sensitive publishable label_field title_field order_by order_direction submittable submittable_fields submittable_html_fields submittable_notifications submittable_receivers submittable_notification_template submittable_confirmations submittable_confirmation_receivers submittable_confirmation_template spam_detection rss_enabled rss_title rss_description rss_title_field rss_description_field rss_image_field"
+	schemaPullChannelKeys = "slug name description acl sensitive publishable label_field title_field order_by order_direction submittable submittable_fields submittable_html_fields submittable_notifications submittable_receivers submittable_notification_template submittable_confirmations submittable_confirmation_receivers submittable_confirmation_template spam_detection rss_enabled rss_title rss_description rss_title_field rss_description_field rss_image_field"
 )
 
 func normalizeSchemaPullDocument(raw map[string]any, kind string) map[string]any {

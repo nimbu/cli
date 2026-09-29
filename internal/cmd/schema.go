@@ -238,7 +238,7 @@ func renderSchemaPlans(ctx context.Context, plans []schemaPlan) error {
 			return err
 		}
 		for _, op := range p.Ops {
-			if _, err := output.Fprintf(ctx, "  %s %s %v\n", op["risk"], op["kind"], op); err != nil {
+			if _, err := output.Fprintf(ctx, "  %s %s %s\n", op["risk"], op["kind"], schemaOpDetail(op)); err != nil {
 				return err
 			}
 		}
@@ -253,6 +253,26 @@ func renderSchemaPlans(ctx context.Context, plans []schemaPlan) error {
 		}
 	}
 	return nil
+}
+
+// schemaOpDetail renders target attribute changes (e.g. acl.read) as "attr: from -> to (reason)".
+func schemaOpDetail(op map[string]any) string {
+	attr, ok := op["attr"].(string)
+	if !ok || attr == "" {
+		return fmt.Sprint(op)
+	}
+	detail := fmt.Sprintf("%s: %v -> %v", attr, schemaOpValue(op["from"]), schemaOpValue(op["to"]))
+	if reason, ok := op["reason"].(string); ok && reason != "" {
+		detail += " (" + reason + ")"
+	}
+	return detail
+}
+
+func schemaOpValue(value any) any {
+	if value == nil {
+		return "(unset)"
+	}
+	return value
 }
 
 func planSchemaDocuments(ctx context.Context, client *api.Client, docs []schemaDocument, prune bool) ([]schemaPlan, error) {

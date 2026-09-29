@@ -377,6 +377,21 @@ before adding `--prune`, which removes omitted fields and options. Creating
 circular channel references may leave placeholder fields; remove those with a
 reviewed `--prune` apply.
 
+Channel files carry the channel's access rules as `acl`, with one scope
+(`public`, `shared`, `private` or `none`) per action:
+
+```yaml
+acl:
+  create: none
+  read: public
+  update: private
+  delete: none
+```
+
+Actions you leave out keep their current value. `plan` reports each change as
+an `acl.<action>` operation. Narrowing access is safe; widening it is
+destructive and needs the same confirmation as other destructive changes.
+
 Fingerprints reject stale plans, and declarative schema applies are serialized
 per site. Avoid concurrent admin or legacy API schema edits during deployment.
 
