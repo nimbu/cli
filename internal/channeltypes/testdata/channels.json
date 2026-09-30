@@ -1,0 +1,84 @@
+[
+  {
+    "id": "c-posts",
+    "slug": "blog-posts",
+    "name": "Blog posts",
+    "description": "Articles shown on the blog.\nOne entry per post.",
+    "customizations": [
+      {"name": "title", "label": "Title", "type": "string", "required": true, "localized": true},
+      {"name": "body", "label": "Body", "type": "text"},
+      {"name": "contact", "label": "Contact e-mail", "type": "email"},
+      {"name": "published", "label": "Published", "type": "boolean"},
+      {"name": "views", "label": "Views", "type": "integer"},
+      {"name": "rating", "label": "Rating", "type": "float"},
+      {"name": "publish_on", "label": "Publish on", "type": "date"},
+      {"name": "published_at", "label": "Published at", "type": "date_time"},
+      {"name": "starts_at", "label": "Starts at", "type": "time", "hint": "Local time of day.\nShown on the event card."},
+      {"name": "status", "label": "Status", "type": "select", "required": true, "select_options": [
+        {"id": "o1", "name": "draft", "position": 1},
+        {"id": "o2", "name": "published", "position": 2},
+        {"id": "o3", "name": "it's live", "position": 3},
+        {"id": "o4", "name": "draft", "position": 4}
+      ]},
+      {"name": "tags", "label": "Tags", "type": "multi_select", "select_options": [
+        {"id": "t1", "name": "news"},
+        {"id": "t2", "name": "a\\b"}
+      ]},
+      {"name": "mood", "label": "Mood", "type": "select"},
+      {"name": "labels", "label": "Labels", "type": "multi_select"},
+      {"name": "author", "label": "Author", "type": "belongs_to", "reference": "authors", "required": true},
+      {"name": "related", "label": "Related posts", "type": "belongs_to_many", "reference": "blog-posts"},
+      {"name": "legacy", "label": "Legacy", "type": "belongs_to", "reference": "archived-things"},
+      {"name": "owner", "label": "Owner", "type": "customer"},
+      {"name": "reviewer", "label": "Reviewer", "type": "belongs_to", "reference": "customers"},
+      {"name": "venue", "label": "Venue", "type": "string", "required": true, "required_expression": "published == true"},
+      {"name": "cover", "label": "Cover */ image", "type": "file"},
+      {"name": "photos", "label": "Photos", "type": "gallery"},
+      {"name": "metadata", "label": "metadata", "type": "json"},
+      {"name": "location", "label": "Location", "type": "geo", "geo_type": "Point"},
+      {"name": "word_count", "label": "Word count", "type": "calculated", "calculation_type": "integer"},
+      {"name": "summary", "label": "Summary", "type": "calculated", "calculation_type": "string"},
+      {"name": "score", "label": "Score", "type": "calculated"},
+      {"name": "future", "label": "Future", "type": "hologram"}
+    ]
+  },
+  {
+    "id": "c-authors",
+    "slug": "authors",
+    "name": "Authors",
+    "customizations": [
+      {"name": "name", "label": "Name", "type": "string", "required": true},
+      {"name": "posts", "label": "Posts", "type": "belongs_to_many", "reference": "blog-posts"}
+    ]
+  },
+  {
+    "id": "c-posts-legacy",
+    "slug": "blog_posts",
+    "name": "Blog posts (legacy)",
+    "customizations": [
+      {"name": "title", "type": "string"}
+    ]
+  },
+  {
+    "id": "c-select",
+    "slug": "select",
+    "name": "Select",
+    "customizations": []
+  },
+  {
+    "id": "c-site",
+    "slug": "site",
+    "name": "Site settings",
+    "customizations": [
+      {"name": "tagline", "type": "string", "required": true}
+    ]
+  },
+  {
+    "id": "c-2020",
+    "slug": "2020-archive",
+    "name": "2020 archive",
+    "customizations": [
+      {"name": "note", "type": "string"}
+    ]
+  }
+]

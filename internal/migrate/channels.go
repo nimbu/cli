@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/channeltypes"
 )
 
 // ChannelCopyItem describes one copied channel.
@@ -156,15 +157,9 @@ func ChannelInfo(ctx context.Context, client *api.Client, ref ChannelRef) (Chann
 	}, nil
 }
 
-// ChannelTypeScript renders a TypeScript interface for one channel schema.
+// ChannelTypeScript renders a standalone TypeScript type for one channel schema.
 func ChannelTypeScript(detail api.ChannelDetail) string {
-	var lines []string
-	lines = append(lines, fmt.Sprintf("export interface %s {", toPascalCase(detail.Slug)))
-	for _, field := range detail.Customizations {
-		lines = append(lines, fmt.Sprintf("  %s%s: %s;", field.Name, optionalSuffix(field.Required), fieldTypeScript(field)))
-	}
-	lines = append(lines, "}")
-	return strings.Join(lines, "\n")
+	return channeltypes.Interface(detail)
 }
 
 func copyChannelDetail(ctx context.Context, client *api.Client, detail api.ChannelDetail, targetSlug string, opts ChannelCopyOptions) (ChannelCopyItem, error) {
@@ -414,66 +409,4 @@ func topoSortChannels(channels []api.ChannelDetail, graph api.ChannelDependencyG
 		visit(slug)
 	}
 	return out
-}
-
-func fieldTypeScript(field api.CustomField) string {
-	switch field.Type {
-	case "belongs_to", "customer":
-		return "Nimbu.ReferenceTo"
-	case "belongs_to_many":
-		return "Nimbu.ReferenceMany"
-	case "boolean":
-		return "boolean"
-	case "calculated", "email", "string", "text":
-		return "string"
-	case "date":
-		return "Nimbu.Date"
-	case "date_time", "time":
-		return "Nimbu.DateTime"
-	case "file":
-		return "Nimbu.File"
-	case "float", "integer":
-		return "number"
-	case "gallery":
-		return "Nimbu.Gallery"
-	case "multi_select":
-		return fmt.Sprintf("Nimbu.MultiSelect<'%s'>", strings.Join(fieldOptionNames(field), "' | '"))
-	case "select":
-		return fmt.Sprintf("Nimbu.Select<'%s'>", strings.Join(fieldOptionNames(field), "' | '"))
-	default:
-		return "any"
-	}
-}
-
-func fieldOptionNames(field api.CustomField) []string {
-	names := make([]string, 0, len(field.SelectOptions))
-	for _, option := range field.SelectOptions {
-		if strings.TrimSpace(option.Name) != "" {
-			names = append(names, option.Name)
-		}
-	}
-	if len(names) == 0 {
-		return []string{"string"}
-	}
-	return names
-}
-
-func toPascalCase(value string) string {
-	parts := strings.FieldsFunc(value, func(r rune) bool {
-		return r == '-' || r == '_' || r == ' '
-	})
-	for idx, part := range parts {
-		if part == "" {
-			continue
-		}
-		parts[idx] = strings.ToUpper(part[:1]) + part[1:]
-	}
-	return strings.Join(parts, "")
-}
-
-func optionalSuffix(required bool) string {
-	if required {
-		return ""
-	}
-	return "?"
 }

@@ -237,6 +237,60 @@ nimbu channels fields replace --channel blog --file fields.json --force
 nimbu channels fields diff --channel blog --file fields.json --json
 ```
 
+### Channel types for cloud code
+
+`channels types` writes one TypeScript module with a type for every channel of
+the site. Field types use the `nimbu-js-sdk` helpers (`ReferenceTo<Authors>`,
+`Select<'draft' | 'live'>`, `NimbuFile`, ...), and the module augments
+`NimbuChannels` in `nimbu-js-sdk/cloud`, so cloud code callbacks get a typed
+`req.object` for those channels.
+
+```bash
+# Print the module for all channels
+nimbu channels types
+
+# Write it into the project (parent directories are created)
+nimbu channels types --output code/types/nimbu-channels.ts
+
+# Only some channels; references to channels left out become untyped
+nimbu channels types --channel blog --channel authors -o code/types/nimbu-channels.ts
+```
+
+Without `--channel` the module covers the whole site, so it also sets
+`strictChannels: true` in `NimbuCloudOptions`: a callback on a slug that is not
+a channel of the site becomes a type error. A `--channel` subset leaves it out,
+and slugs outside the module stay accepted but untyped.
+
+Cloud types are opt-in. Include the generated file in your `tsconfig.json` and
+add `"types": ["nimbu-js-sdk/cloud"]` (or a `/// <reference types="nimbu-js-sdk/cloud" />`).
+Use a `.ts` file name rather than `.d.ts`: with `skipLibCheck` (the `tsc --init`
+default) TypeScript does not check `.d.ts` files, so a broken import there turns
+field types into `any` without an error. The module holds only types, and
+`apps push` uploads `**/*.js` by default, so the file never reaches the server.
+
+The output is sorted by slug and carries no timestamp, so regenerating only
+shows real schema changes in a diff. `--json` returns `{site, channels,
+typescript}` (or `path` instead of `typescript` with `--output`).
+`channels info --channel <slug> --typescript` renders the same type for a
+single channel.
+
+What the types promise:
+
+- Optional fields read as `T | null`: the API sends `null` for blank values.
+  Booleans are always `true` or `false`. Required fields are non-null once the
+  entry passed validation; a field that is only required under a condition
+  (`required_expression`) is optional.
+- `customer` fields are the customer as plain JSON, or its id when the embed is
+  not allowed (`JSONField | string`). A `belongs_to` reference to customers is a
+  `NimbuCustomer`; references to other native types (products, orders, pages,
+  articles) stay untyped, as does any reference whose target is also a channel
+  slug.
+- Select unions list option names in the API's locale. On a multilingual site,
+  code running in another locale can see translated names.
+- Type names are the PascalCase slug. When two slugs collide (`blog-posts` and
+  `blog_posts`), the one that sorts first keeps the plain name and the other
+  gets a name from its own spelling (`Blog_Posts`).
+
 ### Translations shorthand
 
 `translations create` and `translations update` support locale shorthand: top-level locale keys are mapped to `values.<locale>`.

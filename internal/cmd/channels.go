@@ -6,6 +6,7 @@ type ChannelsCmd struct {
 	Get     ChannelsGetCmd    `cmd:"" help:"Get channel details"`
 	Create  ChannelsCreateCmd `cmd:"" help:"Create a channel from JSON or inline assignments"`
 	Info    ChannelsInfoCmd   `cmd:"" help:"Show rich channel info and TypeScript output"`
+	Types   ChannelsTypesCmd  `cmd:"" help:"Generate one TypeScript module with the types of all channels"`
 	Copy    ChannelsCopyCmd   `cmd:"" help:"Copy channel configuration between sites"`
 	Diff    ChannelsDiffCmd   `cmd:"" help:"Diff channel configuration between sites"`
 	Empty   ChannelsEmptyCmd  `cmd:"" help:"Empty a channel after strict confirmation"`

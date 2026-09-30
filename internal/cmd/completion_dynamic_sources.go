@@ -46,6 +46,7 @@ func newCompletionRegistry() completionRegistry {
 	for _, path := range [][]string{
 		{"channels", "get"},
 		{"channels", "info"},
+		{"channels", "types"},
 		{"channels", "empty"},
 		{"channels", "fields", "list"},
 		{"channels", "fields", "add"},
