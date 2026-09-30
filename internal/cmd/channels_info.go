@@ -11,7 +11,7 @@ import (
 // ChannelsInfoCmd shows rich channel info.
 type ChannelsInfoCmd struct {
 	Channel    string `required:"" help:"Channel slug or site/channel"`
-	TypeScript bool   `name:"typescript" help:"Render a TypeScript interface instead of the rich summary"`
+	TypeScript bool   `name:"typescript" help:"Render a TypeScript type instead of the rich summary"`
 }
 
 // Run executes channel info.

@@ -253,7 +253,8 @@ Binary commands require `--output=<file>` or `--output=-`. They preserve exact b
 ```bash
 nimbu channels fields list --channel blog --json   # types, flags, references, select_options
 nimbu channels get --channel blog --json           # ACL, ordering, dependency graph
-nimbu channels info --channel blog --typescript    # TypeScript interface (works cross-site)
+nimbu channels info --channel blog --typescript    # TypeScript type for one channel (works cross-site)
+nimbu channels types -o code/types/nimbu-channels.ts  # typings for all channels (cloud code)
 ```
 
 **`channels fields list --channel <channel> --json`** returns an array of field definitions:
@@ -348,6 +349,7 @@ A 409 `draft_base_changed` means the live page moved after the draft was based o
 
 - `channels get --channel <slug> --json` returns schema, customizations, ACL fields
 - `channels info --channel <slug>` outputs TypeScript-friendly schema definition
+- `channels types [--channel <slug>...] [--output <file>]` writes one TS module for all channels that augments `NimbuChannels` in `nimbu-js-sdk/cloud`
 - `channels diff --from <site> --to <site>` compares channel configs
 
 ## Gotchas

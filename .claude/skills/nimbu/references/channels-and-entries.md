@@ -19,7 +19,8 @@ For different API hosts, add `--from-host` / `--to-host` (bare domain or full UR
 | `get` | `nimbu channels get --channel <slug>` | | Returns schema, customizations, ACL, dependency graph. |
 | `create` | `nimbu channels create --file <ch.json>` or `nimbu channels create name=… slug=…` | `--file` | Creates a channel. `--file` (full JSON incl. `customizations`) XOR inline assignments. Use `customizations:=@fields.json` for the field array inline. Requires write mode. |
 | `delete` | `nimbu channels delete --channel <slug>` | `--force` (required) | Deletes the whole channel definition (not just entries). Requires both `--force` and write mode. |
-| `info` | `nimbu channels info --channel <slug or site/channel>` | `--typescript` | Accepts cross-site ref. `--typescript` emits a TS interface. |
+| `info` | `nimbu channels info --channel <slug or site/channel>` | `--typescript` | Accepts cross-site ref. `--typescript` emits a TS type for one channel. |
+| `types` | `nimbu channels types` | `--output`/`-o`, `--channel` (repeatable) | One TS module for all channels: a type per channel plus a `NimbuChannels` augmentation of `nimbu-js-sdk/cloud` for typed cloud code callbacks. Sorted by slug, no timestamp. Stdout unless `--output`. |
 | `fields` | `nimbu channels fields list --channel <slug>` | | Schema introspection — see detailed section below. |
 | `diff` | `nimbu channels diff --from <ref> --to <ref>` | `--from-host`, `--to-host` | Compares channel attrs + field schema. Reports added/removed/updated. |
 | `copy` | `nimbu channels copy --from <ref> --to <ref>` | `--all`, `--from-host`, `--to-host` | Copies channel config (not entries). `--all` copies all channels from source site. Fails under `--readonly`. |
@@ -52,7 +53,7 @@ For different API hosts, add `--from-host` / `--to-host` (bare domain or full UR
 - `get` works on the current site only (no cross-site ref). Shows ACL, ordering config, dependency graph.
 - `info` accepts `site/channel` ref. Adds TypeScript generation (`--typescript`). Lighter dependency summary.
 
-Use `get --json` for full schema introspection. Use `info --typescript` for codegen.
+Use `get --json` for full schema introspection. Use `info --typescript` for one channel's type, `channels types` for the whole site's typings (cloud code opts in with `"types": ["nimbu-js-sdk/cloud"]`). Write it as a `.ts` file, not `.d.ts`: `skipLibCheck` skips `.d.ts` files and hides broken imports. Optional fields are typed `T | null` (the API nullifies blanks).
 
 ## Entry Commands
 
@@ -209,8 +210,11 @@ nimbu channels create name=Testimonials slug=testimonials title_field=author \
 # Delete a whole channel definition (requires --force)
 nimbu channels delete --channel testimonials --force
 
-# Generate TypeScript interface from a remote site
+# Generate a TypeScript type for one channel from a remote site
 nimbu channels info --channel staging/blog --typescript
+
+# Generate the typings module for all channels (cloud code)
+nimbu channels types --output code/types/nimbu-channels.ts
 
 # Diff channel config between environments
 nimbu channels diff --from staging/blog --to production/blog --json
