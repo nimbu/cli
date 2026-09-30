@@ -359,3 +359,72 @@ func TestModuleStrictChannelsOnlyWhenRequested(t *testing.T) {
 		t.Fatalf("strict module lacks NimbuCloudOptions:\n%s", got)
 	}
 }
+
+// serverFieldTypes mirrors CustomFields::Field::FIELD_TYPES in the Nimbu app
+// (lib/custom_fields/field.rb), which validates a field's type on save.
+var serverFieldTypes = []string{
+	"belongs_to_many", "belongs_to", "boolean", "calculated", "customer",
+	"date_time", "date", "email", "file", "float", "gallery", "geo", "integer",
+	"json", "multi_select", "select", "string", "text", "time",
+}
+
+func TestServerFieldTypesAreMapped(t *testing.T) {
+	r := newRenderer(nil)
+	for _, typ := range serverFieldTypes {
+		if got := r.fieldType(api.CustomField{Type: typ}); got == "any" {
+			t.Errorf("server field type %q falls back to any", typ)
+		}
+	}
+}
+
+// Every server field type, required and optional: the API nullifies blank
+// values, so only required fields and booleans are non-null.
+func TestMemberTypeMatrix(t *testing.T) {
+	selectOptions := []api.SelectOption{{Name: "a"}, {Name: "b"}}
+	tests := []struct {
+		field    api.CustomField
+		required string
+		optional string
+	}{
+		{api.CustomField{Type: "string"}, "string", "string | null"},
+		{api.CustomField{Type: "text"}, "string", "string | null"},
+		{api.CustomField{Type: "email"}, "string", "string | null"},
+		{api.CustomField{Type: "integer"}, "number", "number | null"},
+		{api.CustomField{Type: "float"}, "number", "number | null"},
+		{api.CustomField{Type: "boolean"}, "boolean", "boolean"},
+		{api.CustomField{Type: "calculated", CalculationType: "float"}, "number", "number | null"},
+		{api.CustomField{Type: "date"}, "ISODate", "ISODate | null"},
+		{api.CustomField{Type: "date_time"}, "DateTime", "DateTime | null"},
+		{api.CustomField{Type: "time"}, "DateTime | ISODate", "DateTime | ISODate | null"},
+		{api.CustomField{Type: "select", SelectOptions: selectOptions}, "Select<'a' | 'b'>", "Select<'a' | 'b'> | null"},
+		{api.CustomField{Type: "multi_select", SelectOptions: selectOptions}, "MultiSelect<'a' | 'b'>", "MultiSelect<'a' | 'b'> | null"},
+		{api.CustomField{Type: "belongs_to", Reference: "authors"}, "ReferenceTo<Authors>", "ReferenceTo<Authors> | null"},
+		{api.CustomField{Type: "belongs_to_many", Reference: "authors"}, "ReferenceMany<Authors>", "ReferenceMany<Authors> | null"},
+		{api.CustomField{Type: "customer"}, "JSONField | string", "JSONField | string | null"},
+		{api.CustomField{Type: "file"}, "NimbuFile", "NimbuFile | null"},
+		{api.CustomField{Type: "gallery"}, "NimbuGallery", "NimbuGallery | null"},
+		{api.CustomField{Type: "json"}, "JSONField", "JSONField | null"},
+		{api.CustomField{Type: "geo", GeoType: "Point"}, "JSONField", "JSONField | null"},
+	}
+
+	covered := map[string]bool{}
+	for _, tt := range tests {
+		covered[tt.field.Type] = true
+		t.Run(tt.field.Type, func(t *testing.T) {
+			r := newRenderer([]api.ChannelDetail{{Slug: "authors"}})
+			required := tt.field
+			required.Required = true
+			if got := r.memberType(required); got != tt.required {
+				t.Errorf("required: memberType() = %q, want %q", got, tt.required)
+			}
+			if got := r.memberType(tt.field); got != tt.optional {
+				t.Errorf("optional: memberType() = %q, want %q", got, tt.optional)
+			}
+		})
+	}
+	for _, typ := range serverFieldTypes {
+		if !covered[typ] {
+			t.Errorf("server field type %q is missing from the matrix", typ)
+		}
+	}
+}
