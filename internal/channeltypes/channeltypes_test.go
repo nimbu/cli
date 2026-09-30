@@ -344,7 +344,8 @@ func assertGolden(t *testing.T, name, got string) {
 	if err != nil {
 		t.Fatalf("read golden %s (run go test ./internal/channeltypes -update): %v", path, err)
 	}
-	if got != string(want) {
+	// Windows checkouts turn the golden's line endings into CRLF.
+	if got != strings.ReplaceAll(string(want), "\r\n", "\n") {
 		t.Fatalf("golden mismatch for %s (run go test ./internal/channeltypes -update)\n--- got ---\n%s\n--- want ---\n%s", name, got, want)
 	}
 }
