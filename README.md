@@ -168,7 +168,8 @@ For richer document resources, inline updates stay intentionally shallow:
 - `pages create` / `pages update` accept `security_mechanism` (`none|humans|customers`) and `published`
 - Drafts: `--draft` on the surgical verbs, then `pages draft preview-url` / `publish` / `discard`; `nimbu server --draft <page>` for local preview
 - `menus get --menu <slug> --json` returns the full nested menu tree (recovers via `?nested=1` when needed)
-- `menus update --file` reconciles nested menu trees with explicit tombstones; inline `name`/`handle` updates are shallow (no items rewrite)
+- `menus update --file` replaces the nested item tree: items are kept by `id`, others get explicit tombstones, and the write stops before any PATCH if the server omits item ids; inline `name`/`handle` updates are shallow (no items rewrite)
+- Menu items need a `kind` (`url` with `target_url`, `page` with `target_fullpath`, or `channel`); an empty `kind` is inferred from the target and any other value fails locally
 - `channels get --channel <slug> --json` returns the richer channel contract, including schema/customizations and ACL-oriented fields
 
 Examples:

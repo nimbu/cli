@@ -233,3 +233,17 @@ func writeMenuFile(t *testing.T, body string) string {
 	}
 	return path
 }
+
+func TestMenusCreateRejectsInvalidKindBeforeAnyRequest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("unexpected %s %s: invalid kind must fail locally", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+
+	file := writeMenuFile(t, `{"name":"Main","items":[{"name":"Home","kind":"foo","url":"/"}]}`)
+	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	err := (&MenusCreateCmd{File: file}).Run(ctx, &RootFlags{Site: "demo"})
+	if err == nil || !strings.Contains(err.Error(), "items[0].kind") {
+		t.Fatalf("expected item path in kind error, got %v", err)
+	}
+}

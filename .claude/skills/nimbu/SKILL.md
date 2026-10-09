@@ -342,7 +342,8 @@ A 409 `draft_base_changed` means the live page moved after the draft was based o
 
 - **Identifier**: slug/handle
 - `menus get --menu <slug> --json` returns full nested tree (recovers via `?nested=1` when needed)
-- `menus update --file` reconciles nested trees with explicit tombstones; inline `name`/`handle` is shallow
+- `menus update --file` replaces the item tree: items kept by `id`, others tombstoned; stops before writing if the server omits item ids. Inline `name`/`handle` is shallow
+- Each menu item needs `kind`: `url` (`target_url`/`url`), `page` (`target_fullpath`) or `channel`; inferred from the target when empty, other values fail locally
 - `menus update` inline: `name`, `handle`, or a complete top-level `translations` object — other deep edits need `--file`
 
 ### Channels

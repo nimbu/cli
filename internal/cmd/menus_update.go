@@ -67,7 +67,9 @@ func (c *MenusUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		}
 		body = api.MenuDocument(rawBody)
 		submitted = api.MenuStats(body)
-		api.NormalizeMenuDocumentForWrite(body)
+		if err := prepareMenuWriteDocument(body); err != nil {
+			return err
+		}
 		fullDocument = true
 		if bodySlug := api.MenuDocumentSlug(body); bodySlug != "" {
 			slug = bodySlug
@@ -76,7 +78,13 @@ func (c *MenusUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if err != nil {
 			return fmt.Errorf("read current menu before reconciliation: %w", err)
 		}
-		api.ReconcileMenuDocument(current, body)
+		if err := api.ReconcileMenuDocument(current, body); err != nil {
+			return newHintedError(
+				fmt.Errorf("cannot replace items of menu %q: %w; no changes were written", slug, err),
+				errorValidationFailed, ExitValidation,
+				"without item ids the old items cannot be removed, so a write would duplicate them; upgrade the Nimbu API or rebuild the menu under a new slug with `nimbu menus create --file`",
+			)
+		}
 	}
 
 	menu, err := api.PatchMenuDocument(ctx, client, slug, body, opts...)

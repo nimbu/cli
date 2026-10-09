@@ -45,7 +45,9 @@ func (c *MenusCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	body := api.MenuDocument(rawBody)
 	submitted := api.MenuStats(body)
-	api.NormalizeMenuDocumentForWrite(body)
+	if err := prepareMenuWriteDocument(body); err != nil {
+		return err
+	}
 
 	var opts []api.RequestOption
 	if c.Locale != "" {

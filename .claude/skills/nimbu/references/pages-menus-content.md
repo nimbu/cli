@@ -364,7 +364,7 @@ Inline assignments only accept:
 
 Shallow inline updates PATCH **only those fields** (no `items`, no `replace=1`), so renaming a menu cannot flatten the tree.
 
-Editing menu items requires `--file` or stdin with the full document. The body is normalized before write: `target_page` is stripped recursively and aliases filled (`title`→`name`, `url`→`target_url`).
+Editing menu items requires `--file` or stdin with the full document. The body is normalized before write: `target_page` is stripped recursively, aliases filled (`title`→`name`, `url`→`target_url`), and an empty `kind` inferred (`target_fullpath`→`page`, `target_url`→`url`).
 
 ### create / update with a nested tree
 
@@ -388,9 +388,9 @@ nimbu menus update --menu main --file tree.json
   "name": "Main",
   "handle": "main",
   "items": [
-    { "name": "Home", "url": "/", "position": 0 },
+    { "name": "Home", "kind": "url", "url": "/", "position": 0 },
     {
-      "name": "Products", "url": "/products", "position": 1,
+      "name": "Products", "kind": "page", "target_fullpath": "products", "position": 1,
       "children": [
         { "name": "Wine",  "url": "/products/wine",  "position": 0 },
         { "name": "Boxes", "url": "/products/boxes", "position": 1 }
@@ -401,9 +401,19 @@ nimbu menus update --menu main --file tree.json
 ```
 
 - Nest via `children[]` on a parent item; a child may itself carry `children[]`.
-- Item label/URL: API fields are `name` and `target_url`. The CLI also accepts `title`/`url` on write and copies them into `name`/`target_url`.
-- Set `position` on each item to control sort order — without it the server may fall back to ordering by `name`.
-- `menus update --file` reconciles the desired tree client-side and sends explicit tombstones for removed items; it does not use the server's recursive `replace=1` mode.
+- Item label: `name` (the CLI also accepts `title`).
+- Every item needs a `kind`. Fields per kind:
+
+| kind | target field | notes |
+|------|--------------|-------|
+| `url` | `target_url` (alias `url`) | `/contact`, `#visie`, `https://…` |
+| `page` | `target_fullpath` | page fullpath, e.g. `about/team` |
+| `channel` | set in the Nimbu admin | keep `kind` and `id` from `menus get` to preserve these items |
+
+- An empty `kind` is inferred: `target_fullpath` → `page`, `target_url`/`url` → `url`. Any other value fails locally with the item path (`items[1].children[0].kind`) and nothing is sent.
+- Set `position` on each item to control sort order — without it the server may fall back to ordering by `name`. `menus update --file` sets it from array order.
+- `menus update --file` replaces the whole item tree: it reads the current menu, keeps items whose `id` is in the file, sends `_destroy` for every other existing item, and creates items without an `id`. To edit in place, start from `menus get --menu <slug> --json` and keep the ids. It does not use the server's recursive `replace=1` mode.
+- If the server returns menu items without an `id`, `menus update --file` stops before writing (no PATCH): the old items could not be removed and would be duplicated.
 - The CLI verifies item count, hierarchy, ordering, and labels after the write. A changed tree is a hard failure.
 
 ### copy

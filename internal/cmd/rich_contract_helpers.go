@@ -62,3 +62,14 @@ func verifyMenuNesting(ctx context.Context, client *api.Client, submitted api.Me
 		returned.ItemCount, submitted.ItemCount, returned.MaxDepth, submitted.MaxDepth,
 	)
 }
+
+// prepareMenuWriteDocument normalizes a --file menu body and rejects an
+// invalid item kind before any request is made.
+func prepareMenuWriteDocument(doc api.MenuDocument) error {
+	api.NormalizeMenuDocumentForWrite(doc)
+	if err := api.ValidateMenuDocumentForWrite(doc); err != nil {
+		return newHintedError(err, errorValidationFailed, ExitValidation,
+			"set kind to url (target_url), page (target_fullpath) or channel; see --help")
+	}
+	return nil
+}

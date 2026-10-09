@@ -81,8 +81,8 @@ func TestMenusUpdateFromFilePreservesNestingWithReplace(t *testing.T) {
 	if _, ok := home["target_page"]; ok {
 		t.Fatalf("expected target_page stripped, got %#v", home)
 	}
-	if home["name"] != "Home" || home["target_url"] != "/" {
-		t.Fatalf("expected aliases filled on update body, got %#v", home)
+	if home["name"] != "Home" || home["target_url"] != "/" || home["kind"] != "url" {
+		t.Fatalf("expected aliases and kind filled on update body, got %#v", home)
 	}
 	shop := items[1].(map[string]any)
 	children := shop["children"].([]any)
@@ -111,5 +111,48 @@ func TestMenusUpdateRejectsDeepInlineAssignments(t *testing.T) {
 	err := cmd.Run(ctx, &RootFlags{Site: "demo"})
 	if err == nil || !strings.Contains(err.Error(), "requires --file or stdin") {
 		t.Fatalf("expected shallow validator error, got %v", err)
+	}
+}
+
+func TestMenusUpdateFromFileStopsWhenServerOmitsItemIDs(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		const menu = `{
+			"id":"m1","slug":"main","handle":"main","name":"Main",
+			"items":[{"name":"Visie","kind":"url","target_url":"#visie","children":[]}]
+		}`
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/menus/main":
+			_, _ = w.Write([]byte(menu))
+		case r.Method == http.MethodGet && r.URL.Path == "/menus":
+			_, _ = w.Write([]byte("[" + menu + "]"))
+		default:
+			t.Errorf("unexpected %s %s: menu must not be written", r.Method, r.URL.Path)
+			http.Error(w, "unexpected", http.StatusTeapot)
+		}
+	}))
+	defer srv.Close()
+
+	file := writeMenuFile(t, `{"items":[{"name":"Visie","url":"#visie"}]}`)
+	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	err := (&MenusUpdateCmd{Menu: "main", File: file}).Run(ctx, &RootFlags{Site: "demo"})
+	if err == nil || !strings.Contains(err.Error(), "item ids") || !strings.Contains(err.Error(), "no changes were written") {
+		t.Fatalf("expected missing item ids error, got %v", err)
+	}
+}
+
+func TestMenusUpdateRejectsInvalidKindBeforeAnyRequest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("unexpected %s %s: invalid kind must fail locally", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+
+	file := writeMenuFile(t, `{"items":[
+		{"name":"Home","url":"/"},
+		{"name":"Shop","kind":"page","target_fullpath":"shop","children":[{"name":"Wine","kind":"foo"}]}
+	]}`)
+	ctx, _, _ := newContractTestContext(t, srv.URL, output.Mode{JSON: true})
+	err := (&MenusUpdateCmd{Menu: "main", File: file}).Run(ctx, &RootFlags{Site: "demo"})
+	if err == nil || !strings.Contains(err.Error(), "items[1].children[0].kind") {
+		t.Fatalf("expected item path in kind error, got %v", err)
 	}
 }

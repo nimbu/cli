@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -284,7 +286,9 @@ func TestReconcileMenuDocumentAppendsTombstonesDeterministically(t *testing.T) {
 	}}
 	desired := MenuDocument{"items": []any{}}
 
-	ReconcileMenuDocument(current, desired)
+	if err := ReconcileMenuDocument(current, desired); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
 
 	items := desired["items"].([]any)
 	got := make([]string, 0, len(items))
@@ -294,6 +298,100 @@ func TestReconcileMenuDocumentAppendsTombstonesDeterministically(t *testing.T) {
 	want := []string{"a", "m", "z"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("tombstone order = %v, want %v", got, want)
+	}
+}
+
+func TestReconcileMenuDocumentRefusesCurrentItemsWithoutIDs(t *testing.T) {
+	// Servers that omit menu item ids leave nothing to tombstone; a PATCH
+	// would append the desired tree next to the old one.
+	current := MenuDocument{"items": []any{
+		map[string]any{"id": "a", "name": "Home", "children": []any{
+			map[string]any{"name": "Visie"},
+		}},
+	}}
+	desired := MenuDocument{"items": []any{map[string]any{"name": "Home"}}}
+
+	err := ReconcileMenuDocument(current, desired)
+	if !errors.Is(err, ErrMenuItemIDsMissing) {
+		t.Fatalf("expected ErrMenuItemIDsMissing, got %v", err)
+	}
+	if items := desired["items"].([]any); len(items) != 1 {
+		t.Fatalf("expected desired tree untouched, got %#v", items)
+	}
+}
+
+func TestReconcileMenuDocumentAllowsEmptyCurrentMenu(t *testing.T) {
+	desired := MenuDocument{"items": []any{map[string]any{"name": "Home"}}}
+	if err := ReconcileMenuDocument(MenuDocument{"items": []any{}}, desired); err != nil {
+		t.Fatalf("expected empty current menu to reconcile, got %v", err)
+	}
+	if err := ReconcileMenuDocument(MenuDocument{}, desired); err != nil {
+		t.Fatalf("expected menu without items to reconcile, got %v", err)
+	}
+}
+
+func TestNormalizeMenuDocumentForWriteInfersKind(t *testing.T) {
+	doc := MenuDocument{"items": []any{
+		map[string]any{"name": "Visie", "url": "#visie"},
+		map[string]any{"name": "About", "target_fullpath": "about"},
+		// Server reads echo a resolved target_url for page items too.
+		map[string]any{"name": "Team", "target_url": "/team", "target_fullpath": "team"},
+		map[string]any{"name": "News", "kind": "channel", "target_url": "/news"},
+		map[string]any{"name": "Folder", "children": []any{
+			map[string]any{"name": "Wine", "target_url": "/wine"},
+		}},
+	}}
+
+	NormalizeMenuDocumentForWrite(doc)
+
+	items := doc["items"].([]any)
+	wantKinds := []any{"url", "page", "page", "channel", nil}
+	for i, want := range wantKinds {
+		if got := items[i].(map[string]any)["kind"]; got != want {
+			t.Fatalf("items[%d].kind = %#v, want %#v", i, got, want)
+		}
+	}
+	child := items[4].(map[string]any)["children"].([]any)[0].(map[string]any)
+	if child["kind"] != "url" {
+		t.Fatalf("expected child kind inferred, got %#v", child["kind"])
+	}
+}
+
+func TestValidateMenuDocumentForWriteRejectsUnknownKind(t *testing.T) {
+	doc := MenuDocument{"items": []any{
+		map[string]any{"name": "Home", "kind": "url", "target_url": "/"},
+		map[string]any{"name": "Shop", "kind": "page", "children": []any{
+			map[string]any{"name": "Wine", "kind": "foo"},
+		}},
+	}}
+	err := ValidateMenuDocumentForWrite(doc)
+	if err == nil {
+		t.Fatal("expected invalid kind error")
+	}
+	for _, want := range []string{"items[1].children[0].kind", `"foo"`, "url, page, channel"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected %q in error, got %q", want, err.Error())
+		}
+	}
+
+	doc = MenuDocument{"items": []any{map[string]any{"name": "Home", "kind": 3, "url": "/"}}}
+	NormalizeMenuDocumentForWrite(doc)
+	if err := ValidateMenuDocumentForWrite(doc); err == nil || !strings.Contains(err.Error(), "items[0].kind") {
+		t.Fatalf("expected non-string kind rejected, got %v", err)
+	}
+}
+
+func TestValidateMenuDocumentForWriteAcceptsKnownKinds(t *testing.T) {
+	doc := MenuDocument{"items": []any{
+		map[string]any{"name": "Home", "kind": "url"},
+		map[string]any{"name": "Shop", "kind": "page", "children": []any{
+			map[string]any{"name": "News", "kind": "channel"},
+			map[string]any{"name": "Folder"},
+		}},
+		map[string]any{"id": "old", "_destroy": true},
+	}}
+	if err := ValidateMenuDocumentForWrite(doc); err != nil {
+		t.Fatalf("expected valid document, got %v", err)
 	}
 }
 
