@@ -215,6 +215,8 @@ nimbu jobs run --job=myJob --site=... --wait retry:=true  # invoke a job and fol
 
 Job names are unique per site. `jobs run --wait` resolves the owning app from the server-side registry, so it works from any directory without `nimbu.yml` or an app flag.
 
+`--wait` follows the run's logs and exits when it ends: exit 0 after `Job '<name>' completed successfully`, exit 1 (`job.failed`) when the run logs `Runtime Error: …` or any other ERROR line. Add `--wait-timeout=10m` to bound the wait (`job.wait_timeout`); Ctrl-C stops following and exits 0 while the job keeps running. Limits, because logs carry no run id: a `response.error()` that logs nothing still counts as success, and another run of the same job that overlaps yours can end the wait early or add its errors to your result. Brief network or 5xx errors while following are retried with backoff.
+
 For the full CLI surface (auth, sites, channel introspection, deployment flags) see the companion `nimbu` skill — especially `nimbu channels fields list --channel <slug> --json` to pull the exact field schema before writing code against a channel.
 
 ## Testing

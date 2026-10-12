@@ -14,14 +14,21 @@ import (
 
 // JobsRunCmd schedules a cloud job.
 type JobsRunCmd struct {
-	Job         string   `help:"Job identifier"`
-	File        string   `help:"Read job params JSON from file (use - for stdin)"`
-	Wait        bool     `help:"After scheduling, tail the job's cloud-code logs until interrupted"`
-	Assignments []string `arg:"" optional:"" help:"Inline assignments (e.g. foo=bar, retry:=true)"`
+	Job         string        `help:"Job identifier"`
+	File        string        `help:"Read job params JSON from file (use - for stdin)"`
+	Wait        bool          `help:"After scheduling, tail the job's logs until the run ends; exit non-zero if it logs an error (overlapping runs of the same job can't be told apart)"`
+	WaitTimeout time.Duration `help:"With --wait, give up after this long (e.g. 10m); 0 waits until the run finishes"`
+	Assignments []string      `arg:"" optional:"" help:"Inline assignments (e.g. foo=bar, retry:=true)"`
 }
 
 // Run executes the run command.
 func (c *JobsRunCmd) Run(ctx context.Context, flags *RootFlags) error {
+	if c.WaitTimeout != 0 && !c.Wait {
+		return newDetailedError(errors.New("--wait-timeout requires --wait"), errorUsageInvalid, ExitUsage, nil)
+	}
+	if c.WaitTimeout < 0 {
+		return newDetailedError(errors.New("--wait-timeout must not be negative"), errorUsageInvalid, ExitUsage, nil)
+	}
 	if err := requireWrite(flags, "execute job"); err != nil {
 		return err
 	}
@@ -90,7 +97,7 @@ func (c *JobsRunCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if c.Wait {
-		return c.waitForLogs(ctx, client, appKey, job, scheduledAt)
+		return c.waitForJob(ctx, client, site, appKey, job, scheduledAt)
 	}
 	return nil
 }
@@ -107,14 +114,4 @@ func (c *JobsRunCmd) resolveJobAndAssignments() (string, []string, error) {
 		return "", nil, fmt.Errorf("job name required: nimbu jobs run --job <job> [assignments]")
 	}
 	return job, c.Assignments, nil
-}
-
-// waitForLogs tails the job's cloud-code logs from the moment it was scheduled.
-func (c *JobsRunCmd) waitForLogs(ctx context.Context, client *api.Client, appKey, job string, scheduledAt time.Time) error {
-	logsCmd := &AppsLogsCmd{}
-	return logsCmd.tail(ctx, client, appKey, api.AppLogOptions{
-		Since: formatAppLogEpoch(scheduledAt.Add(-time.Second)),
-		Job:   job,
-		Limit: appsLogsDefaultLimit,
-	})
 }
