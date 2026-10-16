@@ -14,14 +14,43 @@ func Plain(ctx context.Context, values ...any) error {
 	return WritePlain(w.Out, values...)
 }
 
-// WritePlain writes values as tab-separated line.
+// WritePlain writes values as one tab-separated line.
+//
+// Escaping scheme (so every record stays exactly one line with a fixed number
+// of fields): a backslash becomes `\\`, a tab `\t`, a line feed `\n` and a
+// carriage return `\r`. Nothing else is escaped. Decode by replacing those
+// four two-character sequences, scanning left to right.
+//
+// nil values and nil pointers render as an empty field; other pointers are
+// dereferenced so a *string prints its text rather than an address.
 func WritePlain(w io.Writer, values ...any) error {
 	strs := make([]string, len(values))
 	for i, v := range values {
-		strs[i] = fmt.Sprint(v)
+		strs[i] = EscapeTSV(plainString(v))
 	}
 	_, err := fmt.Fprintln(w, strings.Join(strs, "\t"))
 	return err
+}
+
+var tsvEscaper = strings.NewReplacer("\\", "\\\\", "\t", "\\t", "\n", "\\n", "\r", "\\r")
+
+// EscapeTSV escapes one --plain field; see WritePlain for the scheme.
+func EscapeTSV(value string) string {
+	return tsvEscaper.Replace(value)
+}
+
+func plainString(v any) string {
+	if v == nil {
+		return ""
+	}
+	rv := reflect.ValueOf(v)
+	for rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return ""
+		}
+		rv = rv.Elem()
+	}
+	return fmt.Sprint(rv.Interface())
 }
 
 // PlainRows writes multiple rows as TSV.

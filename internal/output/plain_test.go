@@ -141,3 +141,29 @@ func TestPlainFromSliceLeavesMissingDynamicMapFieldsBlank(t *testing.T) {
 		t.Fatalf("output = %q", got)
 	}
 }
+
+func TestWritePlainEscapesFieldSeparators(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WritePlain(&buf, "a\tb", "line1\nline2\r", `C:\path`, "plain"); err != nil {
+		t.Fatal(err)
+	}
+	want := `a\tb` + "\t" + `line1\nline2\r` + "\t" + `C:\\path` + "\t" + "plain\n"
+	if got := buf.String(); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if fields := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\t"); len(fields) != 4 {
+		t.Fatalf("expected 4 fields on one line, got %d", len(fields))
+	}
+}
+
+func TestWritePlainRendersNilAndPointers(t *testing.T) {
+	var buf bytes.Buffer
+	name := "Widget"
+	var missing *string
+	if err := WritePlain(&buf, nil, missing, &name, 3); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := buf.String(), "\t\tWidget\t3\n"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

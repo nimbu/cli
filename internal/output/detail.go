@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"text/tabwriter"
+	"strings"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Field represents one row in a detail view.
@@ -44,19 +46,31 @@ func Detail(ctx context.Context, jsonData any, plainValues []any, fields []Field
 
 // WriteDetail writes fields as aligned "Label:  Value" pairs.
 // Fields created with F() are skipped when their value is the zero value.
+// Labels are padded by display width, and continuation lines of multi-line
+// values are indented under the value column.
 func WriteDetail(w io.Writer, fields []Field) error {
-	tw := tabwriter.NewWriter(w, 0, 0, 1, ' ', 0)
-
+	visible := make([]Field, 0, len(fields))
+	labelWidth := 0
 	for _, f := range fields {
 		if !f.always && isZero(f.Value) {
 			continue
 		}
-		if _, err := fmt.Fprintf(tw, "%s:\t%v\n", f.Label, f.Value); err != nil {
-			return err
+		visible = append(visible, f)
+		if lw := ansi.StringWidth(f.Label) + 1; lw > labelWidth {
+			labelWidth = lw
 		}
 	}
 
-	return tw.Flush()
+	indent := strings.Repeat(" ", labelWidth+1)
+	for _, f := range visible {
+		label := f.Label + ":"
+		pad := strings.Repeat(" ", labelWidth-ansi.StringWidth(label)+1)
+		value := strings.ReplaceAll(fmt.Sprint(f.Value), "\n", "\n"+indent)
+		if _, err := fmt.Fprintln(w, strings.TrimRight(label+pad+value, " ")); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func isZero(v any) bool {
