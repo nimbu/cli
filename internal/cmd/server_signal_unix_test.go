@@ -399,3 +399,80 @@ func TestHandleServerSuspendSignal(t *testing.T) {
 		t.Fatalf("calls = %q, want %q", got, want)
 	}
 }
+
+// A failure (here: readiness timeout) stops the child in the background too,
+// so Ctrl-C still forces the stop instead of waiting out the grace period of
+// a child that ignores the interrupt. Run keeps returning the failure.
+func TestServerRunInterruptForcesStopAfterReadinessFailure(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/user":
+			_, _ = w.Write([]byte(`{"id":"user-1"}`))
+		case "/sites/demo":
+			_, _ = w.Write([]byte(`{"id":"site-1","subdomain":"demo"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer apiServer.Close()
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "templates"), 0o755); err != nil {
+		t.Fatalf("mkdir templates: %v", err)
+	}
+	pidPath := filepath.Join(root, "child-pid")
+	interruptedPath := filepath.Join(root, "child-interrupted")
+
+	t.Setenv("NIMBU_TOKEN", "test-token")
+	t.Setenv("NIMBU_SERVER_SIGNAL_HELPER", "1")
+	t.Setenv("NIMBU_SERVER_SIGNAL_IGNORE_INT", "1")
+	t.Setenv("NIMBU_SERVER_SIGNAL_READY_ADDR", reserveTCPAddr(t))
+	t.Setenv("NIMBU_SERVER_SIGNAL_PID_PATH", pidPath)
+	t.Setenv("NIMBU_SERVER_SIGNAL_INTERRUPTED_PATH", interruptedPath)
+
+	flags := &RootFlags{APIURL: apiServer.URL, Site: "demo", Timeout: 2 * time.Second}
+	ctx := newServerSignalTestContext(flags)
+	cmd := &ServerCmd{
+		Arg:       []string{"-test.run=^TestServerSignalChildHelperProcess$"},
+		CMD:       os.Args[0],
+		NoWatch:   true,
+		ProxyHost: "127.0.0.1",
+		ProxyPort: reserveTCPPort(t),
+		// Nothing listens here, so readiness times out.
+		ReadyTimeout: 500 * time.Millisecond,
+		ReadyURL:     "http://" + reserveTCPAddr(t) + "/ready",
+		TemplateRoot: root,
+	}
+
+	guard := make(chan os.Signal, 4)
+	signal.Notify(guard, os.Interrupt)
+	defer signal.Stop(guard)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- cmd.Run(ctx, flags)
+	}()
+	t.Cleanup(func() { cleanupServerSignalChild(pidPath) })
+
+	// The child sees the graceful interrupt once the failure cleanup began.
+	if !waitForServerSignalFile(interruptedPath, 5*time.Second) {
+		t.Fatal("failure cleanup never interrupted the child")
+	}
+	forcedAt := time.Now()
+	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+		t.Fatalf("send SIGINT: %v", err)
+	}
+
+	select {
+	case err := <-errCh:
+		if err == nil || !strings.Contains(err.Error(), "readiness timeout") {
+			t.Fatalf("run error = %v, want the readiness timeout", err)
+		}
+		if elapsed := time.Since(forcedAt); elapsed > 3*time.Second {
+			t.Fatalf("forced stop took %s", elapsed)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("SIGINT during failure cleanup did not force the stop")
+	}
+}

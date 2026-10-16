@@ -192,6 +192,14 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		_ = child.Stop(5 * time.Second)
 		stopDevProxy(proxy)
 	}}
+	// failErr is the error Run returns once a failure-driven stop finished.
+	var failErr error
+	// fail stops in the background, like a stop request, so Ctrl-C can still
+	// force the stop while the child gets its grace period.
+	fail := func(err error) {
+		failErr = err
+		stop.Begin(shortcutListener)
+	}
 	// requestStop handles Ctrl-C, SIGTERM/SIGHUP and 'q'. The first request
 	// stops gracefully in the background; a second one forces the stop.
 	requestStop := func(signalName string) error {
@@ -206,6 +214,10 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if closeErr := shortcutListener.Close(); closeErr != nil {
 			_, _ = fmt.Fprintf(streams.err, "warning: restore shortcut input: %s\n", closeErr)
 		}
+		if failErr != nil {
+			// Forced while cleaning up after a failure: the cause matters more.
+			return failErr
+		}
 		return errServerForceStopped
 	}
 
@@ -216,6 +228,9 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 				return err
 			}
 		case <-stop.Done():
+			if failErr != nil {
+				return failErr
+			}
 			presenter.PrintGoodbye()
 			return nil
 		case err, ok := <-readyCh:
@@ -224,8 +239,8 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 				continue
 			}
 			if err != nil {
-				_ = child.Stop(5 * time.Second)
-				return err
+				fail(err)
+				continue
 			}
 			shortcutReady = true
 			childExitCh = child.ExitCh()
@@ -269,18 +284,17 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 			if err == nil || stop.Stopping() {
 				continue
 			}
-			_ = child.Stop(5 * time.Second)
-			return fmt.Errorf("proxy server crashed: %w", err)
+			fail(fmt.Errorf("proxy server crashed: %w", err))
 		case err, ok := <-childExitCh:
 			childExitCh = nil
 			if stop.Stopping() {
 				continue
 			}
-			stopDevProxy(proxy)
 			if ok && err != nil {
-				return fmt.Errorf("child dev server exited: %w", err)
+				fail(fmt.Errorf("child dev server exited: %w", err))
+				continue
 			}
-			return fmt.Errorf("child dev server exited")
+			fail(fmt.Errorf("child dev server exited"))
 		}
 	}
 }

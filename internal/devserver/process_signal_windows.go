@@ -5,6 +5,7 @@ package devserver
 import (
 	"os/exec"
 	"strconv"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -14,8 +15,35 @@ import (
 // childGroup holds the job object that owns the child's process tree. Node
 // dev servers commonly spawn a grandchild that holds the port; killing only
 // the direct child would leave it running.
+//
+// mu guards job: the wait goroutine closes it when the child exits while
+// Stop or Kill may be terminating it, and a closed handle value can be
+// reused by an unrelated object.
 type childGroup struct {
-	job windows.Handle
+	mu       sync.Mutex
+	job      windows.Handle
+	released bool
+}
+
+// terminate kills every process in the job. It reports true when nothing is
+// left to kill: the job was terminated, or it was already released because
+// the child exited (closing it reaped the rest). It reports false when there
+// is no job or the call failed, so the caller falls back to taskkill.
+func (g *childGroup) terminate() bool {
+	if g == nil {
+		return false
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.released {
+		// The child exited; its PID may already belong to another process,
+		// so a taskkill by PID must not run.
+		return true
+	}
+	if g.job == 0 {
+		return false
+	}
+	return windows.TerminateJobObject(g.job, 1) == nil
 }
 
 // configureChildProcess starts the child in its own console process group so
@@ -65,10 +93,18 @@ func attachChildGroup(cmd *exec.Cmd) *childGroup {
 	return group
 }
 
-// releaseChildGroup closes the job handle. KILL_ON_JOB_CLOSE then reaps any
-// descendant that outlived the child, so nothing keeps holding the port.
+// releaseChildGroup runs once the child exited. It closes the job handle, and
+// KILL_ON_JOB_CLOSE then reaps any descendant that outlived the child, so
+// nothing keeps holding the port. It also marks the group released so a late
+// killChild does not taskkill a PID that may have been reused.
 func releaseChildGroup(group *childGroup) {
-	if group == nil || group.job == 0 {
+	if group == nil {
+		return
+	}
+	group.mu.Lock()
+	defer group.mu.Unlock()
+	group.released = true
+	if group.job == 0 {
 		return
 	}
 	_ = windows.CloseHandle(group.job)
@@ -90,10 +126,8 @@ func killChild(cmd *exec.Cmd, group *childGroup) error {
 	if cmd == nil || cmd.Process == nil {
 		return nil
 	}
-	if group != nil && group.job != 0 {
-		if err := windows.TerminateJobObject(group.job, 1); err == nil {
-			return nil
-		}
+	if group.terminate() {
+		return nil
 	}
 	taskkill := exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(cmd.Process.Pid))
 	if err := taskkill.Run(); err == nil {

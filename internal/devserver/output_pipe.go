@@ -67,7 +67,11 @@ func (o *childOutput) abort() {
 }
 
 // drain waits for the copies to reach EOF, up to timeout, then closes the
-// read ends so a writer that is still alive cannot block shutdown.
+// read ends so a writer that is still alive cannot block shutdown. It waits
+// at most timeout once more for the copies to notice: closing does not
+// interrupt a blocked read on Windows (synchronous pipe handles), and a copy
+// can be stuck writing to a stopped terminal. A copy that is still stuck
+// then is abandoned rather than holding up the child's exit.
 func (o *childOutput) drain(timeout time.Duration) {
 	done := make(chan struct{})
 	go func() {
@@ -78,10 +82,20 @@ func (o *childOutput) drain(timeout time.Duration) {
 	defer timer.Stop()
 	select {
 	case <-done:
+		o.closeReaders()
+		return
 	case <-timer.C:
 	}
+	o.closeReaders()
+	timer.Reset(timeout)
+	select {
+	case <-done:
+	case <-timer.C:
+	}
+}
+
+func (o *childOutput) closeReaders() {
 	for _, r := range o.readers {
 		_ = r.Close()
 	}
-	<-done
 }
