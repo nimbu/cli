@@ -1,0 +1,40 @@
+Usage: nimbu channels entries update --channel=STRING --entry=STRING [<assignments> ...] [flags]
+
+Update entry
+
+Arguments:
+  [<assignments> ...]    Inline assignments (e.g. title=Hello,
+                         fields.teaser=Text)
+
+Flags:
+      --channel=STRING    Channel ID or slug
+      --entry=STRING      Entry ID or slug
+      --locale=STRING     Content locale for localized field writes. Reads are
+                          per-locale (one GET per locale; the API returns no
+                          translations map for entries). Non-localized fields
+                          ignore --locale.
+      --file=STRING       Read entry JSON from file (use - for stdin)
+
+Global Flags:
+  -h, --help              Show context-sensitive help.
+      --env=STRING        Named project environment (overrides site and API URL)
+      --site=STRING       Site ID or subdomain, else nimbu.yml site
+                          ($NIMBU_SITE)
+      --json              Output JSON to stdout ($NIMBU_JSON)
+      --plain             Output stable TSV to stdout ($NIMBU_PLAIN)
+      --verbose           Enable verbose logging
+      --debug             Enable debug logging (HTTP traces)
+      --version           Print version and exit
+
+Examples:
+  # Change one field
+  nimbu channels entries update --channel blog --entry welcome title=Welcome
+
+  # Typed values use :=
+  nimbu channels entries update --channel blog --entry welcome published:=true
+
+  # Update the English translation from stdin
+  echo '{"title":"Welcome"}' | nimbu channels entries update \
+    --channel blog --entry welcome --locale en --file -
+
+Run "nimbu channels entries update --help-all" for all flags.

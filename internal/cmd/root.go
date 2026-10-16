@@ -80,46 +80,46 @@ type CLI struct {
 
 	HelpAll             bool                   `help:"Show all flags including hidden" name:"help-all" hidden:""`
 	Version             kong.VersionFlag       `help:"Print version and exit"`
-	Auth                AuthCmd                `cmd:"" help:"Authentication and credentials"`
-	Init                InitCmd                `cmd:"" help:"Bootstrap a local theme project"`
-	Sites               SitesCmd               `cmd:"" help:"Manage sites"`
-	Schema              SchemaCmd              `cmd:"" help:"Manage declarative schemas"`
-	Release             ReleaseCmd             `cmd:"" help:"Release schema, cloud code and theme"`
-	Releases            ReleasesCmd            `cmd:"" help:"List successful releases"`
-	Channels            ChannelsCmd            `cmd:"" help:"Manage channels and entries"`
-	Pages               PagesCmd               `cmd:"" help:"Manage pages"`
-	Menus               MenusCmd               `cmd:"" help:"Manage navigation menus"`
-	Products            ProductsCmd            `cmd:"" help:"Manage products"`
-	ShippingRates       ShippingRatesCmd       `cmd:"" name:"shipping-rates" help:"Manage shipping rates"`
-	Collections         CollectionsCmd         `cmd:"" help:"Manage collections"`
-	Coupons             CouponsCmd             `cmd:"" help:"Manage coupons"`
-	Domains             DomainsCmd             `cmd:"" help:"Manage custom domains"`
-	Orders              OrdersCmd              `cmd:"" help:"Manage orders"`
-	Customers           CustomersCmd           `cmd:"" help:"Manage customers"`
-	Mails               MailsCmd               `cmd:"" aliases:"mail" help:"Sync notification templates to local files"`
-	Announcements       AnnouncementsCmd       `cmd:"" help:"Manage platform announcements"`
-	DomainRegistrations DomainRegistrationsCmd `cmd:"" name:"domain-registrations" help:"Manage domain registrations"`
-	Settings            SettingsCmd            `cmd:"" help:"Manage site settings"`
-	Events              EventsCmd              `cmd:"" help:"Track and ingest events"`
-	Realtime            RealtimeCmd            `cmd:"" help:"Realtime grants and live queries"`
-	Notifications       NotificationsCmd       `cmd:"" help:"Manage notifications"`
-	Roles               RolesCmd               `cmd:"" help:"Manage roles"`
-	Redirects           RedirectsCmd           `cmd:"" help:"Manage redirects"`
-	Functions           FunctionsCmd           `cmd:"" help:"Execute cloud functions"`
-	Jobs                JobsCmd                `cmd:"" help:"Execute cloud jobs"`
-	Apps                AppsCmd                `cmd:"" help:"Manage OAuth apps"`
-	Senders             SendersCmd             `cmd:"" help:"Manage email sender domains"`
-	Themes              ThemesCmd              `cmd:"" help:"Manage themes"`
-	Uploads             UploadsCmd             `cmd:"" help:"Manage uploads"`
-	Blogs               BlogsCmd               `cmd:"" help:"Manage blogs"`
-	Webhooks            WebhooksCmd            `cmd:"" help:"Manage webhooks"`
-	Translations        TranslationsCmd        `cmd:"" help:"Manage translations"`
-	Server              ServerCmd              `cmd:"" help:"Run local simulator proxy with child dev server"`
-	Env                 EnvCmd                 `cmd:"" help:"Manage project environments"`
-	Config              ConfigCmd              `cmd:"" help:"Manage configuration"`
-	API                 APICmd                 `cmd:"" help:"Raw API access"`
-	Commands            CommandsCmd            `cmd:"" help:"Export the machine-readable command contract"`
-	Completion          CompletionCmd          `cmd:"" help:"Generate shell completions"`
+	Auth                AuthCmd                `cmd:"" help:"Authentication and credentials" section:"start"`
+	Init                InitCmd                `cmd:"" help:"Bootstrap a local theme project" section:"start"`
+	Sites               SitesCmd               `cmd:"" help:"Manage sites" section:"start"`
+	Schema              SchemaCmd              `cmd:"" help:"Manage declarative schemas" section:"code"`
+	Release             ReleaseCmd             `cmd:"" help:"Release schema, cloud code and theme" section:"code"`
+	Releases            ReleasesCmd            `cmd:"" help:"List successful releases" section:"code"`
+	Channels            ChannelsCmd            `cmd:"" help:"Manage channels and entries" section:"content"`
+	Pages               PagesCmd               `cmd:"" help:"Manage pages" section:"content"`
+	Menus               MenusCmd               `cmd:"" help:"Manage navigation menus" section:"content"`
+	Products            ProductsCmd            `cmd:"" help:"Manage products" section:"commerce"`
+	ShippingRates       ShippingRatesCmd       `cmd:"" name:"shipping-rates" help:"Manage shipping rates" section:"commerce"`
+	Collections         CollectionsCmd         `cmd:"" help:"Manage collections" section:"commerce"`
+	Coupons             CouponsCmd             `cmd:"" help:"Manage coupons" section:"commerce"`
+	Domains             DomainsCmd             `cmd:"" help:"Manage custom domains" section:"admin"`
+	Orders              OrdersCmd              `cmd:"" help:"Manage orders" section:"commerce"`
+	Customers           CustomersCmd           `cmd:"" help:"Manage customers" section:"commerce"`
+	Mails               MailsCmd               `cmd:"" aliases:"mail" help:"Sync notification templates to local files" section:"content"`
+	Announcements       AnnouncementsCmd       `cmd:"" help:"Manage platform announcements" section:"admin"`
+	DomainRegistrations DomainRegistrationsCmd `cmd:"" name:"domain-registrations" help:"Manage domain registrations" section:"admin"`
+	Settings            SettingsCmd            `cmd:"" help:"Manage site settings" section:"admin"`
+	Events              EventsCmd              `cmd:"" help:"Track and ingest events" section:"admin"`
+	Realtime            RealtimeCmd            `cmd:"" help:"Realtime grants and live queries" section:"admin"`
+	Notifications       NotificationsCmd       `cmd:"" help:"Manage notifications" section:"content"`
+	Roles               RolesCmd               `cmd:"" help:"Manage roles" section:"admin"`
+	Redirects           RedirectsCmd           `cmd:"" help:"Manage redirects" section:"admin"`
+	Functions           FunctionsCmd           `cmd:"" help:"Execute cloud functions" section:"code"`
+	Jobs                JobsCmd                `cmd:"" help:"Execute cloud jobs" section:"code"`
+	Apps                AppsCmd                `cmd:"" help:"Manage OAuth apps" section:"code"`
+	Senders             SendersCmd             `cmd:"" help:"Manage email sender domains" section:"admin"`
+	Themes              ThemesCmd              `cmd:"" help:"Manage themes" section:"code"`
+	Uploads             UploadsCmd             `cmd:"" help:"Manage uploads" section:"content"`
+	Blogs               BlogsCmd               `cmd:"" help:"Manage blogs" section:"content"`
+	Webhooks            WebhooksCmd            `cmd:"" help:"Manage webhooks" section:"admin"`
+	Translations        TranslationsCmd        `cmd:"" help:"Manage translations" section:"content"`
+	Server              ServerCmd              `cmd:"" help:"Run local simulator proxy with child dev server" section:"start"`
+	Env                 EnvCmd                 `cmd:"" help:"Manage project environments" section:"start"`
+	Config              ConfigCmd              `cmd:"" help:"Manage configuration" section:"start"`
+	API                 APICmd                 `cmd:"" help:"Raw API access" section:"advanced"`
+	Commands            CommandsCmd            `cmd:"" help:"Export the machine-readable command contract" section:"advanced"`
+	Completion          CompletionCmd          `cmd:"" help:"Generate shell completions" section:"advanced"`
 	Complete            InternalCompleteCmd    `cmd:"" name:"__complete" hidden:""`
 }
 
@@ -168,6 +168,8 @@ func execute(args []string) (err error) {
 		return err
 	}
 	unsetEmptyFlagEnv(parser.Model)
+	// `nimbu help <cmd>` and bare command groups print help (exit 0).
+	args = rewriteHelpArgs(parser.Model, args)
 
 	defer func() {
 		if r := recover(); r != nil {

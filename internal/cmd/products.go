@@ -6,7 +6,7 @@ type ProductsCmd struct {
 	Get         ProductsGetCmd        `cmd:"" help:"Get product by ID or slug"`
 	Create      ProductsCreateCmd     `cmd:"" help:"Create a product"`
 	Update      ProductsUpdateCmd     `cmd:"" help:"Update a product"`
-	Delete      ProductsDeleteCmd     `cmd:"" help:"Delete a product"`
+	Delete      ProductsDeleteCmd     `cmd:"" help:"Delete a product (requires --force)"`
 	Count       ProductsCountCmd      `cmd:"" help:"Count products"`
 	Fields      ProductsFieldsCmd     `cmd:"" help:"Show product field schema"`
 	Config      ProductsConfigCmd     `cmd:"" help:"Copy or diff product customizations"`

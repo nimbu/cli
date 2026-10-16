@@ -4,22 +4,45 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/alecthomas/kong"
 )
 
-// CompletionCmd generates shell completions.
+// CompletionCmd generates shell completions. The shell is a positional
+// argument (`nimbu completion zsh`); --shell is kept for existing scripts.
 type CompletionCmd struct {
-	Shell string `help:"Shell to generate completions for (bash, zsh, fish)" default:"bash"`
+	ShellArg string `arg:"" optional:"" name:"shell" help:"Shell to generate completions for: bash, zsh or fish (default: bash)"`
+	Shell    string `help:"Same as the shell argument (kept for existing scripts)"`
+}
+
+// shell resolves the requested shell from the argument or --shell.
+func (c *CompletionCmd) shell() (string, error) {
+	arg := strings.ToLower(strings.TrimSpace(c.ShellArg))
+	flag := strings.ToLower(strings.TrimSpace(c.Shell))
+	switch {
+	case arg != "" && flag != "" && arg != flag:
+		return "", fmt.Errorf("conflicting shells: argument %q and --shell=%q", c.ShellArg, c.Shell)
+	case arg != "":
+		return arg, nil
+	case flag != "":
+		return flag, nil
+	default:
+		return "bash", nil
+	}
 }
 
 func (c *CompletionCmd) Run(ctx context.Context) error {
+	shell, err := c.shell()
+	if err != nil {
+		return &ExitError{Code: ExitUsage, Err: err}
+	}
 	parser, _, err := newParser()
 	if err != nil {
 		return fmt.Errorf("create parser: %w", err)
 	}
 
-	switch c.Shell {
+	switch shell {
 	case "bash":
 		return writeBashCompletion(parser)
 	case "zsh":
@@ -27,14 +50,14 @@ func (c *CompletionCmd) Run(ctx context.Context) error {
 	case "fish":
 		return writeFishCompletion(parser)
 	default:
-		return fmt.Errorf("unsupported shell: %s (supported: bash, zsh, fish)", c.Shell)
+		return &ExitError{Code: ExitUsage, Err: fmt.Errorf("unsupported shell: %s (supported: bash, zsh, fish)", shell)}
 	}
 }
 
 func writeBashCompletion(_ *kong.Kong) error {
 	_, _ = fmt.Fprintln(os.Stdout, `# Bash completion for nimbu
 # Add this to your ~/.bashrc:
-#   eval "$(nimbu completion --shell=bash)"
+#   eval "$(nimbu completion bash)"
 
 _nimbu_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
@@ -171,7 +194,7 @@ _nimbu_completions() {
                 COMPREPLY=($(compgen -W "--cmd --arg --cwd --ready-url --ready-timeout --proxy-host --proxy-port --template-root --no-watch --watch-scan-interval --max-body-mb --quiet-requests --events-json --debug" -- "${cur}"))
                 ;;
             completion)
-                COMPREPLY=($(compgen -W "--shell" -- "${cur}"))
+                COMPREPLY=($(compgen -W "bash zsh fish --shell" -- "${cur}"))
                 ;;
         esac
     elif [[ ${COMP_WORDS[1]} == "themes" && ${COMP_WORDS[3]} == "get" ]]; then
@@ -251,7 +274,7 @@ func writeZshCompletion(_ *kong.Kong) error {
 
 # Zsh completion for nimbu
 # Add this to your ~/.zshrc:
-#   eval "$(nimbu completion --shell=zsh)"
+#   eval "$(nimbu completion zsh)"
 
 _nimbu() {
     local -a commands
@@ -709,8 +732,8 @@ _nimbu() {
             ;;
         completion)
             local -a completion_commands
-            completion_commands=('--shell')
-            _describe -t shells 'shell option' completion_commands
+            completion_commands=('bash:Bash completions' 'zsh:Zsh completions' 'fish:Fish completions' '--shell:Shell flag (same as the argument)')
+            _describe -t shells 'shell' completion_commands
             ;;
     esac
 }
@@ -723,7 +746,7 @@ compdef _nimbu nb`)
 func writeFishCompletion(_ *kong.Kong) error {
 	_, _ = fmt.Fprintln(os.Stdout, `# Fish completion for nimbu
 # Add this to your ~/.config/fish/config.fish:
-#   nimbu completion --shell=fish | source
+#   nimbu completion fish | source
 
 function __fish_nimbu_dynamic_complete
     set -l current (commandline -ct)
@@ -870,6 +893,7 @@ complete -c nimbu -n "__fish_seen_subcommand_from config; and not __fish_seen_su
 complete -c nimbu -n "__fish_seen_subcommand_from config; and not __fish_seen_subcommand_from customers products settings apps; and not __fish_seen_subcommand_from list get set unset path banner" -a "banner" -d "Pick a banner theme interactively"
 
 # Completion shells
+complete -c nimbu -n "__fish_seen_subcommand_from completion" -a "bash zsh fish" -d "Shell"
 complete -c nimbu -n "__fish_seen_subcommand_from completion" -l shell -d "Shell to generate completions for"
 
 # Alias for nb

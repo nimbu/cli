@@ -15,7 +15,7 @@ type ChannelEntriesGalleryCmd struct {
 	Set     ChannelEntriesGallerySetCmd     `cmd:"" help:"Replace gallery images"`
 	Add     ChannelEntriesGalleryAddCmd     `cmd:"" help:"Append gallery images"`
 	Update  ChannelEntriesGalleryUpdateCmd  `cmd:"" help:"Update one gallery image"`
-	Remove  ChannelEntriesGalleryRemoveCmd  `cmd:"" help:"Remove gallery images"`
+	Remove  ChannelEntriesGalleryRemoveCmd  `cmd:"" help:"Remove gallery images (requires --force)"`
 	Reorder ChannelEntriesGalleryReorderCmd `cmd:"" help:"Reorder gallery images"`
 }
 

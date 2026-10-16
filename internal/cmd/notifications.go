@@ -8,7 +8,7 @@ type NotificationsCmd struct {
 	Push   NotificationsPushCmd   `cmd:"" help:"Upload notification templates"`
 	Create NotificationsCreateCmd `cmd:"" help:"Create notification from JSON"`
 	Update NotificationsUpdateCmd `cmd:"" help:"Update notification"`
-	Delete NotificationsDeleteCmd `cmd:"" help:"Delete notification"`
+	Delete NotificationsDeleteCmd `cmd:"" help:"Delete notification (requires --force)"`
 	Count  NotificationsCountCmd  `cmd:"" help:"Count notifications"`
 	Copy   NotificationsCopyCmd   `cmd:"" help:"Copy notifications between sites"`
 }

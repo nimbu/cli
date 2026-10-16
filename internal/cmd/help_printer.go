@@ -1,13 +1,16 @@
 package cmd
 
 import (
-	"bytes"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/alecthomas/kong"
 	"github.com/muesli/termenv"
+	"golang.org/x/term"
+
+	"github.com/nimbu/cli/internal/output"
 )
 
 // helpOptions returns Kong help configuration options.
@@ -17,149 +20,44 @@ func helpOptions() kong.HelpOptions {
 	}
 }
 
-// sectionHeaders recognized for colorization.
-var sectionHeaders = map[string]bool{
-	"Flags:":        true,
-	"Global Flags:": true,
-	"Commands:":     true,
-	"Arguments:":    true,
-	"Output:":       true,
-	"Agent/CI:":     true,
-	"Connection:":   true,
-	"Query:":        true,
-}
-
-// Color palette (matches gogcli/frontappcli).
+// Color palette (matches gogcli/frontappcli). Descriptions keep the
+// terminal's default foreground so help stays readable on light themes.
 const (
 	colorUsage   = "#60a5fa" // blue - Usage heading
-	colorSection = "#a78bfa" // purple - Flags, Commands, Arguments
+	colorSection = "#a78bfa" // purple - section titles
 	colorCommand = "#38bdf8" // cyan - command names
-	colorDim     = "#9ca3af" // gray - brackets, flags
-	colorDesc    = "#f8fafc" // near-white - command descriptions
+	colorDim     = "#9ca3af" // gray - flags, placeholders, example comments
 )
 
-// helpPrinter returns a custom HelpPrinter that colorizes output.
+// Help width bounds: prose wider than maxHelpWidth is hard to read.
+const (
+	defaultHelpWidth = 80
+	maxHelpWidth     = 100
+)
+
+// helpPrinter returns the HelpPrinter that renders nimbu's help from the
+// Kong model (sections, safety flags, examples) and colors it for stdout.
 func helpPrinter() kong.HelpPrinter {
 	return func(options kong.HelpOptions, ctx *kong.Context) error {
-		// Capture default help to buffer
-		var buf bytes.Buffer
-		origWriter := ctx.Stdout
-		ctx.Stdout = &buf
-
-		if err := kong.DefaultHelpPrinter(options, ctx); err != nil {
-			return err
-		}
-		ctx.Stdout = origWriter
-
-		raw := appendRootInlinePayloadFooter(buf.String())
-		raw = compactCommandsSection(raw)
-
-		// Suppress non-essential flag groups unless --help-all
-		showAll := helpAllRequested()
-		raw = suppressHelpGroups(raw, showAll)
-		raw = appendHelpAllFooter(raw, showAll)
-
-		// Colorize and write
-		output := colorizeHelp(raw)
-		_, err := io.WriteString(origWriter, output)
+		profile := helpColorProfile(ctx.Args, ctx.Stdout)
+		text := renderHelp(ctx, helpRenderOptions{
+			Summary: options.Summary && !ctx.Empty(),
+			ShowAll: helpAllRequested(ctx.Args),
+			Width:   helpWidth(ctx.Stdout),
+			Style:   newHelpStyle(profile),
+		})
+		_, err := io.WriteString(ctx.Stdout, text)
 		return err
 	}
 }
 
-func appendRootInlinePayloadFooter(text string) string {
-	if !strings.HasPrefix(text, "Usage: nimbu <command> [flags]") {
-		return text
-	}
-	if !strings.Contains(text, "\nCommands:\n") {
-		return text
-	}
-	if strings.Contains(text, "Create/Update supports inline payloads using:") {
-		return text
-	}
-
-	footer := "\nCreate/Update supports inline payloads using: key=value, key:=json, key=@file.txt or key:=@file.json\n"
-	if strings.HasSuffix(text, "\n") {
-		return text + footer
-	}
-	return text + "\n" + footer
-}
-
-func compactCommandsSection(text string) string {
-	type commandRow struct {
-		cmd  string
-		desc string
-	}
-
-	lines := strings.Split(text, "\n")
-	out := make([]string, 0, len(lines))
-
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		if line != "Commands:" {
-			out = append(out, line)
-			continue
+// helpAllRequested reports whether --help-all was passed. Help is printed
+// while Kong is still parsing, so the raw args are the only source.
+func helpAllRequested(args []string) bool {
+	for _, arg := range args {
+		if arg == "--" {
+			return false
 		}
-
-		out = append(out, line)
-		i++
-
-		rows := make([]commandRow, 0)
-		for i < len(lines) {
-			if lines[i] == "" {
-				i++
-				continue
-			}
-
-			if !strings.HasPrefix(lines[i], "  ") || strings.HasPrefix(lines[i], "    ") {
-				break
-			}
-
-			cmd := strings.TrimSpace(lines[i])
-			descParts := make([]string, 0, 1)
-			for i+1 < len(lines) && strings.HasPrefix(lines[i+1], "    ") {
-				descPart := strings.TrimSpace(lines[i+1])
-				if descPart != "" {
-					descParts = append(descParts, descPart)
-				}
-				i++
-			}
-
-			rows = append(rows, commandRow{cmd: cmd, desc: strings.Join(descParts, " ")})
-			i++
-		}
-
-		maxCmdLen := 0
-		for _, row := range rows {
-			if len(row.cmd) > maxCmdLen {
-				maxCmdLen = len(row.cmd)
-			}
-		}
-
-		for _, row := range rows {
-			if row.desc == "" {
-				out = append(out, "  "+row.cmd)
-				continue
-			}
-			leaderLen := maxCmdLen - len(row.cmd) + 2
-			if leaderLen < 2 {
-				leaderLen = 2
-			}
-			leader := strings.Repeat("·", leaderLen)
-			out = append(out, "  "+row.cmd+" "+leader+" "+row.desc)
-		}
-		if i < len(lines) && lines[i] != "" {
-			out = append(out, "")
-		}
-		i--
-	}
-
-	return strings.Join(out, "\n")
-}
-
-// helpAllRequested checks os.Args for --help-all before Kong parsing.
-// Same pre-parse pattern as helpColorMode.
-func helpAllRequested() bool {
-	for _, arg := range os.Args {
 		if arg == "--help-all" {
 			return true
 		}
@@ -167,384 +65,99 @@ func helpAllRequested() bool {
 	return false
 }
 
-// suppressedGroups are flag group headers hidden from default help.
-// The Query group is never suppressed (only appears on commands that embed QueryFlags).
-var suppressedGroups = map[string]bool{
-	"Output:":     true,
-	"Agent/CI:":   true,
-	"Connection:": true,
-}
-
-// globalFlagPrefixes identifies flags from RootFlags + CLI (not command-specific).
-var globalFlagPrefixes = []string{
-	"-h, --help",
-	"--site=",
-	"--json",
-	"--plain",
-	"--verbose",
-	"--debug",
-	"--version",
-	"--help-all",
-}
-
-func isGlobalFlag(line string) bool {
-	trimmed := strings.TrimLeft(line, " ")
-	for _, prefix := range globalFlagPrefixes {
-		if strings.HasPrefix(trimmed, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-// suppressHelpGroups removes non-essential flag groups from help output,
-// splits the "Flags:" section into "Flags:" (command-specific) and "Global Flags:",
-// and suppresses Output/Agent-CI/Connection groups unless showAll.
-func suppressHelpGroups(text string, showAll bool) string {
-	lines := strings.Split(text, "\n")
-	out := make([]string, 0, len(lines))
-	skip := false
-
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-
-		// Split the "Flags:" section into command flags + global flags
-		if line == "Flags:" {
-			skip = false
-
-			// Collect all flag lines in this section
-			flagLines := []string{}
-			i++
-			for i < len(lines) {
-				fl := lines[i]
-				// Empty line between flag groups within the section
-				if fl == "" {
-					flagLines = append(flagLines, fl)
-					i++
-					continue
-				}
-				// Non-indented non-empty line = new section
-				if !strings.HasPrefix(fl, " ") {
-					break
-				}
-				flagLines = append(flagLines, fl)
-				i++
-			}
-			i-- // back up for outer loop
-
-			// Separate global vs command flags
-			var cmdFlags, globalFlags []string
-			for _, fl := range flagLines {
-				if fl == "" {
-					continue // skip blank separators, we'll re-add them
-				}
-				if isGlobalFlag(fl) {
-					globalFlags = append(globalFlags, fl)
-				} else {
-					// Also collect continuation lines (deeply indented descriptions)
-					cmdFlags = append(cmdFlags, fl)
-				}
-			}
-
-			// Emit command-specific flags first (if any)
-			if len(cmdFlags) > 0 {
-				out = append(out, "Flags:")
-				out = append(out, cmdFlags...)
-				out = append(out, "")
-			}
-
-			// Emit global flags
-			out = append(out, "Global Flags:")
-			out = append(out, globalFlags...)
-			out = append(out, "")
-			continue
-		}
-
-		// Ensure blank line before section headers
-		if sectionHeaders[line] && len(out) > 0 && out[len(out)-1] != "" {
-			out = append(out, "")
-		}
-
-		// Check if this is a suppressed group header
-		if !showAll && suppressedGroups[line] {
-			skip = true
-			// Also remove the blank line before the group header
-			if len(out) > 0 && out[len(out)-1] == "" {
-				out = out[:len(out)-1]
-			}
-			continue
-		}
-
-		// End of a suppressed section: next non-indented, non-empty line
-		if skip {
-			if line == "" {
-				continue
-			}
-			if !strings.HasPrefix(line, " ") {
-				// New section — stop skipping
-				skip = false
-			} else {
-				continue
-			}
-		}
-
-		out = append(out, line)
-	}
-
-	return strings.Join(out, "\n")
-}
-
-// appendHelpAllFooter adds a hint about --help-all when groups are suppressed.
-func appendHelpAllFooter(text string, showAll bool) string {
-	if showAll {
-		return text
-	}
-
-	// Derive command from Usage: line
-	cmd := "nimbu"
-	for _, line := range strings.Split(text, "\n") {
-		if strings.HasPrefix(line, "Usage: ") {
-			usage := strings.TrimPrefix(line, "Usage: ")
-			// Strip trailing [flags], <args>, etc.
-			if idx := strings.Index(usage, " ["); idx > 0 {
-				usage = usage[:idx]
-			}
-			if idx := strings.Index(usage, " <"); idx > 0 {
-				usage = usage[:idx]
-			}
-			cmd = strings.TrimSpace(usage)
+// helpColorMode returns the --color mode for help output. Help is printed
+// before flags are applied, so --color is read from the raw args, then
+// NIMBU_COLOR. --json/--plain ask for machine output, so they turn color off
+// unless --color says otherwise.
+func helpColorMode(args []string) string {
+	for i, arg := range args {
+		if arg == "--" {
 			break
 		}
-	}
-
-	footer := "\nRun \"" + cmd + " --help-all\" for all flags.\n"
-
-	if strings.HasSuffix(text, "\n") {
-		return text + footer
-	}
-	return text + "\n" + footer
-}
-
-// helpColorMode determines color mode from CLI args and environment.
-// Called BEFORE Kong parsing since --color flag not yet available.
-func helpColorMode() string {
-	// Check NO_COLOR first (standard)
-	if os.Getenv("NO_COLOR") != "" {
-		return "never"
-	}
-
-	// Check NIMBU_COLOR env
-	if v := os.Getenv("NIMBU_COLOR"); v != "" {
-		return strings.ToLower(strings.TrimSpace(v))
-	}
-
-	// Check --color flag in args (pre-parse)
-	for i, arg := range os.Args {
-		if arg == "--color" && i+1 < len(os.Args) {
-			return strings.ToLower(strings.TrimSpace(os.Args[i+1]))
+		if arg == "--color" && i+1 < len(args) {
+			return strings.ToLower(strings.TrimSpace(args[i+1]))
 		}
-		if strings.HasPrefix(arg, "--color=") {
-			return strings.ToLower(strings.TrimSpace(strings.TrimPrefix(arg, "--color=")))
+		if value, ok := strings.CutPrefix(arg, "--color="); ok {
+			return strings.ToLower(strings.TrimSpace(value))
 		}
 	}
-
-	// Check --json/--plain (disable colors)
-	for _, arg := range os.Args {
+	if v := strings.TrimSpace(os.Getenv("NIMBU_COLOR")); v != "" {
+		return strings.ToLower(v)
+	}
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
 		if arg == "--json" || arg == "--plain" {
 			return "never"
 		}
 	}
-
 	return "auto"
 }
 
-// helpProfile returns termenv profile based on color mode.
-func helpProfile() termenv.Profile {
-	mode := helpColorMode()
-
-	switch mode {
-	case "never":
-		return termenv.Ascii
-	case "always":
-		return termenv.TrueColor
-	default: // "auto"
-		return termenv.EnvColorProfile()
-	}
+// helpColorProfile decides color for help through the shared output color
+// API: help is written to stdout, so the stdout TTY decides "auto".
+func helpColorProfile(args []string, stdout io.Writer) termenv.Profile {
+	w := &output.Writer{Out: stdout, Err: os.Stderr, Color: helpColorMode(args)}
+	return w.OutColorProfile()
 }
 
-// colorizeHelp applies colors to help text.
-func colorizeHelp(text string) string {
-	profile := helpProfile()
+// helpWidth is the wrap width: $COLUMNS, else the terminal width, else 80,
+// capped at maxHelpWidth.
+func helpWidth(w io.Writer) int {
+	width := 0
+	if cols, err := strconv.Atoi(strings.TrimSpace(os.Getenv("COLUMNS"))); err == nil && cols > 0 {
+		width = cols
+	} else if f, ok := w.(*os.File); ok {
+		if cols, _, err := term.GetSize(int(f.Fd())); err == nil && cols > 0 {
+			width = cols
+		}
+	}
+	if width <= 0 {
+		width = defaultHelpWidth
+	}
+	if width > maxHelpWidth {
+		width = maxHelpWidth
+	}
+	return width
+}
+
+// helpStyle colors the parts of rendered help. The plain style returns text
+// unchanged, so layout is computed on plain text and styled afterwards.
+type helpStyle struct {
+	usage   func(string) string
+	section func(string) string
+	command func(string) string
+	flag    func(string) string
+	comment func(string) string
+}
+
+func plainHelpStyle() helpStyle {
+	same := func(s string) string { return s }
+	return helpStyle{usage: same, section: same, command: same, flag: same, comment: same}
+}
+
+func newHelpStyle(profile termenv.Profile) helpStyle {
 	if profile == termenv.Ascii {
-		return text // No colors
+		return plainHelpStyle()
 	}
-
-	out := termenv.NewOutput(os.Stdout, termenv.WithProfile(profile))
-
-	// Style functions
-	heading := func(s string) string {
-		return out.String(s).Foreground(out.Color(colorUsage)).Bold().String()
-	}
-	section := func(s string) string {
-		return out.String(s).Foreground(out.Color(colorSection)).Bold().String()
-	}
-	cmdStyle := func(s string) string {
-		return out.String(s).Foreground(out.Color(colorCommand)).Bold().String()
-	}
-	descStyle := func(s string) string {
-		return out.String(s).Foreground(out.Color(colorDesc)).String()
-	}
-	dim := func(s string) string {
-		return out.String(s).Foreground(out.Color(colorDim)).String()
-	}
-
-	lines := strings.Split(text, "\n")
-	inCommands := false
-
-	for i, line := range lines {
-		if line == "" {
-			inCommands = false
-		}
-
-		// Usage: line
-		if strings.HasPrefix(line, "Usage:") {
-			lines[i] = heading("Usage:") + strings.TrimPrefix(line, "Usage:")
-			continue
-		}
-
-		// Section headers
-		if sectionHeaders[line] {
-			lines[i] = section(line)
-			if line == "Commands:" {
-				inCommands = true
+	color := func(hex string, bold bool) func(string) string {
+		return func(s string) string {
+			if s == "" {
+				return s
 			}
-			continue
-		}
-
-		// Command lines (2-space indent, command name)
-		if inCommands && strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") {
-			trimmed := strings.TrimPrefix(line, "  ")
-			if trimmed != "" {
-				if idx := strings.Index(trimmed, " ·"); idx > 0 {
-					cmdPart := styleCmdPart(trimmed[:idx], cmdStyle, dim)
-					rest := strings.TrimSpace(trimmed[idx+1:])
-					leader := rest
-					desc := ""
-					if sp := strings.Index(rest, " "); sp > 0 {
-						leader = rest[:sp]
-						desc = strings.TrimSpace(rest[sp+1:])
-					}
-
-					if desc != "" {
-						lines[i] = "  " + cmdPart + " " + dim(leader) + " " + descStyle(desc)
-					} else {
-						lines[i] = "  " + cmdPart + " " + dim(leader)
-					}
-					continue
-				}
-
-				// Split command from description
-				parts := strings.SplitN(trimmed, "  ", 2)
-				cmdPart := parts[0]
-
-				// Style command name, dim brackets/flags
-				cmdPart = styleCmdPart(cmdPart, cmdStyle, dim)
-
-				if len(parts) > 1 {
-					rest := strings.TrimSpace(parts[1])
-					leader := ""
-					desc := ""
-					if sp := strings.Index(rest, " "); sp > 0 {
-						leader = rest[:sp]
-						desc = strings.TrimSpace(rest[sp+1:])
-					} else {
-						desc = rest
-					}
-
-					if leader != "" {
-						lines[i] = "  " + cmdPart + "  " + dim(leader) + " " + descStyle(desc)
-					} else {
-						lines[i] = "  " + cmdPart + "  " + descStyle(desc)
-					}
-				} else {
-					lines[i] = "  " + cmdPart
-				}
+			styled := profile.String(s).Foreground(profile.Color(hex))
+			if bold {
+				styled = styled.Bold()
 			}
-			continue
-		}
-
-		// Command description continuation (4-space indent)
-		if inCommands && strings.HasPrefix(line, "    ") {
-			// Keep description as-is
-			continue
-		}
-
-		// Flag lines - dim the flag part
-		if strings.HasPrefix(line, "  -") || strings.HasPrefix(line, "      --") {
-			lines[i] = colorizeFlag(line, dim)
-			continue
+			return styled.String()
 		}
 	}
-
-	return strings.Join(lines, "\n")
-}
-
-// styleCmdPart styles command part with brackets dimmed.
-func styleCmdPart(cmdPart string, cmdStyle, dim func(string) string) string {
-	// Handle patterns like "auth login [flags]" or "channels entries <channel>"
-	var result strings.Builder
-	words := strings.Fields(cmdPart)
-
-	for j, word := range words {
-		if j > 0 {
-			result.WriteString(" ")
-		}
-
-		if strings.HasPrefix(word, "[") || strings.HasPrefix(word, "<") {
-			// Dim brackets and their contents
-			result.WriteString(dim(word))
-		} else {
-			// Bold command words
-			result.WriteString(cmdStyle(word))
-		}
+	return helpStyle{
+		usage:   color(colorUsage, true),
+		section: color(colorSection, true),
+		command: color(colorCommand, true),
+		flag:    color(colorDim, false),
+		comment: color(colorDim, false),
 	}
-
-	return result.String()
-}
-
-// colorizeFlag dims the flag definition part.
-func colorizeFlag(line string, dim func(string) string) string {
-	// Find where description starts (after double-space separator)
-	// Examples: "  -h, --help      Show help"
-	//           "      --site=STRING   Site ID"
-
-	// Look for pattern: flag part followed by 2+ spaces then description
-	// We want to dim the flag part and keep description normal
-
-	// Find first non-space after leading indent
-	trimmed := strings.TrimLeft(line, " ")
-	indent := len(line) - len(trimmed)
-
-	// Find the double-space separator between flag and description
-	// Skip the flag definition (which may contain single spaces)
-	parts := strings.SplitN(trimmed, "  ", 2)
-	if len(parts) < 2 {
-		// No description found, dim entire line
-		return dim(line)
-	}
-
-	flagPart := strings.Repeat(" ", indent) + parts[0]
-	descPart := strings.TrimLeft(parts[1], " ")
-
-	if descPart == "" {
-		return dim(line)
-	}
-
-	// Calculate spacing between flag and description
-	spacing := len(line) - len(flagPart) - len(descPart)
-	if spacing < 2 {
-		spacing = 2
-	}
-
-	return dim(flagPart) + strings.Repeat(" ", spacing) + descPart
 }

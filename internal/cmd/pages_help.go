@@ -76,3 +76,19 @@ The bare array form is the same list without the wrapper:
   [{"op":"set","path":"title","value":"About"}]
 `
 }
+
+func (c *PagesGetCmd) helpExamples() []helpExample {
+	return []helpExample{
+		{About: "Show a page", Command: "nimbu pages get --page about"},
+		{About: "One line per editable, with paths for pages set --path", Command: "nimbu pages get --page about --outline"},
+		{About: "Compact JSON of the draft in English", Command: "nimbu pages get --page about --draft --compact --locale en --json"},
+	}
+}
+
+func (c *PagesUpdateCmd) helpExamples() []helpExample {
+	return []helpExample{
+		{About: "Rename a page", Command: "nimbu pages update --page about title=\"About us\""},
+		{About: "Publish a page", Command: "nimbu pages update --page about published:=true"},
+		{About: "Preview the PATCH body built from a file", Command: "nimbu pages update --page about --file page.json --dry-run"},
+	}
+}

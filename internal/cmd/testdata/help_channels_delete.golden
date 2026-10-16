@@ -1,0 +1,22 @@
+Usage: nimbu channels delete --channel=STRING
+
+Delete a channel (requires --force)
+
+Flags:
+      --channel=STRING    Channel ID or slug
+
+Safety:
+      --force             Skip confirmations for destructive operations
+
+Global Flags:
+  -h, --help              Show context-sensitive help.
+      --env=STRING        Named project environment (overrides site and API URL)
+      --site=STRING       Site ID or subdomain, else nimbu.yml site
+                          ($NIMBU_SITE)
+      --json              Output JSON to stdout ($NIMBU_JSON)
+      --plain             Output stable TSV to stdout ($NIMBU_PLAIN)
+      --verbose           Enable verbose logging
+      --debug             Enable debug logging (HTTP traces)
+      --version           Print version and exit
+
+Run "nimbu channels delete --help-all" for all flags.

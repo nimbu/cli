@@ -6,7 +6,7 @@ type TranslationsCmd struct {
 	Get    TranslationsGetCmd    `cmd:"" help:"Get translation by key"`
 	Create TranslationsCreateCmd `cmd:"" help:"Create a translation"`
 	Update TranslationsUpdateCmd `cmd:"" help:"Update a translation"`
-	Delete TranslationsDeleteCmd `cmd:"" help:"Delete a translation"`
+	Delete TranslationsDeleteCmd `cmd:"" help:"Delete a translation (requires --force)"`
 	Count  TranslationsCountCmd  `cmd:"" help:"Count translations"`
 	Copy   TranslationsCopyCmd   `cmd:"" help:"Copy translations between sites"`
 }

@@ -7,7 +7,7 @@ type ThemesCmd struct {
 	CDNRoot   ThemesCDNRootCmd  `cmd:"" name:"cdn-root" help:"Print the resolved theme CDN root"`
 	Pull      ThemePullCmd      `cmd:"" help:"Download managed remote theme files"`
 	Diff      ThemeDiffCmd      `cmd:"" help:"Compare remote liquid theme files to local files"`
-	Copy      ThemeCopyCmd      `cmd:"" help:"Copy a theme between sites/themes"`
+	Copy      ThemeCopyCmd      `cmd:"" help:"Copy a theme between sites/themes (--force overrides conflicts)"`
 	Push      ThemePushCmd      `cmd:"" help:"Upload managed local theme files"`
 	Sync      ThemeSyncCmd      `cmd:"" help:"Upload and reconcile managed local theme files"`
 	Layouts   ThemeLayoutsCmd   `cmd:"" help:"Manage layouts"`
