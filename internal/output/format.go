@@ -107,18 +107,6 @@ func (w *Writer) ErrIsTTY() bool {
 	return false
 }
 
-// UseColor returns true if color output should be used.
-func (w *Writer) UseColor() bool {
-	switch w.Color {
-	case "always":
-		return true
-	case "never":
-		return false
-	default: // "auto"
-		return w.IsTTY()
-	}
-}
-
 type writerCtxKey struct{}
 
 // WithWriter adds writer to context.
