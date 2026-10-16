@@ -9,25 +9,29 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 	"golang.org/x/term"
 )
 
-var brailleSpinner = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+// spinnerDelay is how long work must run before a live spinner appears, so
+// near-instant stages do not flash one on screen.
+const spinnerDelay = 150 * time.Millisecond
 
 // CopyTimeline renders a rolling timeline of copy stages to stderr.
 // It satisfies migrate.CopyObserver via structural typing.
 type CopyTimeline struct {
 	mu       sync.Mutex
 	writer   io.Writer
-	termOut  *termenv.Output
-	useColor bool
+	theme    Theme
+	glyphs   Glyphs
 	animated bool
 	dryRun   bool
 	started  time.Time
 	frame    int
 	active   *activeStage
 	lines    int // lines used by active stage display (for clearing)
+
+	// spinnerDelay holds back the live display until a stage has run this long.
+	spinnerDelay time.Duration
 
 	terminalWidth   int
 	pendingWarnings map[string][]string
@@ -62,22 +66,12 @@ func NewCopyTimeline(ctx context.Context, dryRun bool) *CopyTimeline {
 		out = w.Out
 	}
 
-	profile := termenv.Ascii
-	useColor := w.Color == "always" || (w.Color != "never" && w.ErrIsTTY())
-	if useColor {
-		switch w.Color {
-		case "always":
-			profile = termenv.TrueColor
-		default:
-			profile = termenv.EnvColorProfile()
-		}
-	}
-
 	tl := &CopyTimeline{
 		writer:          out,
-		termOut:         termenv.NewOutput(out, termenv.WithProfile(profile)),
-		useColor:        useColor,
-		animated:        w.ErrIsTTY() && !w.NoSpin,
+		theme:           w.ErrTheme(),
+		glyphs:          w.Glyphs(),
+		animated:        w.ErrAnimated(),
+		spinnerDelay:    spinnerDelay,
 		dryRun:          dryRun,
 		started:         time.Now(),
 		pendingWarnings: map[string][]string{},
@@ -97,20 +91,11 @@ func (tl *CopyTimeline) Header(from, to string) {
 	tl.mu.Lock()
 	defer tl.mu.Unlock()
 
-	corner := "┌"
-	var text string
+	text := fmt.Sprintf("Copying %s %s %s", from, tl.glyphs.Arrow, to)
 	if tl.dryRun {
-		text = fmt.Sprintf("[dry-run] Copying %s → %s", from, to)
-	} else {
-		text = fmt.Sprintf("Copying %s → %s", from, to)
+		text = "[dry-run] " + text
 	}
-
-	if tl.useColor {
-		corner = tl.colorDim(corner)
-		text = tl.colorBright(text)
-	}
-
-	tl.writeLine(corner + " " + text)
+	tl.writeLine(tl.colorDim(tl.glyphs.Top) + " " + tl.colorBright(text))
 }
 
 // StageStart begins a new active stage with a spinner.
@@ -162,11 +147,7 @@ func (tl *CopyTimeline) StageDone(name, summary string) {
 
 	// Print connector + done marker
 	tl.writeLine(tl.renderRail())
-	marker := "◇"
-	if tl.useColor {
-		marker = tl.colorDone(marker)
-	}
-	line := marker + " " + tl.formatStageLine(name, summary)
+	line := tl.colorDone(tl.glyphs.Step) + " " + tl.formatStageLine(name, summary)
 	tl.writeLine(line)
 	tl.lastDoneStage = name
 	tl.flushStageWarningsLocked(name)
@@ -181,16 +162,11 @@ func (tl *CopyTimeline) StageSkip(name, reason string) {
 	tl.active = nil
 
 	tl.writeLine(tl.renderRail())
-	marker := "◇"
-	text := name + " — skipped"
+	text := name + " " + tl.glyphs.Dash + " skipped"
 	if reason != "" {
 		text += ": " + reason
 	}
-	if tl.useColor {
-		marker = tl.colorDim(marker)
-		text = tl.colorDim(text)
-	}
-	tl.writeLine(marker + " " + text)
+	tl.writeLine(tl.colorDim(tl.glyphs.Step) + " " + tl.colorDim(text))
 	tl.lastDoneStage = name
 	tl.flushStageWarningsLocked(name)
 }
@@ -212,11 +188,7 @@ func (tl *CopyTimeline) SubStageDone(stage, sub, summary string) {
 	if tl.animated {
 		tl.renderActiveLocked()
 	} else {
-		marker := "◦"
-		if tl.useColor {
-			marker = tl.colorDim(marker)
-		}
-		tl.writeLine(tl.renderRail() + "  " + marker + " " + tl.formatStageLine(sub, summary))
+		tl.writeLine(tl.renderRail() + "  " + tl.colorDim(tl.glyphs.SubStep) + " " + tl.formatStageLine(sub, summary))
 	}
 }
 
@@ -266,23 +238,13 @@ func (tl *CopyTimeline) Footer() {
 	tl.flushAllPendingWarningsLocked()
 	elapsed := formatElapsed(time.Since(tl.started))
 
-	corner := "└"
-	label := "Done!"
-	var text string
+	text := fmt.Sprintf("Done in %s", elapsed)
 	if tl.dryRun {
 		text = fmt.Sprintf("Dry run complete (%s)", elapsed)
-	} else {
-		text = fmt.Sprintf("Done in %s", elapsed)
-	}
-
-	if tl.useColor {
-		corner = tl.colorDim(corner)
-		label = tl.colorDone(label)
-		text = tl.colorDim(text)
 	}
 
 	tl.writeLine(tl.renderRail())
-	tl.writeLine(corner + " " + label + "  " + text)
+	tl.writeLine(tl.colorDim(tl.glyphs.Bottom) + " " + tl.colorDone("Done!") + "  " + tl.colorDim(text))
 	tl.writeLine("")
 }
 
@@ -303,17 +265,8 @@ func (tl *CopyTimeline) ErrorFooter(msg string) {
 	tl.clearActiveLocked()
 	tl.flushAllPendingWarningsLocked()
 
-	corner := "└"
-	label := "Error!"
-
-	if tl.useColor {
-		corner = tl.colorDim(corner)
-		label = tl.colorError(label)
-		msg = tl.colorDim(msg)
-	}
-
 	tl.writeLine(tl.renderRail())
-	tl.writeLine(corner + " " + label + "  " + msg)
+	tl.writeLine(tl.colorDim(tl.glyphs.Bottom) + " " + tl.colorError("Error!") + "  " + tl.colorDim(msg))
 	tl.writeLine("")
 }
 
@@ -374,18 +327,18 @@ func (tl *CopyTimeline) renderActiveLocked() {
 	if tl.active == nil || !tl.animated {
 		return
 	}
+	if tl.lines == 0 && time.Since(tl.active.started) < tl.spinnerDelay {
+		return
+	}
 
 	// Clear previous active lines
 	tl.eraseActiveLinesLocked()
 
 	// Build the active line: spinner + name + detail
-	spinner := brailleSpinner[tl.frame%len(brailleSpinner)]
+	spinner := tl.colorActive(tl.glyphs.Spinner[tl.frame%len(tl.glyphs.Spinner)])
 	tl.frame++
 
-	if tl.useColor {
-		spinner = tl.colorActive(spinner)
-	}
-
+	dash := tl.glyphs.Dash
 	stage := tl.active
 	var line string
 	if stage.activeSub != "" {
@@ -393,14 +346,14 @@ func (tl *CopyTimeline) renderActiveLocked() {
 		if stage.detail == "" || stage.detail == stage.activeSub {
 			line = fmt.Sprintf("%s %s", spinner, stage.activeSub)
 		} else if stage.total > 0 {
-			line = fmt.Sprintf("%s %s — %s (%d/%d)", spinner, stage.activeSub, stage.detail, stage.current, stage.total)
+			line = fmt.Sprintf("%s %s %s %s (%d/%d)", spinner, stage.activeSub, dash, stage.detail, stage.current, stage.total)
 		} else {
-			line = fmt.Sprintf("%s %s — %s", spinner, stage.activeSub, stage.detail)
+			line = fmt.Sprintf("%s %s %s %s", spinner, stage.activeSub, dash, stage.detail)
 		}
 	} else if stage.total > 0 {
-		line = fmt.Sprintf("%s %s — %s (%d/%d)", spinner, stage.name, stage.detail, stage.current, stage.total)
+		line = fmt.Sprintf("%s %s %s %s (%d/%d)", spinner, stage.name, dash, stage.detail, stage.current, stage.total)
 	} else if stage.detail != "" {
-		line = fmt.Sprintf("%s %s — %s", spinner, stage.name, stage.detail)
+		line = fmt.Sprintf("%s %s %s %s", spinner, stage.name, dash, stage.detail)
 	} else {
 		line = fmt.Sprintf("%s %s", spinner, stage.name)
 	}
@@ -411,11 +364,7 @@ func (tl *CopyTimeline) renderActiveLocked() {
 
 	// Write completed sub-items
 	for _, sub := range stage.subItems {
-		marker := "◦"
-		if tl.useColor {
-			marker = tl.colorDim(marker)
-		}
-		tl.writeActiveLineLocked(tl.renderRail() + "  " + marker + " " + tl.formatStageLine(sub.name, sub.summary))
+		tl.writeActiveLineLocked(tl.renderRail() + "  " + tl.colorDim(tl.glyphs.SubStep) + " " + tl.formatStageLine(sub.name, sub.summary))
 		n++
 	}
 
@@ -446,7 +395,7 @@ func (tl *CopyTimeline) fitActiveLine(line string) string {
 	if ansi.StringWidth(line) <= maxWidth {
 		return line
 	}
-	return ansi.Truncate(line, maxWidth, "…")
+	return ansi.Truncate(line, maxWidth, tl.glyphs.Ellipsis)
 }
 
 func (tl *CopyTimeline) clearActiveLocked() {
@@ -467,23 +416,13 @@ func (tl *CopyTimeline) eraseActiveLinesLocked() {
 
 func (tl *CopyTimeline) formatStageLine(name, summary string) string {
 	if summary == "" {
-		if tl.useColor {
-			return tl.colorBright(name)
-		}
-		return name
+		return tl.colorBright(name)
 	}
-	if tl.useColor {
-		return tl.colorBright(name) + " " + tl.colorDim("—") + " " + summary
-	}
-	return name + " — " + summary
+	return tl.colorBright(name) + " " + tl.colorDim(tl.glyphs.Dash) + " " + summary
 }
 
 func (tl *CopyTimeline) renderRail() string {
-	rail := "│"
-	if tl.useColor {
-		rail = tl.colorDim(rail)
-	}
-	return rail
+	return tl.colorDim(tl.glyphs.Rail)
 }
 
 func (tl *CopyTimeline) writeLine(line string) {
@@ -526,11 +465,7 @@ func (tl *CopyTimeline) flushAllPendingWarningsLocked() {
 }
 
 func (tl *CopyTimeline) writeWarningLocked(msg string) {
-	text := "⚠ " + msg
-	if tl.useColor {
-		text = tl.termOut.String(text).Foreground(tl.termOut.Color("#f59e0b")).String()
-	}
-	tl.writeLine(tl.renderRail() + "  " + text)
+	tl.writeLine(tl.renderRail() + "  " + tl.theme.WarningText(tl.glyphs.Warn+" "+msg))
 }
 
 func terminalWidth(w io.Writer) int {
@@ -545,32 +480,25 @@ func terminalWidth(w io.Writer) int {
 	return width
 }
 
-// Color helpers
+// Color helpers. Dry runs swap success/active accents for the warning color
+// so a rehearsal never looks like a real copy.
 
 func (tl *CopyTimeline) colorDone(s string) string {
-	color := "#22c55e" // green
 	if tl.dryRun {
-		color = "#f59e0b" // amber
+		return tl.theme.Warning(s)
 	}
-	return tl.termOut.String(s).Foreground(tl.termOut.Color(color)).Bold().String()
+	return tl.theme.Success(s)
 }
 
 func (tl *CopyTimeline) colorActive(s string) string {
-	color := "#60a5fa" // blue
 	if tl.dryRun {
-		color = "#f59e0b" // amber
+		return tl.theme.Warning(s)
 	}
-	return tl.termOut.String(s).Foreground(tl.termOut.Color(color)).Bold().String()
+	return tl.theme.Accent(s)
 }
 
-func (tl *CopyTimeline) colorError(s string) string {
-	return tl.termOut.String(s).Foreground(tl.termOut.Color("#ef4444")).Bold().String()
-}
+func (tl *CopyTimeline) colorError(s string) string { return tl.theme.Error(s) }
 
-func (tl *CopyTimeline) colorDim(s string) string {
-	return tl.termOut.String(s).Foreground(tl.termOut.Color("#94a3b8")).String()
-}
+func (tl *CopyTimeline) colorDim(s string) string { return tl.theme.Muted(s) }
 
-func (tl *CopyTimeline) colorBright(s string) string {
-	return tl.termOut.String(s).Foreground(tl.termOut.Color("#e2e8f0")).Bold().String()
-}
+func (tl *CopyTimeline) colorBright(s string) string { return tl.theme.Strong(s) }

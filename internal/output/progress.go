@@ -5,30 +5,42 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/muesli/termenv"
 )
 
 type progressCtxKey struct{}
 
-var spinnerFrames = []string{"-", "\\", "|", "/"}
+// clearLine returns the cursor to column 0 and erases the line.
+const clearLine = "\r\033[2K"
 
 // Progress renders lightweight human-only progress feedback on stderr.
+//
+// On an animated terminal the active task is redrawn in place on one line
+// every tick. The line only appears once a task has run for spinnerDelay, so
+// near-instant work never flashes a spinner. While a line is on screen an
+// interrupt handler is armed that erases it before the process dies, so
+// Ctrl-C never leaves a half-drawn line under the shell prompt.
 type Progress struct {
-	mu       sync.Mutex
-	writer   io.Writer
-	termOut  *termenv.Output
-	enabled  bool
-	animated bool
-	useColor bool
-	started  time.Time
-	frame    int
-	task     *Task
-	stopCh   chan struct{}
-	doneCh   chan struct{}
+	mu           sync.Mutex
+	writer       io.Writer
+	theme        Theme
+	glyphs       Glyphs
+	enabled      bool
+	animated     bool
+	spinnerDelay time.Duration
+	started      time.Time
+	frame        int
+	task         *Task
+	lineOpen     bool // an animated line is drawn without its trailing newline
+	interrupted  bool
+	armed        bool
+	interrupts   chan os.Signal
+	stopCh       chan struct{}
+	doneCh       chan struct{}
+	closeOnce    sync.Once
 }
 
 // Task represents one in-flight spinner, counter, or transfer.
@@ -63,26 +75,20 @@ func NewProgress(ctx context.Context) *Progress {
 	if out == nil {
 		out = writer.Out
 	}
+	return newProgress(out, writer.ErrTheme(), writer.Glyphs(), writer.ErrAnimated())
+}
 
-	profile := termenv.Ascii
-	useColor := writer.Color == "always" || (writer.Color != "never" && writer.ErrIsTTY())
-	if useColor {
-		switch writer.Color {
-		case "always":
-			profile = termenv.TrueColor
-		default:
-			profile = termenv.EnvColorProfile()
-		}
-	}
-
+func newProgress(out io.Writer, theme Theme, glyphs Glyphs, animated bool) *Progress {
 	p := &Progress{
-		writer:   out,
-		termOut:  termenv.NewOutput(out, termenv.WithProfile(profile)),
-		enabled:  true,
-		animated: writer.ErrIsTTY(),
-		useColor: useColor,
-		stopCh:   make(chan struct{}),
-		doneCh:   make(chan struct{}),
+		writer:       out,
+		theme:        theme,
+		glyphs:       glyphs,
+		enabled:      true,
+		animated:     animated,
+		spinnerDelay: spinnerDelay,
+		interrupts:   make(chan os.Signal, 1),
+		stopCh:       make(chan struct{}),
+		doneCh:       make(chan struct{}),
 	}
 	if p.animated {
 		go p.loop()
@@ -111,13 +117,17 @@ func ProgressFromContext(ctx context.Context) *Progress {
 	return &Progress{}
 }
 
-// Close stops background rendering and leaves stderr clean.
+// Close stops background rendering and leaves stderr clean: a task that was
+// never finished has its live line erased rather than reported as done.
+// Close is idempotent.
 func (p *Progress) Close() {
 	if p == nil || !p.animated {
 		return
 	}
-	close(p.stopCh)
-	<-p.doneCh
+	p.closeOnce.Do(func() {
+		close(p.stopCh)
+		<-p.doneCh
+	})
 }
 
 // Phase starts a spinner task.
@@ -171,37 +181,73 @@ func (p *Progress) loop() {
 			p.mu.Lock()
 			p.renderLocked(false)
 			p.mu.Unlock()
+		case sig := <-p.interrupts:
+			p.handleInterrupt(sig)
+			return
 		case <-p.stopCh:
 			p.mu.Lock()
-			if p.task != nil && !p.task.done {
-				p.task.done = true
-				if p.task.status == "" {
-					p.task.status = "done"
-				}
-			}
-			p.renderLocked(true)
+			p.eraseLineLocked()
 			p.mu.Unlock()
 			return
 		}
 	}
 }
 
+// handleInterrupt erases the live line, then re-delivers the signal with the
+// handler disarmed so the process still dies (or another handler still runs)
+// exactly as it would have without progress on screen.
+func (p *Progress) handleInterrupt(sig os.Signal) {
+	p.mu.Lock()
+	p.interrupted = true
+	p.eraseLineLocked()
+	p.mu.Unlock()
+	raiseInterrupt(sig)
+}
+
+// eraseLineLocked clears an open animated line and disarms the interrupt
+// handler.
+func (p *Progress) eraseLineLocked() {
+	if p.lineOpen {
+		_, _ = fmt.Fprint(p.writer, clearLine)
+	}
+	p.setLineOpenLocked(false)
+}
+
+func (p *Progress) setLineOpenLocked(open bool) {
+	p.lineOpen = open
+	switch {
+	case open && !p.armed && len(interruptSignals) > 0:
+		// Notify with no signals would subscribe to every signal, so an
+		// empty list (Windows) leaves the handler unarmed.
+		notifyInterrupt(p.interrupts, interruptSignals...)
+		p.armed = true
+	case !open && p.armed:
+		stopInterrupt(p.interrupts)
+		p.armed = false
+	}
+}
+
 func (p *Progress) renderLocked(final bool) {
-	if !p.enabled || p.task == nil {
+	if !p.enabled || p.interrupted || p.task == nil {
 		return
 	}
+	finished := final || p.task.done
 
-	line := p.renderLineLocked(final)
 	if p.animated {
-		_, _ = fmt.Fprintf(p.writer, "\r\033[2K%s", line)
-		if final || p.task.done {
+		if !finished && !p.lineOpen && time.Since(p.task.started) < p.spinnerDelay {
+			return
+		}
+		line := p.renderLineLocked(final)
+		_, _ = fmt.Fprint(p.writer, clearLine+line)
+		if finished {
 			_, _ = fmt.Fprint(p.writer, "\n")
 		}
+		p.setLineOpenLocked(!finished)
 		return
 	}
 
-	if final || p.task.done {
-		_, _ = fmt.Fprintln(p.writer, line)
+	if finished {
+		_, _ = fmt.Fprintln(p.writer, p.renderLineLocked(final))
 	}
 }
 
@@ -212,15 +258,18 @@ func (p *Progress) renderLineLocked(final bool) string {
 	}
 	elapsed := time.Since(task.started)
 
-	prefix := p.spinnerFrameLocked()
+	var prefix string
 	if final || task.done {
 		if task.status == "" {
 			task.status = "done"
 		}
-		prefix = task.status
-	}
-	if p.useColor {
-		prefix = p.termOut.String(prefix).Foreground(p.termOut.Color("#38bdf8")).Bold().String()
+		if task.status == "failed" {
+			prefix = p.theme.Error(p.glyphs.Fail + " " + task.status)
+		} else {
+			prefix = p.theme.Success(p.glyphs.OK + " " + task.status)
+		}
+	} else {
+		prefix = p.theme.Accent(p.spinnerFrameLocked())
 	}
 
 	parts := []string{prefix, task.label}
@@ -236,7 +285,11 @@ func (p *Progress) renderLineLocked(final bool) string {
 }
 
 func (p *Progress) spinnerFrameLocked() string {
-	frame := spinnerFrames[p.frame%len(spinnerFrames)]
+	frames := p.glyphs.Spinner
+	if len(frames) == 0 {
+		frames = asciiGlyphs.Spinner
+	}
+	frame := frames[p.frame%len(frames)]
 	p.frame++
 	return frame
 }
@@ -248,7 +301,6 @@ func (t *Task) SetLabel(label string) {
 	}
 	t.withProgress(func(p *Progress) {
 		t.label = strings.TrimSpace(label)
-		p.renderLocked(false)
 	})
 }
 
@@ -259,7 +311,6 @@ func (t *Task) SetTotal(total int64) {
 	}
 	t.withProgress(func(p *Progress) {
 		t.total = total
-		p.renderLocked(false)
 	})
 }
 
@@ -270,7 +321,6 @@ func (t *Task) Add(n int64) {
 	}
 	t.withProgress(func(p *Progress) {
 		t.current += n
-		p.renderLocked(false)
 	})
 }
 
@@ -300,7 +350,6 @@ func (t *Task) ResetProgress() {
 	p.mu.Lock()
 	t.current = 0
 	t.started = time.Now()
-	p.renderLocked(false)
 	p.mu.Unlock()
 }
 

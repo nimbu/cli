@@ -18,8 +18,8 @@ func newAnimatedCopyTimelineForTest(width int, useColor bool) (*CopyTimeline, *b
 	}
 	tl := &CopyTimeline{
 		writer:        &buf,
-		termOut:       termenv.NewOutput(&buf, termenv.WithProfile(profile)),
-		useColor:      useColor,
+		theme:         NewTheme(profile),
+		glyphs:        GlyphSet(false),
 		animated:      true,
 		started:       time.Now(),
 		terminalWidth: width,
@@ -33,7 +33,7 @@ func newStaticCopyTimelineForTest() (*CopyTimeline, *bytes.Buffer) {
 	var buf bytes.Buffer
 	tl := &CopyTimeline{
 		writer:          &buf,
-		termOut:         termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii)),
+		glyphs:          GlyphSet(false),
 		started:         time.Now(),
 		pendingWarnings: map[string][]string{},
 		stopCh:          make(chan struct{}),

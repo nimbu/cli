@@ -6,37 +6,39 @@ import (
 	"io"
 	"sync"
 	"time"
-
-	"github.com/muesli/termenv"
 )
 
 // SyncTimeline renders category-grouped progress for theme push/sync.
 type SyncTimeline struct {
 	mu         sync.Mutex
 	writer     io.Writer
-	termOut    *termenv.Output
-	useColor   bool
+	theme      Theme
+	glyphs     Glyphs
 	animated   bool
 	dryRun     bool
 	mode       string // "push" or "sync"
-	theme      string
+	themeName  string
 	started    time.Time
 	frame      int
 	padWidth   int // longest category label width for alignment
 	cats       []catState
 	activeCat  int // index into cats, -1 when idle
 	activeFile string
-	delState   *deleteState
-	lines      int // volatile lines for ANSI erase
-	stopCh     chan struct{}
-	doneCh     chan struct{}
-	stopOnce   sync.Once
-	closed     bool
-	loopOnce   sync.Once
-	uploaded   int
-	deleted    int
-	failed     int
-	skipped    int
+	// activeSince marks when the current category or delete phase began;
+	// the live spinner waits spinnerDelay before it first appears.
+	activeSince  time.Time
+	spinnerDelay time.Duration
+	delState     *deleteState
+	lines        int // volatile lines for ANSI erase
+	stopCh       chan struct{}
+	doneCh       chan struct{}
+	stopOnce     sync.Once
+	closed       bool
+	loopOnce     sync.Once
+	uploaded     int
+	deleted      int
+	failed       int
+	skipped      int
 }
 
 type catState struct {
@@ -79,30 +81,18 @@ func NewSyncTimeline(ctx context.Context, mode, theme string, dryRun bool) *Sync
 		out = w.Out
 	}
 
-	profile := termenv.Ascii
-	useColor := w.Color == "always" || (w.Color != "never" && w.ErrIsTTY())
-	if useColor {
-		switch w.Color {
-		case "always":
-			profile = termenv.TrueColor
-		default:
-			profile = termenv.EnvColorProfile()
-		}
-	}
-
-	animated := w.ErrIsTTY() && !w.NoSpin
-
 	return &SyncTimeline{
-		writer:    out,
-		termOut:   termenv.NewOutput(out, termenv.WithProfile(profile)),
-		useColor:  useColor,
-		animated:  animated,
-		dryRun:    dryRun,
-		mode:      mode,
-		theme:     theme,
-		activeCat: -1,
-		stopCh:    make(chan struct{}),
-		doneCh:    make(chan struct{}),
+		writer:       out,
+		theme:        w.ErrTheme(),
+		glyphs:       w.Glyphs(),
+		animated:     w.ErrAnimated(),
+		spinnerDelay: spinnerDelay,
+		dryRun:       dryRun,
+		mode:         mode,
+		themeName:    theme,
+		activeCat:    -1,
+		stopCh:       make(chan struct{}),
+		doneCh:       make(chan struct{}),
 	}
 }
 
@@ -133,18 +123,13 @@ func (tl *SyncTimeline) Header() {
 	}
 
 	if tl.animated {
-		corner := "┌"
-		text := fmt.Sprintf(`%s theme "%s"`, tl.gerund(), tl.theme)
+		text := fmt.Sprintf(`%s theme "%s"`, tl.gerund(), tl.themeName)
 		if tl.dryRun {
 			text += "  [dry-run]"
 		}
-		if tl.useColor {
-			corner = tl.colorDim(corner)
-			text = tl.colorBright(text)
-		}
-		tl.writeLine(corner + " " + text)
+		tl.writeLine(tl.colorDim(tl.glyphs.Top) + " " + tl.colorBright(text))
 	} else {
-		text := fmt.Sprintf(`%s theme "%s"`, tl.mode, tl.theme)
+		text := fmt.Sprintf(`%s theme "%s"`, tl.mode, tl.themeName)
 		if tl.dryRun {
 			text += " [dry-run]"
 		}
@@ -161,6 +146,7 @@ func (tl *SyncTimeline) StartCategory(index int) {
 		tl.activeCat = index
 	}
 	tl.activeFile = ""
+	tl.activeSince = time.Now()
 }
 
 // SetActiveFile updates the spinner to show the file currently being uploaded.
@@ -216,11 +202,7 @@ func (tl *SyncTimeline) CategoryDone(index int) {
 
 	if tl.animated {
 		tl.writeLine(tl.renderRail())
-		marker := "◇"
-		if tl.useColor {
-			marker = tl.colorDone(marker)
-		}
-		tl.writeLine(marker + " " + tl.formatCatLine(cat.label, summary))
+		tl.writeLine(tl.colorDone(tl.glyphs.Step) + " " + tl.formatCatLine(cat.label, summary))
 	} else {
 		tl.writeLine(fmt.Sprintf("  %s: %s", cat.label, summary))
 	}
@@ -234,6 +216,7 @@ func (tl *SyncTimeline) StartDeletes(total int) {
 	tl.activeCat = -1
 	tl.delState = &deleteState{total: total}
 	tl.activeFile = ""
+	tl.activeSince = time.Now()
 }
 
 // SetActiveDelete updates the spinner to show the file being deleted.
@@ -269,11 +252,7 @@ func (tl *SyncTimeline) DeletesDone() {
 	summary := fmt.Sprintf("%d %s", tl.delState.done, plural(tl.delState.done, "file", "files"))
 	if tl.animated {
 		tl.writeLine(tl.renderRail())
-		marker := "◇"
-		if tl.useColor {
-			marker = tl.colorDone(marker)
-		}
-		tl.writeLine(marker + " " + tl.formatCatLine("Deleted", summary))
+		tl.writeLine(tl.colorDone(tl.glyphs.Step) + " " + tl.formatCatLine("Deleted", summary))
 	} else {
 		tl.writeLine(fmt.Sprintf("  deleted: %s", summary))
 	}
@@ -299,10 +278,7 @@ func (tl *SyncTimeline) FileFailed(displayPath, errorDetail string) {
 
 		if tl.animated {
 			tl.writeLine(tl.renderRail())
-			marker := "✗"
-			if tl.useColor {
-				marker = tl.colorError(marker)
-			}
+			marker := tl.colorError(tl.glyphs.Fail)
 			text := fmt.Sprintf("failed at %s (%d/%d)", displayPath, cat.done, cat.total)
 			tl.writeLine(marker + " " + tl.formatCatLine(cat.label, text))
 			if errorDetail != "" {
@@ -333,10 +309,7 @@ func (tl *SyncTimeline) DeleteFailed(displayPath, errorDetail string) {
 
 	if tl.animated {
 		tl.writeLine(tl.renderRail())
-		marker := "✗"
-		if tl.useColor {
-			marker = tl.colorError(marker)
-		}
+		marker := tl.colorError(tl.glyphs.Fail)
 		var text string
 		if tl.delState != nil {
 			text = fmt.Sprintf("failed at %s (%d/%d)", displayPath, tl.delState.done, tl.delState.total)
@@ -374,15 +347,10 @@ func (tl *SyncTimeline) RenderPlan(categories []SyncCategory, deleteCount int) {
 	tl.padWidth = maxLen
 
 	if tl.animated {
-		corner := "┌"
-		text := fmt.Sprintf(`%s theme "%s"  [dry-run]`, tl.gerund(), tl.theme)
-		if tl.useColor {
-			corner = tl.colorDim(corner)
-			text = tl.colorBright(text)
-		}
-		tl.writeLine(corner + " " + text)
+		text := fmt.Sprintf(`%s theme "%s"  [dry-run]`, tl.gerund(), tl.themeName)
+		tl.writeLine(tl.colorDim(tl.glyphs.Top) + " " + tl.colorBright(text))
 	} else {
-		tl.writeLine(fmt.Sprintf(`%s theme "%s" [dry-run]`, tl.mode, tl.theme))
+		tl.writeLine(fmt.Sprintf(`%s theme "%s" [dry-run]`, tl.mode, tl.themeName))
 	}
 
 	totalUploads := 0
@@ -391,10 +359,7 @@ func (tl *SyncTimeline) RenderPlan(categories []SyncCategory, deleteCount int) {
 		summary := fmt.Sprintf("%d would upload", c.Count)
 		if tl.animated {
 			tl.writeLine(tl.renderRail())
-			marker := "○"
-			if tl.useColor {
-				marker = tl.colorDryRun(marker)
-			}
+			marker := tl.colorDryRun(tl.glyphs.Pending)
 			tl.writeLine(marker + " " + tl.formatCatLine(c.Label, summary))
 		} else {
 			tl.writeLine(fmt.Sprintf("  %s: %s", c.Label, summary))
@@ -405,10 +370,7 @@ func (tl *SyncTimeline) RenderPlan(categories []SyncCategory, deleteCount int) {
 		summary := fmt.Sprintf("%d would delete", deleteCount)
 		if tl.animated {
 			tl.writeLine(tl.renderRail())
-			marker := "○"
-			if tl.useColor {
-				marker = tl.colorDryRun(marker)
-			}
+			marker := tl.colorDryRun(tl.glyphs.Pending)
 			padded := fmt.Sprintf("%-*s", tl.padWidth, "deletes")
 			tl.writeLine(marker + " " + tl.formatCatLine(padded, summary))
 		} else {
@@ -421,15 +383,8 @@ func (tl *SyncTimeline) RenderPlan(categories []SyncCategory, deleteCount int) {
 		deleteCount, plural(deleteCount, "delete", "deletes"),
 	)
 	if tl.animated {
-		corner := "└"
-		label := "Dry run complete"
-		if tl.useColor {
-			corner = tl.colorDim(corner)
-			label = tl.colorDryRun(label)
-			footerText = tl.colorDim(footerText)
-		}
 		tl.writeLine(tl.renderRail())
-		tl.writeLine(corner + " " + label + "  " + footerText)
+		tl.writeLine(tl.colorDim(tl.glyphs.Bottom) + " " + tl.colorDryRun("Dry run complete") + "  " + tl.colorDim(footerText))
 		tl.writeLine("")
 	} else {
 		tl.writeLine(fmt.Sprintf("dry run complete: %s", footerText))
@@ -449,25 +404,13 @@ func (tl *SyncTimeline) NothingToDo() {
 	}
 
 	if tl.animated {
-		corner := "┌"
-		text := fmt.Sprintf(`%s theme "%s"`, tl.gerund(), tl.theme)
-		if tl.useColor {
-			corner = tl.colorDim(corner)
-			text = tl.colorBright(text)
-		}
-		tl.writeLine(corner + " " + text)
-
-		endCorner := "└"
-		msg := fmt.Sprintf("Nothing to %s", verb)
-		if tl.useColor {
-			endCorner = tl.colorDim(endCorner)
-			msg = tl.colorDim(msg)
-		}
+		text := fmt.Sprintf(`%s theme "%s"`, tl.gerund(), tl.themeName)
+		tl.writeLine(tl.colorDim(tl.glyphs.Top) + " " + tl.colorBright(text))
 		tl.writeLine(tl.renderRail())
-		tl.writeLine(endCorner + " " + msg)
+		tl.writeLine(tl.colorDim(tl.glyphs.Bottom) + " " + tl.colorDim(fmt.Sprintf("Nothing to %s", verb)))
 		tl.writeLine("")
 	} else {
-		tl.writeLine(fmt.Sprintf(`%s theme "%s"`, tl.mode, tl.theme))
+		tl.writeLine(fmt.Sprintf(`%s theme "%s"`, tl.mode, tl.themeName))
 		tl.writeLine(fmt.Sprintf("nothing to %s", verb))
 	}
 	tl.closed = true
@@ -521,15 +464,8 @@ func (tl *SyncTimeline) Footer() {
 	}
 
 	if tl.animated {
-		corner := "└"
-		label := "Done!"
-		if tl.useColor {
-			corner = tl.colorDim(corner)
-			label = tl.colorDone(label)
-			summary = tl.colorDim(summary)
-		}
 		tl.writeLine(tl.renderRail())
-		tl.writeLine(corner + " " + label + "  " + summary)
+		tl.writeLine(tl.colorDim(tl.glyphs.Bottom) + " " + tl.colorDone("Done!") + "  " + tl.colorDim(summary))
 		tl.writeLine("")
 	} else {
 		tl.writeLine(fmt.Sprintf("done: %s", summary))
@@ -551,15 +487,8 @@ func (tl *SyncTimeline) ErrorFooter() {
 	summary := fmt.Sprintf("%d %s, %d failed, %d skipped", tl.uploaded, tl.pastVerb(), tl.failed, tl.skipped)
 
 	if tl.animated {
-		corner := "└"
-		label := "Error!"
-		if tl.useColor {
-			corner = tl.colorDim(corner)
-			label = tl.colorError(label)
-			summary = tl.colorDim(summary)
-		}
 		tl.writeLine(tl.renderRail())
-		tl.writeLine(corner + " " + label + "  " + summary)
+		tl.writeLine(tl.colorDim(tl.glyphs.Bottom) + " " + tl.colorError("Error!") + "  " + tl.colorDim(summary))
 		tl.writeLine("")
 	} else {
 		tl.writeLine(fmt.Sprintf("error: %s", summary))
@@ -617,31 +546,32 @@ func (tl *SyncTimeline) renderActiveLocked() {
 	if !tl.animated || (tl.activeCat < 0 && tl.delState == nil) {
 		return
 	}
+	if tl.lines == 0 && time.Since(tl.activeSince) < tl.spinnerDelay {
+		return
+	}
 
 	tl.eraseActiveLinesLocked()
 
-	spinner := brailleSpinner[tl.frame%len(brailleSpinner)]
+	spinner := tl.colorActive(tl.glyphs.Spinner[tl.frame%len(tl.glyphs.Spinner)])
 	tl.frame++
-	if tl.useColor {
-		spinner = tl.colorActive(spinner)
-	}
+	dash := tl.glyphs.Dash
 
 	var line string
 	if tl.delState != nil {
 		label := fmt.Sprintf("%-*s", tl.padWidth, "Deleting")
 		if tl.activeFile != "" {
-			line = fmt.Sprintf("%s %s — %d/%d  %s", spinner, label, tl.delState.done, tl.delState.total, tl.activeFile)
+			line = fmt.Sprintf("%s %s %s %d/%d  %s", spinner, label, dash, tl.delState.done, tl.delState.total, tl.activeFile)
 		} else {
-			line = fmt.Sprintf("%s %s — %d/%d", spinner, label, tl.delState.done, tl.delState.total)
+			line = fmt.Sprintf("%s %s %s %d/%d", spinner, label, dash, tl.delState.done, tl.delState.total)
 		}
 	} else if tl.activeCat >= 0 {
 		cat := tl.cats[tl.activeCat]
 		label := fmt.Sprintf("%-*s", tl.padWidth, cat.label)
 		progress := cat.done + cat.skipped
 		if tl.activeFile != "" {
-			line = fmt.Sprintf("%s %s — %d/%d  %s", spinner, label, progress, cat.total, tl.activeFile)
+			line = fmt.Sprintf("%s %s %s %d/%d  %s", spinner, label, dash, progress, cat.total, tl.activeFile)
 		} else {
-			line = fmt.Sprintf("%s %s — %d/%d", spinner, label, progress, cat.total)
+			line = fmt.Sprintf("%s %s %s %d/%d", spinner, label, dash, progress, cat.total)
 		}
 	}
 
@@ -667,18 +597,11 @@ func (tl *SyncTimeline) eraseActiveLinesLocked() {
 
 func (tl *SyncTimeline) formatCatLine(label, summary string) string {
 	padded := fmt.Sprintf("%-*s", tl.padWidth, label)
-	if tl.useColor {
-		return tl.colorBright(padded) + " " + tl.colorDim("—") + " " + summary
-	}
-	return padded + " — " + summary
+	return tl.colorBright(padded) + " " + tl.colorDim(tl.glyphs.Dash) + " " + summary
 }
 
 func (tl *SyncTimeline) renderRail() string {
-	rail := "│"
-	if tl.useColor {
-		rail = tl.colorDim(rail)
-	}
-	return rail
+	return tl.colorDim(tl.glyphs.Rail)
 }
 
 func (tl *SyncTimeline) writeLine(line string) {
@@ -708,36 +631,26 @@ func (tl *SyncTimeline) gerund() string {
 // --- color helpers ---
 
 func (tl *SyncTimeline) colorDone(s string) string {
-	c := "#22c55e"
 	if tl.dryRun {
-		c = "#f59e0b"
+		return tl.theme.Warning(s)
 	}
-	return tl.termOut.String(s).Foreground(tl.termOut.Color(c)).Bold().String()
+	return tl.theme.Success(s)
 }
 
 func (tl *SyncTimeline) colorActive(s string) string {
-	c := "#60a5fa"
 	if tl.dryRun {
-		c = "#f59e0b"
+		return tl.theme.Warning(s)
 	}
-	return tl.termOut.String(s).Foreground(tl.termOut.Color(c)).Bold().String()
+	return tl.theme.Accent(s)
 }
 
-func (tl *SyncTimeline) colorError(s string) string {
-	return tl.termOut.String(s).Foreground(tl.termOut.Color("#ef4444")).Bold().String()
-}
+func (tl *SyncTimeline) colorError(s string) string { return tl.theme.Error(s) }
 
-func (tl *SyncTimeline) colorDryRun(s string) string {
-	return tl.termOut.String(s).Foreground(tl.termOut.Color("#f59e0b")).Bold().String()
-}
+func (tl *SyncTimeline) colorDryRun(s string) string { return tl.theme.Warning(s) }
 
-func (tl *SyncTimeline) colorDim(s string) string {
-	return tl.termOut.String(s).Foreground(tl.termOut.Color("#94a3b8")).String()
-}
+func (tl *SyncTimeline) colorDim(s string) string { return tl.theme.Muted(s) }
 
-func (tl *SyncTimeline) colorBright(s string) string {
-	return tl.termOut.String(s).Foreground(tl.termOut.Color("#e2e8f0")).Bold().String()
-}
+func (tl *SyncTimeline) colorBright(s string) string { return tl.theme.Strong(s) }
 
 // --- helpers ---
 
