@@ -52,7 +52,7 @@ type RootFlags struct {
 	Environment                  string `name:"env" help:"Named project environment (overrides site and API URL)"`
 	SelectedEnvironmentProtected bool   `kong:"-"`
 	// Essential (ungrouped — always visible in help)
-	Site    string `help:"Site; else nimbu.yml site, then default_site" env:"NIMBU_SITE"`
+	Site    string `help:"Site ID/subdomain (else nimbu.yml, config)" env:"NIMBU_SITE"`
 	JSON    bool   `help:"Output JSON to stdout" default:"${json}" env:"NIMBU_JSON"`
 	Plain   bool   `help:"Output stable TSV to stdout" default:"${plain}" env:"NIMBU_PLAIN"`
 	Verbose bool   `help:"Enable verbose logging"`

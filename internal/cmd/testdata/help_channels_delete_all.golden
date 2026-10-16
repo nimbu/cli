@@ -12,7 +12,7 @@ Global Flags:
   -h, --help                      Show context-sensitive help.
       --env=STRING                Named project environment (overrides site and
                                   API URL)
-      --site=STRING               Site ID or subdomain, else nimbu.yml site
+      --site=STRING               Site ID/subdomain (else nimbu.yml, config)
                                   ($NIMBU_SITE)
       --json                      Output JSON to stdout ($NIMBU_JSON)
       --plain                     Output stable TSV to stdout ($NIMBU_PLAIN)
@@ -25,6 +25,8 @@ Output:
       --no-progress               Disable live progress UI ($NIMBU_NO_PROGRESS)
 
 Agent/CI:
+  -y, --yes                       Same as --force; also confirms protected
+                                  environments
       --no-input                  Never prompt; fail instead (for CI)
                                   ($NIMBU_NO_INPUT)
       --readonly                  Disable all write operations ($NIMBU_READONLY)

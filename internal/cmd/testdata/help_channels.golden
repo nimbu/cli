@@ -18,7 +18,7 @@ Commands:
 Global Flags:
   -h, --help           Show context-sensitive help.
       --env=STRING     Named project environment (overrides site and API URL)
-      --site=STRING    Site ID or subdomain, else nimbu.yml site ($NIMBU_SITE)
+      --site=STRING    Site ID/subdomain (else nimbu.yml, config) ($NIMBU_SITE)
       --json           Output JSON to stdout ($NIMBU_JSON)
       --plain          Output stable TSV to stdout ($NIMBU_PLAIN)
       --verbose        Enable verbose logging
