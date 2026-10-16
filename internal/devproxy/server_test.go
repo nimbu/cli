@@ -1,6 +1,7 @@
 package devproxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -375,4 +376,23 @@ func captureStdout(t *testing.T, fn func()) string {
 	data := <-done
 	_ = r.Close()
 	return string(data)
+}
+
+func TestLoggingMiddlewareWritesToConfiguredRequestLog(t *testing.T) {
+	var buf bytes.Buffer
+	server := &Server{config: Config{RequestLog: &buf}}
+	handler := server.loggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	stdout := captureStdout(t, func() {
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "http://example.com/missing", nil))
+	})
+
+	if stdout != "" {
+		t.Fatalf("expected nothing on os.Stdout, got %q", stdout)
+	}
+	if !strings.Contains(buf.String(), "GET /missing (404)") {
+		t.Fatalf("request log = %q", buf.String())
+	}
 }

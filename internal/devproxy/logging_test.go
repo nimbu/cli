@@ -1,6 +1,7 @@
 package devproxy
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -48,5 +49,15 @@ func TestRequestLogLineColorizesByStatusClass(t *testing.T) {
 				t.Fatalf("expected status color %q, got: %q", tc.wantColor, line)
 			}
 		})
+	}
+}
+
+func TestLoggerWritesToConfiguredOutput(t *testing.T) {
+	var buf bytes.Buffer
+	logger := &Logger{Out: &buf}
+	logger.Warn("template watcher error", map[string]any{"error": "boom"})
+
+	if got := buf.String(); got != "template watcher error map[error:boom]\n" {
+		t.Fatalf("logger output = %q", got)
 	}
 }
