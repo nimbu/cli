@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -278,5 +279,44 @@ func TestKeyringPromptHookMarksPrompt(t *testing.T) {
 	end() // idempotent
 	if got := activePrompts.Load(); got != before {
 		t.Fatalf("prompt not unmarked: %d, want %d", got, before)
+	}
+}
+
+// Regression: a prompt that starts after the first signal already canceled the
+// context (a command asking during its cleanup) was force-exited by the next
+// Ctrl-C without ending the prompt line, so the shell prompt landed on it.
+func TestInterruptDuringLatePromptEndsPromptLine(t *testing.T) {
+	codes := stubForceExit(t)
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	origStderr := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() {
+		os.Stderr = origStderr
+		_ = r.Close()
+	})
+
+	sigCh, ctx := startTestWatcher(t)
+	sigCh <- os.Interrupt
+	select {
+	case <-ctx.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("first signal did not cancel the context")
+	}
+
+	endPrompt := beginPrompt()
+	defer endPrompt()
+	sigCh <- os.Interrupt
+	select {
+	case <-codes:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Ctrl-C during the prompt did not exit")
+	}
+	_ = w.Close()
+	out, _ := io.ReadAll(r)
+	if string(out) != "\n" {
+		t.Fatalf("stderr = %q, want the prompt line ended", out)
 	}
 }

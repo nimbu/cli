@@ -82,11 +82,7 @@ var activePrompts atomic.Int32
 // terminal mode the prompt started from (a password read turns echo off).
 func beginPrompt() func() {
 	activePrompts.Add(1)
-	unregister := func() {}
-	fd := int(os.Stdin.Fd())
-	if state, err := term.GetState(fd); err == nil {
-		unregister = registerTerminalRestore(func() { _ = term.Restore(fd, state) })
-	}
+	unregister := registerStdinRestore()
 	var once sync.Once
 	return func() {
 		once.Do(func() {
@@ -109,12 +105,17 @@ func watchInterrupts(sigCh <-chan os.Signal, done <-chan struct{}, cancel contex
 				continue
 			}
 			seen++
+			prompting := activePrompts.Load() > 0
 			if seen == 1 {
 				cancel(errInterrupted)
-				if activePrompts.Load() == 0 {
+				if !prompting {
 					continue
 				}
-				_, _ = os.Stderr.WriteString("\n") // end the prompt line
+			}
+			if prompting {
+				// End the prompt line, also when a prompt started after
+				// the first signal canceled the context.
+				_, _ = os.Stderr.WriteString("\n")
 			}
 			exitInterrupted()
 			return
@@ -255,6 +256,19 @@ func registerTerminalRestore(fn func()) func() {
 			}
 		})
 	}
+}
+
+// registerStdinRestore snapshots the stdin terminal mode and registers its
+// restore for a forced exit, for code about to change that mode (a password
+// read turns echo off; a terminal query switches to raw mode). It is a no-op
+// when stdin is not a terminal. Call the returned func once the mode is back.
+func registerStdinRestore() func() {
+	fd := int(os.Stdin.Fd())
+	state, err := term.GetState(fd)
+	if err != nil {
+		return func() {}
+	}
+	return registerTerminalRestore(func() { _ = term.Restore(fd, state) })
 }
 
 // runTerminalRestores runs the registered restores, newest first, waiting at

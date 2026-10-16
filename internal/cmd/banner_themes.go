@@ -172,6 +172,9 @@ func bannerBackgroundIsDark(w *output.Writer) bool {
 		return true
 	}
 	bannerBackgroundOnce.Do(func() {
+		// The query puts stdin in raw mode for up to its timeout; a forced
+		// exit in that window must hand the terminal back cooked.
+		defer registerStdinRestore()()
 		bannerBackgroundDark = queryDarkBackground(os.Stdin, errFile)
 	})
 	return bannerBackgroundDark
