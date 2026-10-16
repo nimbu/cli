@@ -59,7 +59,7 @@ type RootFlags struct {
 	Debug   bool   `help:"Enable debug logging (HTTP traces)"`
 
 	// Output (suppressed in default help)
-	Color      string `help:"Color output: auto|always|never" default:"${color}" env:"NIMBU_COLOR" group:"Output"`
+	Color      string `help:"Color output: auto|always|never" default:"${color}" enum:"auto,always,never" env:"NIMBU_COLOR" group:"Output"`
 	NoProgress bool   `help:"Disable live progress UI" env:"NIMBU_NO_PROGRESS" group:"Output"`
 
 	// Agent/CI (suppressed in default help)
@@ -166,6 +166,7 @@ func execute(args []string) (err error) {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		return err
 	}
+	unsetEmptyFlagEnv(parser.Model)
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -256,7 +257,7 @@ func execute(args []string) (err error) {
 
 func newParser() (*kong.Kong, *CLI, error) {
 	vars := kong.Vars{
-		"color":   envOr("NIMBU_COLOR", "auto"),
+		"color":   strings.ToLower(strings.TrimSpace(envOr("NIMBU_COLOR", "auto"))),
 		"json":    boolString(os.Getenv("NIMBU_JSON") == "1" || os.Getenv("NIMBU_JSON") == "true"),
 		"plain":   boolString(os.Getenv("NIMBU_PLAIN") == "1" || os.Getenv("NIMBU_PLAIN") == "true"),
 		"version": VersionString(),

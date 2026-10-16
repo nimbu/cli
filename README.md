@@ -626,7 +626,10 @@ NIMBU_PLAIN          # Default TSV output (1/true)
 NIMBU_NO_INPUT       # Disable prompts for CI
 NIMBU_READONLY       # Disable write operations
 NIMBU_ENABLE_COMMANDS # Command allowlist (comma-separated)
+NIMBU_COLOR          # auto | always | never
 ```
+
+An empty variable (`NIMBU_JSON=`) counts as unset.
 
 ### Config File
 
