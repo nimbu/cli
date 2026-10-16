@@ -9,7 +9,7 @@ type ChannelsCmd struct {
 	Types   ChannelsTypesCmd  `cmd:"" help:"Generate one TypeScript module with the types of all channels"`
 	Copy    ChannelsCopyCmd   `cmd:"" help:"Copy channel configuration between sites"`
 	Diff    ChannelsDiffCmd   `cmd:"" help:"Diff channel configuration between sites"`
-	Empty   ChannelsEmptyCmd  `cmd:"" help:"Empty a channel after strict confirmation"`
+	Empty   ChannelsEmptyCmd  `cmd:"" help:"Empty a channel (requires --force and --confirm)"`
 	Delete  ChannelsDeleteCmd `cmd:"" help:"Delete a channel (requires --force)"`
 	Entries ChannelEntriesCmd `cmd:"" help:"Manage channel entries"`
 	Fields  ChannelsFieldsCmd `cmd:"" help:"Manage channel fields"`

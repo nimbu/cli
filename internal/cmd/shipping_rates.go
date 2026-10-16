@@ -15,7 +15,7 @@ type ShippingRatesCmd struct {
 	Get    ShippingRatesGetCmd    `cmd:"" help:"Get shipping rate details"`
 	Create ShippingRatesCreateCmd `cmd:"" help:"Create a shipping rate"`
 	Update ShippingRatesUpdateCmd `cmd:"" help:"Update a shipping rate"`
-	Delete ShippingRatesDeleteCmd `cmd:"" help:"Delete a shipping rate"`
+	Delete ShippingRatesDeleteCmd `cmd:"" help:"Delete a shipping rate (requires --force)"`
 }
 
 // ShippingRatesListCmd lists shipping rates without pagination.

@@ -18,7 +18,7 @@ type PagesDraftCmd struct {
 	Save       PagesDraftSaveCmd       `cmd:"" help:"Save a whole page draft from a file"`
 	Batch      PagesDraftBatchCmd      `cmd:"" help:"Apply operations to the page draft"`
 	Publish    PagesDraftPublishCmd    `cmd:"" help:"Publish a page draft to the live page"`
-	Discard    PagesDraftDiscardCmd    `cmd:"" help:"Discard a page draft"`
+	Discard    PagesDraftDiscardCmd    `cmd:"" help:"Discard a page draft (requires --force)"`
 	PreviewURL PagesDraftPreviewURLCmd `cmd:"" name:"preview-url" help:"Print a preview URL for the page draft"`
 }
 

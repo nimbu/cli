@@ -6,6 +6,6 @@ type RedirectsCmd struct {
 	Get    RedirectsGetCmd    `cmd:"" help:"Get redirect details"`
 	Create RedirectsCreateCmd `cmd:"" help:"Create redirect from JSON"`
 	Update RedirectsUpdateCmd `cmd:"" help:"Update redirect"`
-	Delete RedirectsDeleteCmd `cmd:"" help:"Delete redirect"`
+	Delete RedirectsDeleteCmd `cmd:"" help:"Delete redirect (requires --force)"`
 	Copy   RedirectsCopyCmd   `cmd:"" help:"Copy redirects between sites"`
 }

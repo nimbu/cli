@@ -19,9 +19,9 @@ type ChannelsFieldsCmd struct {
 	List    ChannelsFieldsListCmd    `cmd:"" help:"List channel fields"`
 	Add     ChannelsFieldsAddCmd     `cmd:"" help:"Add a channel field"`
 	Update  ChannelsFieldsUpdateCmd  `cmd:"" help:"Update a channel field"`
-	Delete  ChannelsFieldsDeleteCmd  `cmd:"" help:"Delete a channel field"`
+	Delete  ChannelsFieldsDeleteCmd  `cmd:"" help:"Delete a channel field (requires --force)"`
 	Apply   ChannelsFieldsApplyCmd   `cmd:"" help:"Apply channel fields from JSON"`
-	Replace ChannelsFieldsReplaceCmd `cmd:"" help:"Replace channel fields from JSON"`
+	Replace ChannelsFieldsReplaceCmd `cmd:"" help:"Replace channel fields from JSON (requires --force)"`
 	Diff    ChannelsFieldsDiffCmd    `cmd:"" help:"Diff channel fields against JSON"`
 }
 

@@ -6,7 +6,7 @@ type CustomersCmd struct {
 	Get                CustomersGetCmd                `cmd:"" help:"Get customer by ID or email"`
 	Create             CustomersCreateCmd             `cmd:"" help:"Create a customer"`
 	Update             CustomersUpdateCmd             `cmd:"" help:"Update a customer"`
-	Delete             CustomersDeleteCmd             `cmd:"" help:"Delete a customer"`
+	Delete             CustomersDeleteCmd             `cmd:"" help:"Delete a customer (requires --force)"`
 	Count              CustomersCountCmd              `cmd:"" help:"Count customers"`
 	Copy               CustomersCopyCmd               `cmd:"" help:"Copy customers between sites"`
 	Fields             CustomersFieldsCmd             `cmd:"" help:"Show customer field schema"`
