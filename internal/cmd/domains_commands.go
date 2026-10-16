@@ -56,6 +56,7 @@ func (c *DomainsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(domains))
 	}
 
+	noteMoreResults(ctx, "domains", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, domains)

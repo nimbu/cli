@@ -157,33 +157,6 @@ func TestInitLinePromptSkipsEmptyManifestSections(t *testing.T) {
 	}
 }
 
-func captureStderr(t *testing.T, fn func()) string {
-	t.Helper()
-	orig := os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stderr = w
-	done := make(chan string)
-	go func() {
-		var sb strings.Builder
-		buf := make([]byte, 4096)
-		for {
-			n, rerr := r.Read(buf)
-			sb.Write(buf[:n])
-			if rerr != nil {
-				done <- sb.String()
-				return
-			}
-		}
-	}()
-	defer func() { os.Stderr = orig }()
-	fn()
-	_ = w.Close()
-	return <-done
-}
-
 func TestInitCloneEnvIsNonInteractive(t *testing.T) {
 	env := func(vars map[string]string) []string {
 		return initCloneEnv(func(key string) string { return vars[key] })

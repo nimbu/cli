@@ -62,6 +62,7 @@ func (c *ChannelsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		fetchChannelEntryCounts(ctx, client, channels)
 	}
 
+	noteMoreResults(ctx, "channels", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, channels)

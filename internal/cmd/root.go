@@ -252,6 +252,7 @@ func execute(args []string) (err error) {
 	// Commands resolve their site lazily with RequireSite (see resolveSite),
 	// so commands that need none never read nimbu.yml or the git root.
 
+	prefetchUpdateCheck(ctx, kctx.Command(), cli.RootFlags, version)
 	if err = kctx.Run(); err != nil {
 		if interrupted(ctx) {
 			err = &interruptedError{err: err}

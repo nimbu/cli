@@ -101,13 +101,12 @@ type diffStyles struct {
 
 func newDiffStyles(ctx context.Context) diffStyles {
 	writer := output.WriterFromContext(ctx)
-	if writer == nil || !writer.UseColor() {
+	if writer == nil {
 		return diffStyles{}
 	}
-	profile := termenv.EnvColorProfile()
-	if writer.Color == "always" {
-		profile = termenv.TrueColor
-	}
+	// The diff is content on stdout: follow stdout's color decision and the
+	// palette depth the terminal advertises.
+	profile := writer.OutColorProfile()
 	if profile == termenv.Ascii {
 		return diffStyles{}
 	}

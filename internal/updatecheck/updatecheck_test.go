@@ -501,3 +501,130 @@ func writeCacheFile(t *testing.T, path string, cache cacheState) {
 		t.Fatalf("write cache: %v", err)
 	}
 }
+
+func TestCheckerDoesNotHoldExitForSlowRefresh(t *testing.T) {
+	t.Parallel()
+
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+		_, _ = w.Write([]byte(`{"tag_name":"v0.1.2","html_url":"https://github.com/nimbu/cli/releases/tag/v0.1.2","draft":false,"prerelease":false}`))
+	}))
+	defer srv.Close()
+
+	cachePath := filepath.Join(t.TempDir(), "update-check.json")
+	stderr := &bytes.Buffer{}
+	c := checker{
+		client:         srv.Client(),
+		now:            fixedNow(),
+		cachePath:      func() (string, error) { return cachePath, nil },
+		executable:     func() (string, error) { return "/usr/local/bin/nimbu", nil },
+		latestURL:      srv.URL,
+		requestTimeout: 10 * time.Second,
+		notifyWait:     20 * time.Millisecond,
+	}
+
+	started := time.Now()
+	pending := c.startRefresh(context.Background(), "v0.1.1")
+	c.notifyAfter(context.Background(), pending, stderr, "v0.1.1", Style{})
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("notify blocked for %s on a slow refresh", elapsed)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no notice before the refresh finished, got %q", stderr.String())
+	}
+
+	// The refresh keeps running and still lands in the cache for next time.
+	close(release)
+	<-pending.done
+	if cache := readCacheFile(t, cachePath); cache.LatestVersion != "v0.1.2" {
+		t.Fatalf("expected background refresh to update the cache, got %+v", cache)
+	}
+}
+
+func TestCheckerUsesPrefetchedRefresh(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		_, _ = w.Write([]byte(`{"tag_name":"v0.1.2","html_url":"https://github.com/nimbu/cli/releases/tag/v0.1.2","draft":false,"prerelease":false}`))
+	}))
+	defer srv.Close()
+
+	cachePath := filepath.Join(t.TempDir(), "update-check.json")
+	c := checker{
+		client:         srv.Client(),
+		now:            fixedNow(),
+		cachePath:      func() (string, error) { return cachePath, nil },
+		executable:     func() (string, error) { return "/usr/local/bin/nimbu", nil },
+		latestURL:      srv.URL,
+		requestTimeout: time.Second,
+	}
+
+	pending := c.startRefresh(context.Background(), "v0.1.1")
+	if pending == nil {
+		t.Fatal("expected a refresh for a missing cache")
+	}
+	stderr := &bytes.Buffer{}
+	c.notifyAfter(context.Background(), pending, stderr, "v0.1.1", Style{})
+
+	if requests.Load() != 1 {
+		t.Fatalf("expected exactly one request, got %d", requests.Load())
+	}
+	if !strings.Contains(stderr.String(), "A new nimbu release is available: v0.1.2") {
+		t.Fatalf("expected notice from the prefetched refresh, got %q", stderr.String())
+	}
+	if c.startRefresh(context.Background(), "v0.1.1") != nil {
+		t.Fatal("expected no second refresh while the cache is fresh")
+	}
+}
+
+func TestDisabledInCIAndByEnv(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		env  map[string]string
+		want bool
+	}{
+		{env: map[string]string{}, want: false},
+		{env: map[string]string{"CI": "true"}, want: true},
+		{env: map[string]string{"CI": "1"}, want: true},
+		{env: map[string]string{"CI": "false"}, want: false},
+		{env: map[string]string{"CI": "0"}, want: false},
+		{env: map[string]string{"NIMBU_NO_UPDATE_NOTIFIER": "1"}, want: true},
+	}
+	for _, tc := range cases {
+		getenv := func(key string) string { return tc.env[key] }
+		if got := disabled(getenv); got != tc.want {
+			t.Fatalf("disabled(%v) = %v, want %v", tc.env, got, tc.want)
+		}
+	}
+}
+
+func TestIsHomebrewPath(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		path   string
+		prefix string
+		want   bool
+	}{
+		{path: "/opt/homebrew/Cellar/nimbu/0.1.1/bin/nimbu", want: true},
+		{path: "/opt/homebrew/bin/nimbu", want: true},
+		{path: "/usr/local/Cellar/nimbu/0.1.1/bin/nimbu", want: true},
+		{path: "/usr/local/opt/nimbu/bin/nimbu", want: true},
+		{path: "/home/linuxbrew/.linuxbrew/bin/nimbu", want: true},
+		{path: "/home/me/brew/Cellar/nimbu/1.0/bin/nimbu", want: true},
+		{path: "/srv/brew/opt/nimbu/bin/nimbu", prefix: "/srv/brew", want: true},
+		{path: "/usr/local/bin/nimbu", prefix: "/usr/local", want: false},
+		{path: "/usr/local/bin/nimbu", want: false},
+		{path: "/home/me/go/bin/nimbu-cli", want: false},
+		{path: "", want: false},
+	}
+	for _, tc := range cases {
+		if got := isHomebrewPath(tc.path, tc.prefix); got != tc.want {
+			t.Fatalf("isHomebrewPath(%q, %q) = %v, want %v", tc.path, tc.prefix, got, tc.want)
+		}
+	}
+}

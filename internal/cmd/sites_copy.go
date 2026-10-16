@@ -8,8 +8,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/muesli/termenv"
-
 	"github.com/nimbu/cli/internal/migrate"
 	"github.com/nimbu/cli/internal/output"
 )
@@ -175,7 +173,7 @@ func siteCopyConflictResolver(flags *RootFlags, tl *output.CopyTimeline) migrate
 		if errw == nil {
 			errw = os.Stderr
 		}
-		style := newSiteCopyPromptStyle(w, errw)
+		style := newSiteCopyPromptStyle(w)
 		defer beginPrompt()()
 		if prompt.Item != "" {
 			return readSiteCopyItemConflictDecision(reader, errw, prompt, style)
@@ -297,42 +295,25 @@ func siteCopySingular(kind string) string {
 	}
 }
 
+// siteCopyPromptStyle styles conflict prompts, which are written to stderr.
 type siteCopyPromptStyle struct {
-	useColor bool
-	termOut  *termenv.Output
+	theme output.Theme
 }
 
-func newSiteCopyPromptStyle(w *output.Writer, errw io.Writer) siteCopyPromptStyle {
-	useColor := w != nil && (w.Color == "always" || (w.Color != "never" && w.ErrIsTTY()))
-	profile := termenv.Ascii
-	if useColor {
-		switch w.Color {
-		case "always":
-			profile = termenv.TrueColor
-		default:
-			profile = termenv.EnvColorProfile()
-		}
+func newSiteCopyPromptStyle(w *output.Writer) siteCopyPromptStyle {
+	if w == nil {
+		return siteCopyPromptStyle{}
 	}
-	return siteCopyPromptStyle{useColor: useColor, termOut: termenv.NewOutput(errw, termenv.WithProfile(profile))}
+	return siteCopyPromptStyle{theme: w.ErrTheme()}
 }
 
 func firstSiteCopyPromptStyle(styles []siteCopyPromptStyle) siteCopyPromptStyle {
 	if len(styles) > 0 {
 		return styles[0]
 	}
-	return siteCopyPromptStyle{termOut: termenv.NewOutput(io.Discard, termenv.WithProfile(termenv.Ascii))}
+	return siteCopyPromptStyle{}
 }
 
-func (s siteCopyPromptStyle) bright(value string) string {
-	if !s.useColor {
-		return value
-	}
-	return s.termOut.String(value).Foreground(s.termOut.Color("#e2e8f0")).Bold().String()
-}
+func (s siteCopyPromptStyle) bright(value string) string { return s.theme.Strong(value) }
 
-func (s siteCopyPromptStyle) dim(value string) string {
-	if !s.useColor {
-		return value
-	}
-	return s.termOut.String(value).Foreground(s.termOut.Color("#94a3b8")).String()
-}
+func (s siteCopyPromptStyle) dim(value string) string { return s.theme.Muted(value) }

@@ -48,22 +48,16 @@ func newChannelFieldPresenter(ctx context.Context) *channelFieldPresenter {
 	writer := output.WriterFromContext(ctx)
 	out := io.Writer(io.Discard)
 
+	// The field table is content on stdout, so it follows stdout's color
+	// decision and profile.
 	profile := termenv.Ascii
-	useColor := false
 	if writer != nil {
 		if writer.Out != nil {
 			out = writer.Out
 		}
-		useColor = writer.UseColor()
+		profile = writer.OutColorProfile()
 	}
-	if useColor {
-		switch writer.Color {
-		case "always":
-			profile = termenv.TrueColor
-		default:
-			profile = termenv.EnvColorProfile()
-		}
-	}
+	useColor := profile != termenv.Ascii
 
 	return &channelFieldPresenter{
 		out:      out,
@@ -420,12 +414,14 @@ func (p *channelFieldPresenter) renderExtraDetails(field api.CustomField, indent
 	return nil
 }
 
+// fieldKey and value keep the terminal's own foreground (near-white hex
+// values disappeared on light backgrounds).
 func (p *channelFieldPresenter) fieldKey(value string) string {
-	return p.style(value, "#e2e8f0", true)
+	return p.style(value, "", true)
 }
 
 func (p *channelFieldPresenter) value(value string) string {
-	return p.style(value, "#cbd5e1", false)
+	return value
 }
 
 func (p *channelFieldPresenter) fieldType(value string) string {
@@ -463,7 +459,10 @@ func (p *channelFieldPresenter) style(value string, color string, bold bool) str
 	if !p.useColor || strings.TrimSpace(value) == "" {
 		return value
 	}
-	styled := p.termOut.String(value).Foreground(p.termOut.Color(color))
+	styled := p.termOut.String(value)
+	if color != "" {
+		styled = styled.Foreground(p.termOut.Color(color))
+	}
 	if bold {
 		return styled.Bold().String()
 	}

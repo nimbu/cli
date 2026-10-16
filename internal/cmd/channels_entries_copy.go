@@ -86,7 +86,7 @@ func (c *ChannelEntriesCopyCmd) Run(ctx context.Context, flags *RootFlags) error
 		}
 	}
 	for _, warning := range result.Warnings {
-		if _, err := output.Fprintf(ctx, "warning: %s\n", warning); err != nil {
+		if err := output.Warn(ctx, warning); err != nil {
 			return err
 		}
 	}

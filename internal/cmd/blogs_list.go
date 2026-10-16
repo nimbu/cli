@@ -55,6 +55,7 @@ func (c *BlogsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		meta.probeTotal(ctx, client, "/blogs/count", opts)
 	}
 
+	noteMoreResults(ctx, "blogs", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, documents)

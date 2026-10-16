@@ -34,18 +34,22 @@ func TestPhase1ListFooterSnapshots(t *testing.T) {
 	} {
 		fmt.Fprintf(&sb, "## mode=%s\n", mode.name)
 		for _, resource := range resources {
-			buf := &bytes.Buffer{}
-			ctx := output.WithWriter(context.Background(), &output.Writer{Out: buf, Err: buf, Mode: mode.cfg})
+			stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+			ctx := output.WithWriter(context.Background(), &output.Writer{Out: stdout, Err: stderr, Mode: mode.cfg})
 			ctx = output.WithMode(ctx, mode.cfg)
 			meta := listFooterMeta{Page: 1, PerPage: 25, Returned: 25, Total: 100, TotalKnown: true}
+			noteMoreResults(ctx, resource, meta)
 			if err := writeListFooter(ctx, resource, meta); err != nil {
 				t.Fatalf("write footer: %v", err)
 			}
-			line := strings.TrimSpace(buf.String())
+			if stdout.Len() != 0 {
+				t.Fatalf("footer must never reach stdout, got %q", stdout.String())
+			}
+			line := strings.TrimSpace(stderr.String())
 			if line == "" {
 				line = "<empty>"
 			}
-			fmt.Fprintf(&sb, "%s => %s\n", resource, line)
+			fmt.Fprintf(&sb, "%s => stderr: %s\n", resource, line)
 		}
 		sb.WriteString("\n")
 	}

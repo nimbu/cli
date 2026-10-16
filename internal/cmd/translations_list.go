@@ -58,6 +58,7 @@ func (c *TranslationsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("list translations: %w", err)
 	}
 
+	noteMoreResults(ctx, "translation keys", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		if c.Locale != "" {
