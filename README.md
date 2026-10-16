@@ -427,7 +427,10 @@ pushes the theme. Commit your changes first; use `--allow-dirty` for a deliberat
 uncommitted deployment.
 
 Protected environments require confirmation. In CI, pass `--no-input --yes` to
-`schema apply` or `release`; `--force` does not bypass protection. Review `plan`
+`schema apply` or `release`; `--force` does not bypass protection. Elsewhere
+`--yes` (`-y`) and `--force` are interchangeable. Without a terminal on stdin,
+or with `CI` set, nimbu never prompts: it fails with
+`cli.confirmation_required` (exit 2) and names the flag to pass. Review `plan`
 before adding `--prune`, which removes omitted fields and options. Creating
 circular channel references may leave placeholder fields; remove those with a
 reviewed `--prune` apply.
