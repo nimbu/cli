@@ -78,7 +78,7 @@ func (m *initTeaModel) isSelected(id string) bool {
 
 func (m *initTeaModel) resolveSourceCmd() tea.Cmd {
 	return func() tea.Msg {
-		sourceDir, sourceLabel, cleanup, err := m.cmd.resolveSource()
+		sourceDir, sourceLabel, cleanup, err := m.cmd.resolveSource(m.ctx)
 		if err != nil {
 			return initTeaErrMsg{err: err}
 		}

@@ -17,13 +17,24 @@ import (
 	"github.com/nimbu/cli/internal/output"
 )
 
-func TestInitRejectsNoInput(t *testing.T) {
+func TestInitNoInputNamesMissingFlags(t *testing.T) {
 	ctx, _, _ := newInitTestContext(t, "https://api.example.test", output.Mode{})
-	cmd := &InitCmd{}
+	cmd := &InitCmd{OnConflict: initConflictAsk}
 
 	err := cmd.Run(ctx, &RootFlags{NoInput: true})
-	if err == nil || !strings.Contains(err.Error(), "interactive only") {
-		t.Fatalf("expected interactive-only error, got %v", err)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != ExitUsage {
+		t.Fatalf("expected usage exit error, got %v", err)
+	}
+	for _, needle := range []string{"--no-input", "missing --site, --theme"} {
+		if !strings.Contains(err.Error(), needle) {
+			t.Fatalf("expected %q in error, got %v", needle, err)
+		}
+	}
+
+	err = (&InitCmd{Theme: "storefront"}).Run(ctx, &RootFlags{NoInput: true})
+	if err == nil || !strings.Contains(err.Error(), "missing --site") || strings.Contains(err.Error(), "missing --site, --theme") {
+		t.Fatalf("expected only --site reported missing, got %v", err)
 	}
 }
 
@@ -50,12 +61,11 @@ func TestInitBootstrapsProjectIntoOutputDir(t *testing.T) {
 	ctx, stdout, _ := newInitTestContext(t, srv.URL, output.Mode{JSON: true})
 	withTempCWD(t, t.TempDir(), func() {
 		withTempStdin(t, strings.Join([]string{
-			"",
-			"",
-			"",
+			"", // site
+			"", // directory name (single theme is picked automatically)
 			"select",
-			"blog-articles",
 			"header,text",
+			"blog-articles",
 			"y",
 			"",
 		}, "\n"), func() {
@@ -97,8 +107,8 @@ func TestInitInPlaceLeavesGitAloneAndHonorsConflictChoice(t *testing.T) {
 	}
 
 	withTempCWD(t, target, func() {
-		// site, theme, repeatable-mode (all), bundle-ids, confirm, then overwrite nimbu.yml -> "n" (keep mine)
-		withTempStdin(t, strings.Join([]string{"", "", "all", "", "y", "n"}, "\n"), func() {
+		// site, repeatable-mode (all), bundle-ids, confirm, then overwrite nimbu.yml -> "n" (keep mine)
+		withTempStdin(t, strings.Join([]string{"", "all", "", "y", "n"}, "\n"), func() {
 			cmd := &InitCmd{Dir: sourceDir, Directory: "."}
 			if err := cmd.Run(ctx, &RootFlags{}); err != nil {
 				t.Fatalf("run init: %v", err)
@@ -143,8 +153,8 @@ func TestInitPositionalNewPathCreatesAndCommits(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "new-theme")
 
 	withTempCWD(t, t.TempDir(), func() {
-		// site, theme, repeatable-mode (all), bundle-ids, confirm (no conflict prompt — fresh path)
-		withTempStdin(t, strings.Join([]string{"", "", "all", "", "y"}, "\n"), func() {
+		// site, repeatable-mode (all), bundle-ids, confirm (no conflict prompt — fresh path)
+		withTempStdin(t, strings.Join([]string{"", "all", "", "y"}, "\n"), func() {
 			cmd := &InitCmd{Dir: sourceDir, Directory: target}
 			if err := cmd.Run(ctx, &RootFlags{}); err != nil {
 				t.Fatalf("run init: %v", err)
@@ -260,13 +270,13 @@ func TestCloneStarterRepoPrefersGHForGitHubShorthand(t *testing.T) {
 				return "", errors.New("missing")
 			}
 		},
-		run: func(name string, args []string, env []string) error {
+		run: func(_ context.Context, name string, args []string, env []string) error {
 			calls = append(calls, cloneCall{Name: name, Args: append([]string(nil), args...), Env: append([]string(nil), env...)})
 			return nil
 		},
 	}
 
-	if err := cloneStarterRepoWithRunner(runner, destDir, "zenjoy/theme-starterskit", "vite-go-cli"); err != nil {
+	if err := cloneStarterRepoWithRunner(context.Background(), runner, destDir, "zenjoy/theme-starterskit", "vite-go-cli"); err != nil {
 		t.Fatalf("cloneStarterRepoWithRunner: %v", err)
 	}
 
@@ -294,7 +304,7 @@ func TestCloneStarterRepoFallsBackToSSHThenHTTPS(t *testing.T) {
 			}
 			return "", errors.New("missing")
 		},
-		run: func(name string, args []string, env []string) error {
+		run: func(_ context.Context, name string, args []string, env []string) error {
 			calls = append(calls, cloneCall{Name: name, Args: append([]string(nil), args...), Env: append([]string(nil), env...)})
 			switch len(calls) {
 			case 1:
@@ -316,7 +326,7 @@ func TestCloneStarterRepoFallsBackToSSHThenHTTPS(t *testing.T) {
 		},
 	}
 
-	if err := cloneStarterRepoWithRunner(runner, destDir, "zenjoy/theme-starterskit", "vite-go-cli"); err != nil {
+	if err := cloneStarterRepoWithRunner(context.Background(), runner, destDir, "zenjoy/theme-starterskit", "vite-go-cli"); err != nil {
 		t.Fatalf("cloneStarterRepoWithRunner: %v", err)
 	}
 
@@ -348,13 +358,13 @@ func TestCloneStarterRepoExplicitHTTPSDisablesPrompts(t *testing.T) {
 			}
 			return "", errors.New("missing")
 		},
-		run: func(name string, args []string, env []string) error {
+		run: func(_ context.Context, name string, args []string, env []string) error {
 			calls = append(calls, cloneCall{Name: name, Args: append([]string(nil), args...), Env: append([]string(nil), env...)})
 			return nil
 		},
 	}
 
-	if err := cloneStarterRepoWithRunner(runner, t.TempDir(), "https://github.com/zenjoy/theme-starterskit.git", "vite-go-cli"); err != nil {
+	if err := cloneStarterRepoWithRunner(context.Background(), runner, t.TempDir(), "https://github.com/zenjoy/theme-starterskit.git", "vite-go-cli"); err != nil {
 		t.Fatalf("cloneStarterRepoWithRunner: %v", err)
 	}
 
@@ -379,12 +389,12 @@ func TestCloneStarterRepoFailureIsActionable(t *testing.T) {
 			}
 			return "", errors.New("missing")
 		},
-		run: func(name string, args []string, env []string) error {
+		run: func(_ context.Context, name string, args []string, env []string) error {
 			return errors.New("boom")
 		},
 	}
 
-	err := cloneStarterRepoWithRunner(runner, filepath.Join(t.TempDir(), "source"), "zenjoy/theme-starterskit", "vite-go-cli")
+	err := cloneStarterRepoWithRunner(context.Background(), runner, filepath.Join(t.TempDir(), "source"), "zenjoy/theme-starterskit", "vite-go-cli")
 	if err == nil {
 		t.Fatalf("expected clone failure")
 	}
@@ -443,12 +453,11 @@ func TestInitShowsSourcePreparationProgressBeforePrompting(t *testing.T) {
 
 	withTempCWD(t, t.TempDir(), func() {
 		withTempStdin(t, strings.Join([]string{
-			"",
-			"",
-			"",
+			"", // site
+			"", // directory name (single theme is picked automatically)
 			"select",
-			"blog-articles",
 			"header,text",
+			"blog-articles",
 			"y",
 			"",
 		}, "\n"), func() {
@@ -463,7 +472,6 @@ func TestInitShowsSourcePreparationProgressBeforePrompting(t *testing.T) {
 	})
 
 	for _, needle := range []string{
-		"███╗   ██╗██╗███╗   ███╗██████╗ ██╗   ██╗",
 		"Loading bootstrap manifest...",
 		"done  Loading bootstrap manifest",
 	} {
@@ -471,8 +479,9 @@ func TestInitShowsSourcePreparationProgressBeforePrompting(t *testing.T) {
 			t.Fatalf("expected progress output containing %q, got:\n%s", needle, stderr.String())
 		}
 	}
-	if strings.Index(stderr.String(), "███╗   ██╗██╗███╗   ███╗██████╗ ██╗   ██╗") > strings.Index(stderr.String(), "Loading bootstrap manifest...") {
-		t.Fatalf("expected banner before progress output, got:\n%s", stderr.String())
+	// stderr is not a terminal: the big banner stays out of logs and pipes.
+	if strings.Contains(stderr.String(), "███╗") {
+		t.Fatalf("expected no banner on non-TTY stderr, got:\n%s", stderr.String())
 	}
 }
 
