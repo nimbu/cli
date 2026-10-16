@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -149,6 +150,17 @@ func TestServerSignalChildHelperProcess(t *testing.T) {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
 
+	if os.Getenv("NIMBU_SERVER_SIGNAL_IGNORE_INT") == "1" {
+		// Simulate a dev server that hangs on shutdown: note the interrupt,
+		// keep serving, and wait to be killed.
+		<-sigCh
+		if path := os.Getenv("NIMBU_SERVER_SIGNAL_INTERRUPTED_PATH"); path != "" {
+			_ = os.WriteFile(path, []byte("interrupted"), 0o644)
+		}
+		time.Sleep(20 * time.Second)
+		t.Fatal("helper was not killed")
+	}
+
 	select {
 	case <-sigCh:
 		if stoppedPath := os.Getenv("NIMBU_SERVER_SIGNAL_STOPPED_PATH"); stoppedPath != "" {
@@ -258,4 +270,209 @@ func cleanupServerSignalChild(pidPath string) {
 	}
 	_ = syscall.Kill(-pid, syscall.SIGKILL)
 	_ = syscall.Kill(pid, syscall.SIGKILL)
+}
+
+func TestServerRunSecondInterruptForcesStop(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/user":
+			_, _ = w.Write([]byte(`{"id":"user-1"}`))
+		case "/sites/demo":
+			_, _ = w.Write([]byte(`{"id":"site-1","subdomain":"demo"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer apiServer.Close()
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "templates"), 0o755); err != nil {
+		t.Fatalf("mkdir templates: %v", err)
+	}
+	readyAddr := reserveTCPAddr(t)
+	readyURL := "http://" + readyAddr + "/ready"
+	pidPath := filepath.Join(root, "child-pid")
+	interruptedPath := filepath.Join(root, "child-interrupted")
+
+	t.Setenv("NIMBU_TOKEN", "test-token")
+	t.Setenv("NIMBU_SERVER_SIGNAL_HELPER", "1")
+	t.Setenv("NIMBU_SERVER_SIGNAL_IGNORE_INT", "1")
+	t.Setenv("NIMBU_SERVER_SIGNAL_READY_ADDR", readyAddr)
+	t.Setenv("NIMBU_SERVER_SIGNAL_PID_PATH", pidPath)
+	t.Setenv("NIMBU_SERVER_SIGNAL_INTERRUPTED_PATH", interruptedPath)
+
+	flags := &RootFlags{APIURL: apiServer.URL, Site: "demo", Timeout: 2 * time.Second}
+	ctx := newServerSignalTestContext(flags)
+	cmd := &ServerCmd{
+		Arg:          []string{"-test.run=^TestServerSignalChildHelperProcess$"},
+		CMD:          os.Args[0],
+		NoWatch:      true,
+		ProxyHost:    "127.0.0.1",
+		ProxyPort:    reserveTCPPort(t),
+		ReadyTimeout: 5 * time.Second,
+		ReadyURL:     readyURL,
+		TemplateRoot: root,
+	}
+
+	// Keep a stray SIGINT (after Run stops listening) from killing the test.
+	guard := make(chan os.Signal, 4)
+	signal.Notify(guard, os.Interrupt)
+	defer signal.Stop(guard)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- cmd.Run(ctx, flags)
+	}()
+	t.Cleanup(func() { cleanupServerSignalChild(pidPath) })
+
+	waitForServerSignalReady(t, readyURL, errCh)
+
+	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+		t.Fatalf("send first SIGINT: %v", err)
+	}
+	if !waitForServerSignalFile(interruptedPath, 5*time.Second) {
+		t.Fatal("child never saw the graceful interrupt")
+	}
+	select {
+	case err := <-errCh:
+		t.Fatalf("run returned during the graceful stop: %v", err)
+	default:
+	}
+
+	forcedAt := time.Now()
+	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+		t.Fatalf("send second SIGINT: %v", err)
+	}
+
+	select {
+	case err := <-errCh:
+		var exitErr *ExitError
+		if !errors.As(err, &exitErr) || exitErr.Code != 130 {
+			t.Fatalf("run error = %v, want exit 130", err)
+		}
+		// The graceful path would wait out the 5s child grace period.
+		if elapsed := time.Since(forcedAt); elapsed > 3*time.Second {
+			t.Fatalf("forced stop took %s", elapsed)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("second SIGINT did not force the stop")
+	}
+
+	pid := readServerSignalPID(t, pidPath)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("child %d survived the forced stop", pid)
+}
+
+func readServerSignalPID(t *testing.T, path string) int {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read pid file: %v", err)
+	}
+	pid, err := strconv.Atoi(string(bytes.TrimSpace(data)))
+	if err != nil || pid <= 0 {
+		t.Fatalf("bad pid %q: %v", data, err)
+	}
+	return pid
+}
+
+type fakeServerSuspender struct{ calls []string }
+
+func (f *fakeServerSuspender) Suspend() error { f.calls = append(f.calls, "suspend"); return nil }
+func (f *fakeServerSuspender) Resume() error  { f.calls = append(f.calls, "resume"); return nil }
+
+func TestHandleServerSuspendSignal(t *testing.T) {
+	term := &fakeServerSuspender{}
+	stopSelf := func() { term.calls = append(term.calls, "stop") }
+
+	handleServerSuspendSignal(syscall.SIGTSTP, term, stopSelf)
+	handleServerSuspendSignal(syscall.SIGCONT, term, stopSelf)
+
+	if got, want := strings.Join(term.calls, ","), "suspend,stop,resume"; got != want {
+		t.Fatalf("calls = %q, want %q", got, want)
+	}
+}
+
+// A failure (here: readiness timeout) stops the child in the background too,
+// so Ctrl-C still forces the stop instead of waiting out the grace period of
+// a child that ignores the interrupt. Run keeps returning the failure.
+func TestServerRunInterruptForcesStopAfterReadinessFailure(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/user":
+			_, _ = w.Write([]byte(`{"id":"user-1"}`))
+		case "/sites/demo":
+			_, _ = w.Write([]byte(`{"id":"site-1","subdomain":"demo"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer apiServer.Close()
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "templates"), 0o755); err != nil {
+		t.Fatalf("mkdir templates: %v", err)
+	}
+	pidPath := filepath.Join(root, "child-pid")
+	interruptedPath := filepath.Join(root, "child-interrupted")
+
+	t.Setenv("NIMBU_TOKEN", "test-token")
+	t.Setenv("NIMBU_SERVER_SIGNAL_HELPER", "1")
+	t.Setenv("NIMBU_SERVER_SIGNAL_IGNORE_INT", "1")
+	t.Setenv("NIMBU_SERVER_SIGNAL_READY_ADDR", reserveTCPAddr(t))
+	t.Setenv("NIMBU_SERVER_SIGNAL_PID_PATH", pidPath)
+	t.Setenv("NIMBU_SERVER_SIGNAL_INTERRUPTED_PATH", interruptedPath)
+
+	flags := &RootFlags{APIURL: apiServer.URL, Site: "demo", Timeout: 2 * time.Second}
+	ctx := newServerSignalTestContext(flags)
+	cmd := &ServerCmd{
+		Arg:       []string{"-test.run=^TestServerSignalChildHelperProcess$"},
+		CMD:       os.Args[0],
+		NoWatch:   true,
+		ProxyHost: "127.0.0.1",
+		ProxyPort: reserveTCPPort(t),
+		// Nothing listens here, so readiness times out.
+		ReadyTimeout: 500 * time.Millisecond,
+		ReadyURL:     "http://" + reserveTCPAddr(t) + "/ready",
+		TemplateRoot: root,
+	}
+
+	guard := make(chan os.Signal, 4)
+	signal.Notify(guard, os.Interrupt)
+	defer signal.Stop(guard)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- cmd.Run(ctx, flags)
+	}()
+	t.Cleanup(func() { cleanupServerSignalChild(pidPath) })
+
+	// The child sees the graceful interrupt once the failure cleanup began.
+	if !waitForServerSignalFile(interruptedPath, 5*time.Second) {
+		t.Fatal("failure cleanup never interrupted the child")
+	}
+	forcedAt := time.Now()
+	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+		t.Fatalf("send SIGINT: %v", err)
+	}
+
+	select {
+	case err := <-errCh:
+		if err == nil || !strings.Contains(err.Error(), "readiness timeout") {
+			t.Fatalf("run error = %v, want the readiness timeout", err)
+		}
+		if elapsed := time.Since(forcedAt); elapsed > 3*time.Second {
+			t.Fatalf("forced stop took %s", elapsed)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("SIGINT during failure cleanup did not force the stop")
+	}
 }
