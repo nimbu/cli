@@ -25,11 +25,6 @@ type ChildConfig struct {
 	Stderr io.Writer
 }
 
-// outputDrainDelay bounds how long Wait keeps copying output after the child
-// exits when output goes through a pipe (non-*os.File writers). A detached
-// grandchild holding the pipe open must not block shutdown.
-const outputDrainDelay = 2 * time.Second
-
 // Process supervises the child development server.
 type Process struct {
 	config ChildConfig
@@ -68,19 +63,25 @@ func (p *Process) Start() error {
 		env = append(env, key+"="+value)
 	}
 	cmd.Env = env
-	cmd.Stdout = os.Stdout
-	if p.config.Stdout != nil {
-		cmd.Stdout = p.config.Stdout
+
+	output := &childOutput{}
+	stdout, err := output.attach(p.config.Stdout, os.Stdout)
+	if err != nil {
+		return fmt.Errorf("connect child stdout: %w", err)
 	}
-	cmd.Stderr = os.Stderr
-	if p.config.Stderr != nil {
-		cmd.Stderr = p.config.Stderr
+	stderr, err := output.attach(p.config.Stderr, os.Stderr)
+	if err != nil {
+		output.abort()
+		return fmt.Errorf("connect child stderr: %w", err)
 	}
-	cmd.WaitDelay = outputDrainDelay
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
 	if err := cmd.Start(); err != nil {
+		output.abort()
 		return fmt.Errorf("start child dev server: %w", err)
 	}
+	output.started()
 	group := attachChildGroup(cmd)
 	p.mu.Lock()
 	p.cmd = cmd
@@ -98,6 +99,8 @@ func (p *Process) Start() error {
 		p.group = nil
 		p.mu.Unlock()
 		releaseChildGroup(group)
+		// Reaping the group closed every other writer, so this is quick.
+		output.drain(outputDrainDelay)
 
 		exitCh <- waitErr
 		close(exitCh)

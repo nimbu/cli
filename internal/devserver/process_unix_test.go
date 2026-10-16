@@ -123,6 +123,33 @@ func TestProcessStopReapsLeftoverGroupMembers(t *testing.T) {
 	waitForProcessGone(t, background)
 }
 
+func TestProcessStopIsNotHeldUpByLeftoverHoldingOutputPipe(t *testing.T) {
+	pidPath := filepath.Join(t.TempDir(), "background.pid")
+	var stdout lockedBuffer
+	// The backgrounded sleep inherits the stdout pipe and ignores SIGINT.
+	p := NewProcess(ChildConfig{
+		Command: "sh",
+		Args:    []string{"-c", `sleep 60 & echo $! > "$0"; echo started; wait`, pidPath},
+		Stdout:  &stdout,
+	})
+	if err := p.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	background := waitForPID(t, pidPath)
+
+	start := time.Now()
+	if err := p.Stop(5 * time.Second); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 1500*time.Millisecond {
+		t.Fatalf("stop took %s; the open pipe should not delay it", elapsed)
+	}
+	waitForProcessGone(t, background)
+	if got := stdout.String(); got != "started\n" {
+		t.Fatalf("stdout = %q", got)
+	}
+}
+
 func waitForProcessGone(t *testing.T, pid int) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
