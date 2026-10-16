@@ -276,7 +276,7 @@ func newRootWriter(flags RootFlags, mode output.Mode) *output.Writer {
 
 func newParser() (*kong.Kong, *CLI, error) {
 	vars := kong.Vars{
-		"color":   strings.ToLower(strings.TrimSpace(envOr("NIMBU_COLOR", "auto"))),
+		"color":   envOr("NIMBU_COLOR", "auto"),
 		"json":    boolString(os.Getenv("NIMBU_JSON") == "1" || os.Getenv("NIMBU_JSON") == "true"),
 		"plain":   boolString(os.Getenv("NIMBU_PLAIN") == "1" || os.Getenv("NIMBU_PLAIN") == "true"),
 		"version": VersionString(),

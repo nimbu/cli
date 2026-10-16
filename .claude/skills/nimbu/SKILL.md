@@ -87,7 +87,7 @@ Progress UI, applied-count lines, warnings, and the structured error envelope al
 | `--force` | Skip confirmations for destructive ops |
 | `--yes`, `-y` | Same as `--force`; also confirms protected environments |
 | `--readonly` | Disable all write operations |
-| `--no-input` | Never prompt; fail instead (CI mode, also implied by `CI` or a non-terminal stdin) |
+| `--no-input` | Never prompt; fail instead (CI mode). Prompts also refuse when `CI` is set or stdin is not a terminal |
 | `--no-progress` | Disable live progress UI |
 | `--verbose` | Verbose logging |
 | `--debug` | HTTP request/response traces |

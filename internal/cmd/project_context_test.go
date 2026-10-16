@@ -101,7 +101,7 @@ func TestProtectedEnvironmentIgnoresForceAndNamesYes(t *testing.T) {
 	flags := &RootFlags{Environment: "production", SelectedEnvironmentProtected: true, Force: true}
 	err := confirmProtectedEnvironment(context.Background(), flags, false, "release project")
 	desc := classifyError(err)
-	if desc.Code != errorConfirmationRequired || !strings.Contains(desc.Message, "requires --yes") || !strings.Contains(desc.Hint, "--force does not bypass") {
+	if desc.Code != errorConfirmationRequired || !strings.Contains(desc.Message, "requires --yes") || !strings.Contains(desc.Hint, "--force does not bypass a protected environment") {
 		t.Fatalf("desc = %+v", desc)
 	}
 }

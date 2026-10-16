@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 )
 
@@ -37,10 +38,26 @@ func withInterrupt(parent context.Context) (context.Context, func()) {
 	}
 }
 
+// activePrompts counts prompts blocked on stdin. A read cannot be canceled
+// through the context, so Ctrl-C during a prompt exits at once, as it did
+// before the root installed a handler.
+var activePrompts atomic.Int32
+
+// beginPrompt marks a blocking stdin read; call the returned func when done.
+func beginPrompt() func() {
+	activePrompts.Add(1)
+	return func() { activePrompts.Add(-1) }
+}
+
 func watchInterrupts(sigCh <-chan os.Signal, done <-chan struct{}, cancel context.CancelCauseFunc) {
 	select {
 	case <-sigCh:
 		cancel(errInterrupted)
+		if activePrompts.Load() > 0 {
+			_, _ = os.Stderr.WriteString("\n") // end the prompt line
+			forceExit(ExitInterrupted)
+			return
+		}
 	case <-done:
 		return
 	}

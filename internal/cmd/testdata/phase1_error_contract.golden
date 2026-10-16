@@ -43,7 +43,7 @@
 {
   "code": "cli.usage.site_required",
   "message": "no site selected",
-  "hint": "pass --site \u003csite\u003e, set NIMBU_SITE, add site: to nimbu.yml, or set default_site with `nimbu config set default_site \u003csite\u003e`",
+  "hint": "pass --site \u003csite\u003e, set NIMBU_SITE, add site: to nimbu.yml, or set default_site with `nimbu config set --key default_site --value \u003csite\u003e`",
   "exit_code": 2,
   "retryable": false
 }

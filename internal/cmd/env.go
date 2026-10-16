@@ -143,7 +143,7 @@ func confirmProtectedEnvironment(ctx context.Context, flags *RootFlags, yes bool
 	}
 	target := fmt.Sprintf("%s on protected environment %s", action, flags.Environment)
 	if reason := promptBlocker(flags); reason != "" {
-		return confirmationRequiredError(fmt.Sprintf("%s requires --yes (cannot prompt: %s)", target, reason), "--yes")
+		return protectedConfirmationError(fmt.Sprintf("%s requires --yes (cannot prompt: %s)", target, reason))
 	}
 	// --force deliberately does not confirm a protected environment.
 	promptFlags := *flags

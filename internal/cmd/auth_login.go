@@ -286,6 +286,7 @@ func revokeReplacedSession(ctx context.Context, host string, previous auth.Crede
 }
 
 func prompt(message string) (string, error) {
+	defer beginPrompt()()
 	fmt.Fprint(os.Stderr, message)
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
@@ -296,6 +297,7 @@ func prompt(message string) (string, error) {
 }
 
 func promptPassword(message string) (string, error) {
+	defer beginPrompt()()
 	fmt.Fprint(os.Stderr, message)
 	password, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Fprintln(os.Stderr) // newline after password

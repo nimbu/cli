@@ -168,7 +168,9 @@ func confirmThemeOverwrite(flags *RootFlags) func(context.Context, themes.Resour
 			_, _ = fmt.Fprintf(w.Err, "warning: %s\n", detail)
 		}
 		_, _ = fmt.Fprintf(w.Err, "overwrite %s? [y/N]: ", resource.DisplayPath)
+		endPrompt := beginPrompt()
 		answer, readErr := reader.ReadString('\n')
+		endPrompt()
 		if readErr != nil && len(answer) == 0 {
 			return false, readErr
 		}

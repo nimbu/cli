@@ -99,3 +99,28 @@ func TestInterruptedErrorsExit130(t *testing.T) {
 		t.Fatalf("interruptedError must wrap both causes: %v", wrapped)
 	}
 }
+
+func TestInterruptDuringPromptExitsImmediately(t *testing.T) {
+	codes := stubForceExit(t)
+	endPrompt := beginPrompt()
+	defer endPrompt()
+
+	sigCh := make(chan os.Signal, 1)
+	done := make(chan struct{})
+	defer close(done)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	go watchInterrupts(sigCh, done, cancel)
+
+	sigCh <- os.Interrupt
+	select {
+	case code := <-codes:
+		if code != ExitInterrupted {
+			t.Fatalf("exit = %d, want %d", code, ExitInterrupted)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Ctrl-C during a prompt must exit at once")
+	}
+	if !interrupted(ctx) {
+		t.Fatal("context should still be canceled")
+	}
+}

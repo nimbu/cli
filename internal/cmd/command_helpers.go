@@ -54,9 +54,16 @@ func confirmationRequiredError(message, flag string) error {
 	case "--force":
 		hint = "re-run with --force (or --yes) to confirm"
 	case "--yes":
-		hint = "re-run with --yes to confirm; --force does not bypass this confirmation"
+		hint = "re-run with --yes (or --force) to confirm"
 	}
 	return newHintedError(errors.New(message), errorConfirmationRequired, ExitUsage, hint)
+}
+
+// protectedConfirmationError is the confirmation failure for a protected
+// environment, which only --yes confirms.
+func protectedConfirmationError(message string) error {
+	return newHintedError(errors.New(message), errorConfirmationRequired, ExitUsage,
+		"re-run with --yes to confirm; --force does not bypass a protected environment")
 }
 
 func readJSONInput(file string) (map[string]any, error) {

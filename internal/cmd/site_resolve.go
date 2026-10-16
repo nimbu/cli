@@ -82,6 +82,6 @@ func siteRequiredError(projErr error) error {
 	return newHintedError(
 		errors.New("no site selected"),
 		errorSiteRequired, ExitUsage,
-		fmt.Sprintf("pass --site <site>, set NIMBU_SITE, add site: to %s, or set default_site with `nimbu config set default_site <site>`", lookup),
+		fmt.Sprintf("pass --site <site>, set NIMBU_SITE, add site: to %s, or set default_site with `nimbu config set --key default_site --value <site>`", lookup),
 	)
 }
