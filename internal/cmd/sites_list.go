@@ -47,6 +47,7 @@ func (c *SitesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		meta.probeTotal(ctx, client, "/sites/count", opts)
 	}
 
+	noteMoreResults(ctx, "sites", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		if fields := listRequestedFields(&c.QueryFlags); len(fields) > 0 {

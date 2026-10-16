@@ -149,12 +149,15 @@ func stubUpdateNotifier(t *testing.T, tty bool, fn func(context.Context, io.Writ
 	t.Helper()
 
 	origNotify := notifyUpdate
+	origPrefetch := prefetchUpdate
 	origTTY := stderrIsTTY
 	notifyUpdate = fn
+	prefetchUpdate = func(context.Context, string) {}
 	stderrIsTTY = func(*output.Writer) bool { return tty }
 
 	return func() {
 		notifyUpdate = origNotify
+		prefetchUpdate = origPrefetch
 		stderrIsTTY = origTTY
 	}
 }
@@ -205,4 +208,42 @@ func captureExecute(t *testing.T, args []string) (int, string, string) {
 		t.Fatalf("read stderr pipe: %v", err)
 	}
 	return code, stdoutBuf.String(), stderrBuf.String()
+}
+
+func TestExecutePrefetchesUpdateCheckBeforeCommandRuns(t *testing.T) {
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tempHome, ".config"))
+
+	var order []string
+	restore := stubUpdateNotifier(t, true, func(context.Context, io.Writer, string, updatecheck.Style) {
+		order = append(order, "notify")
+	})
+	defer restore()
+	prefetchUpdate = func(_ context.Context, currentVersion string) {
+		if currentVersion != "v0.1.1" {
+			t.Fatalf("prefetch version = %q", currentVersion)
+		}
+		order = append(order, "prefetch")
+	}
+	restoreVersion := stubVersion(t, "v0.1.1")
+	defer restoreVersion()
+
+	if code, _, stderr := captureExecute(t, []string{"config", "path"}); code != 0 {
+		t.Fatalf("expected exit code 0, got %d with stderr %q", code, stderr)
+	}
+	if strings.Join(order, ",") != "prefetch,notify" {
+		t.Fatalf("expected prefetch before notify, got %v", order)
+	}
+}
+
+func TestStyleUpdateNoticeHonorsNoColor(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	restore := stubUpdateNotifier(t, true, nil)
+	defer restore()
+
+	style := styleUpdateNotice(&output.Writer{Color: "auto"})
+	if style.Bold != nil || style.Dim != nil {
+		t.Fatal("expected NO_COLOR to disable notice styling")
+	}
 }

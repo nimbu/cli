@@ -55,6 +55,7 @@ func (c *UploadsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		meta.probeTotal(ctx, client, "/uploads/count", opts)
 	}
 
+	noteMoreResults(ctx, "uploads", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, uploads)

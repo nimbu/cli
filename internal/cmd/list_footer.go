@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -49,32 +50,87 @@ func (m *listFooterMeta) probeTotal(ctx context.Context, client *api.Client, pat
 	m.TotalKnown = true
 }
 
+// moreAvailable reports whether the listing left results out: the server
+// advertised a next page, or the known total exceeds what was returned.
+func (m listFooterMeta) moreAvailable() bool {
+	if m.All {
+		return false
+	}
+	return m.HasNext || (m.TotalKnown && m.Total > m.Returned)
+}
+
+// nextPage is the page to suggest, or 0 when the current page is the last.
+func (m listFooterMeta) nextPage() int {
+	if m.HasNext {
+		return m.Page + 1
+	}
+	if m.TotalKnown && m.PerPage > 0 && m.Page*m.PerPage < m.Total {
+		return m.Page + 1
+	}
+	return 0
+}
+
+// writeListFooter tells a human that a table is incomplete. It goes to stderr
+// so `nimbu sites list | wc -l` counts rows only, and stays silent when the
+// listing was complete. Machine modes get noteMoreResults instead.
 func writeListFooter(ctx context.Context, resource string, meta listFooterMeta) error {
-	mode := output.FromContext(ctx)
-	if mode.JSON || mode.Plain {
+	if !output.IsHuman(ctx) || !meta.moreAvailable() {
 		return nil
 	}
 
 	w := output.WriterFromContext(ctx)
-	if meta.All {
-		_, err := fmt.Fprintf(w.Out, "\nShowing all %d %s.\n", meta.Returned, resource)
-		return err
-	}
-
+	var msg string
 	if meta.TotalKnown {
-		shown := meta.Returned
-		if meta.Total < shown {
-			shown = meta.Total
-		}
-		_, err := fmt.Fprintf(w.Out, "\nShowing %d of %d %s (page %d, per-page %d). Use --all for full results.\n", shown, meta.Total, resource, meta.Page, meta.PerPage)
-		return err
+		msg = fmt.Sprintf("Showing %d of %d %s (page %d, per-page %d).",
+			meta.Returned, meta.Total, pluralNoun(meta.Total, resource), meta.Page, meta.PerPage)
+	} else {
+		msg = fmt.Sprintf("Showing %d %s on page %d; more results available.",
+			meta.Returned, pluralNoun(meta.Returned, resource), meta.Page)
 	}
-
-	if meta.HasNext {
-		_, err := fmt.Fprintf(w.Out, "\nShowing %d %s on page %d (total unknown). More results available; use --page %d or --all.\n", meta.Returned, resource, meta.Page, meta.Page+1)
-		return err
+	if next := meta.nextPage(); next > 0 {
+		msg += fmt.Sprintf(" Use --page %d for more, or --all for everything.", next)
+	} else {
+		msg += " Use --all for full results."
 	}
-
-	_, err := fmt.Fprintf(w.Out, "\nShowing %d %s on page %d (total unknown).\n", meta.Returned, resource, meta.Page)
+	_, err := fmt.Fprintf(w.Err, "\n%s\n", w.ErrTheme().Muted(msg))
 	return err
+}
+
+// noteMoreResults writes a one-line stderr notice in --json/--plain mode when
+// the listing is incomplete, so agents learn to paginate without the stdout
+// array or TSV shape changing. Human mode is handled by writeListFooter.
+func noteMoreResults(ctx context.Context, resource string, meta listFooterMeta) {
+	if output.IsHuman(ctx) || !meta.moreAvailable() {
+		return
+	}
+	w := output.WriterFromContext(ctx)
+	if w.Err == nil {
+		return
+	}
+
+	shown := fmt.Sprintf("showing %d %s", meta.Returned, pluralNoun(meta.Returned, resource))
+	if meta.TotalKnown {
+		shown = fmt.Sprintf("showing %d of %d %s", meta.Returned, meta.Total, pluralNoun(meta.Total, resource))
+	}
+	hint := "pass --all"
+	if next := meta.nextPage(); next > 0 {
+		hint = fmt.Sprintf("pass --all or --page %d", next)
+	}
+	_, _ = fmt.Fprintf(w.Err, "nimbu: %s; %s\n", shown, hint)
+}
+
+// pluralNoun returns the plural resource name for n != 1 and its singular
+// otherwise. Resource names are passed in their plural form.
+func pluralNoun(n int, plural string) string {
+	if n != 1 {
+		return plural
+	}
+	switch {
+	case strings.HasSuffix(plural, "ies"):
+		return strings.TrimSuffix(plural, "ies") + "y"
+	case strings.HasSuffix(plural, "s"):
+		return strings.TrimSuffix(plural, "s")
+	default:
+		return plural
+	}
 }

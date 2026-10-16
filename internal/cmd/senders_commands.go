@@ -46,6 +46,7 @@ func (c *SendersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		senders = paged.Data
 		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(senders))
 	}
+	noteMoreResults(ctx, "senders", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, senders)

@@ -255,6 +255,7 @@ func execute(args []string) (err error) {
 	kctx.Bind(&cli.RootFlags)
 	kctx.Bind(site) // Bind resolved site
 
+	prefetchUpdateCheck(ctx, kctx.Command(), cli.RootFlags, version)
 	if err = kctx.Run(); err != nil {
 		return emitCommandError(ctx, err)
 	}

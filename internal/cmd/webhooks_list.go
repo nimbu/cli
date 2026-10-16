@@ -51,6 +51,7 @@ func (c *WebhooksListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(webhooks))
 	}
 
+	noteMoreResults(ctx, "webhooks", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, webhooks)

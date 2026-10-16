@@ -49,3 +49,17 @@ func TestFprintfUsesContextWriter(t *testing.T) {
 		t.Fatalf("expected %q, got %q", "ab\n", got)
 	}
 }
+
+func TestWarnWritesToStderrOnly(t *testing.T) {
+	var out, errOut bytes.Buffer
+	ctx := testContextWithMode(&out, &errOut, Mode{Plain: true})
+	if err := Warn(ctx, "skipped 2 customers"); err != nil {
+		t.Fatal(err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("warning leaked to stdout: %q", out.String())
+	}
+	if got := errOut.String(); got != "warning: skipped 2 customers\n" {
+		t.Fatalf("stderr = %q", got)
+	}
+}
