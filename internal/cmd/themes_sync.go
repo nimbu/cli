@@ -288,17 +288,17 @@ func writeThemeTransferNotes(ctx context.Context, result themes.Result) {
 
 func writeThemeTransferPlainList(ctx context.Context, result themes.Result) error {
 	for _, action := range result.Uploaded {
-		if _, err := output.Fprintf(ctx, "upload\t%s%s\n", action.DisplayPath, dependencySuffix(action)); err != nil {
+		if err := output.Plain(ctx, "upload", action.DisplayPath+dependencySuffix(action)); err != nil {
 			return err
 		}
 	}
 	for _, action := range result.Deleted {
-		if _, err := output.Fprintf(ctx, "delete\t%s\n", action.DisplayPath); err != nil {
+		if err := output.Plain(ctx, "delete", action.DisplayPath); err != nil {
 			return err
 		}
 	}
 	for _, action := range result.Skipped {
-		if _, err := output.Fprintf(ctx, "skip\t%s\n", action.DisplayPath); err != nil {
+		if err := output.Plain(ctx, "skip", action.DisplayPath); err != nil {
 			return err
 		}
 	}

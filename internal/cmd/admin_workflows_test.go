@@ -103,6 +103,10 @@ func TestDomainsMakePrimaryRequiresForce(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected force error, got %v", err)
 	}
+	// Regression: the refusal used to say "refusing to delete domain ...".
+	if msg := err.Error(); strings.Contains(msg, "delete") || !strings.Contains(msg, "make domain shop.example.com primary") {
+		t.Fatalf("refusal should name the make-primary action, got %q", msg)
+	}
 }
 
 func TestDomainsUpdateRejectsUnknownFields(t *testing.T) {

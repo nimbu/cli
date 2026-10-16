@@ -58,7 +58,7 @@ func (c *CollectionsCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	for _, item := range result.Items {
 		if mode.Plain {
-			if _, err := output.Fprintf(ctx, "%s\t%s\n", item.Action, item.Slug); err != nil {
+			if err := output.Plain(ctx, item.Action, item.Slug); err != nil {
 				return err
 			}
 			continue

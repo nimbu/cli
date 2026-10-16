@@ -75,7 +75,7 @@ func (p *watchPrinter) OnEvent(ev realtime.Event) {
 	case p.mode.JSON:
 		_, _ = fmt.Fprintln(p.writer.Out, watchEventJSONLine(ev))
 	case p.mode.Plain:
-		_, _ = fmt.Fprintf(p.writer.Out, "%s\t%s\t%s\t%s\n",
+		_ = output.WritePlain(p.writer.Out,
 			watchEventTime(ev).Format("15:04:05"), ev.Event, ev.ID, watchEventTitle(ev))
 	default:
 		_, _ = fmt.Fprintln(p.writer.Out, p.humanEventLine(ev))

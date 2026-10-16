@@ -104,7 +104,7 @@ func runCustomizationCopy(ctx context.Context, flags *RootFlags, service migrate
 		return output.JSON(ctx, result)
 	}
 	if mode.Plain {
-		_, err := output.Fprintf(ctx, "%s\t%s\t%d\n", result.Action, result.Kind, result.FieldCount)
+		err := output.Plain(ctx, result.Action, result.Kind, result.FieldCount)
 		return err
 	}
 	if tl != nil {

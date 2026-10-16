@@ -91,12 +91,12 @@ func (c *AppsPushCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	if mode.Plain {
 		for _, action := range outcome.Uploads {
-			if _, err := output.Fprintf(ctx, "%s\t%s\n", action.Action, action.Name); err != nil {
+			if err := output.Plain(ctx, action.Action, action.Name); err != nil {
 				return err
 			}
 		}
 		for _, action := range outcome.Deletes {
-			if _, err := output.Fprintf(ctx, "%s\t%s\n", action.Action, action.Name); err != nil {
+			if err := output.Plain(ctx, action.Action, action.Name); err != nil {
 				return err
 			}
 		}
