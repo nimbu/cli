@@ -61,8 +61,8 @@ type EnvAddCmd struct {
 }
 
 func (c *EnvAddCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("env add is disabled by --readonly")
+	if err := requireWrite(flags, "add an environment"); err != nil {
+		return err
 	}
 	if flags.Site == "" {
 		return fmt.Errorf("env add requires --site")
@@ -86,8 +86,8 @@ type EnvRemoveCmd struct {
 }
 
 func (c *EnvRemoveCmd) Run(ctx context.Context, flags *RootFlags) error {
-	if flags.Readonly {
-		return fmt.Errorf("env remove is disabled by --readonly")
+	if err := requireWrite(flags, "remove an environment"); err != nil {
+		return err
 	}
 	path, err := config.FindProjectFile()
 	if err != nil {
@@ -141,12 +141,14 @@ func confirmProtectedEnvironment(ctx context.Context, flags *RootFlags, yes bool
 	if !IsProtectedEnvironment(flags) || yes {
 		return nil
 	}
-	if flags.NoInput {
-		return fmt.Errorf("%s on protected environment %q requires --yes with --no-input", action, flags.Environment)
+	target := fmt.Sprintf("%s on protected environment %s", action, flags.Environment)
+	if reason := promptBlocker(flags); reason != "" {
+		return confirmationRequiredError(fmt.Sprintf("%s requires --yes (cannot prompt: %s)", target, reason), "--yes")
 	}
+	// --force deliberately does not confirm a protected environment.
 	promptFlags := *flags
-	promptFlags.Force = false
-	confirmed, err := confirmPrompt(&promptFlags, fmt.Sprintf("%s on protected environment %s", action, flags.Environment))
+	promptFlags.Force, promptFlags.Yes = false, false
+	confirmed, err := confirmPromptFlag(&promptFlags, target, "--yes")
 	if err != nil {
 		return err
 	}

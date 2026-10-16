@@ -64,6 +64,7 @@ type RootFlags struct {
 
 	// Agent/CI (suppressed in default help)
 	Force          bool   `help:"Skip confirmations for destructive operations" group:"Agent/CI"`
+	Yes            bool   `short:"y" help:"Same as --force; also confirms protected environments" group:"Agent/CI"`
 	NoInput        bool   `help:"Never prompt; fail instead (for CI)" env:"NIMBU_NO_INPUT" group:"Agent/CI"`
 	Readonly       bool   `help:"Disable all write operations" env:"NIMBU_READONLY" group:"Agent/CI"`
 	EnableCommands string `help:"Comma-separated allowlist of commands" env:"NIMBU_ENABLE_COMMANDS" group:"Agent/CI"`
@@ -186,6 +187,10 @@ func execute(args []string) (err error) {
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		return wrapParseError(err)
+	}
+	if cli.Yes {
+		// --yes answers every confirmation --force does.
+		cli.Force = true
 	}
 	isInternalComplete := kctx.Command() == "__complete" || strings.HasPrefix(kctx.Command(), "__complete ")
 

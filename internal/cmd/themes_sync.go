@@ -158,8 +158,10 @@ func runThemeTransfer(ctx context.Context, flags *RootFlags, themeOverride strin
 func confirmThemeOverwrite(flags *RootFlags) func(context.Context, themes.Resource, error) (bool, error) {
 	reader := bufio.NewReader(os.Stdin)
 	return func(ctx context.Context, resource themes.Resource, err error) (bool, error) {
-		if flags != nil && flags.NoInput {
-			return false, fmt.Errorf("use --force to overwrite %s", resource.DisplayPath)
+		if reason := promptBlocker(flags); reason != "" {
+			return false, confirmationRequiredError(
+				fmt.Sprintf("refusing to overwrite %s without --force (cannot prompt: %s)", resource.DisplayPath, reason),
+				"--force")
 		}
 		w := output.WriterFromContext(ctx)
 		if detail := themeConflictDetail(err); detail != "" {

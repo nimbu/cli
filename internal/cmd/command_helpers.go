@@ -13,18 +13,44 @@ const maxJSONInputBytes int64 = 10 << 20
 
 var errNoJSONInput = errors.New("no JSON input provided")
 
+const readonlyHint = "unset NIMBU_READONLY or remove --readonly to allow write operations"
+
 func requireWrite(flags *RootFlags, action string) error {
 	if flags != nil && flags.Readonly {
-		return fmt.Errorf("cannot %s in readonly mode", action)
+		return readonlyModeError(action)
 	}
 	return nil
 }
 
+// readonlyModeError is the typed cli.readonly failure for a write attempted
+// with --readonly / NIMBU_READONLY.
+func readonlyModeError(action string) error {
+	return newHintedError(fmt.Errorf("cannot %s in readonly mode", action), errorReadonly, ExitUsage, readonlyHint)
+}
+
 func requireForce(flags *RootFlags, target string) error {
-	if flags != nil && !flags.Force {
-		return fmt.Errorf("use --force to confirm deletion of %s", target)
+	if flags != nil && !confirmedByFlag(flags) {
+		return confirmationRequiredError(fmt.Sprintf("refusing to delete %s without --force", target), "--force")
 	}
 	return nil
+}
+
+// confirmedByFlag reports whether --force or its alias --yes was passed.
+func confirmedByFlag(flags *RootFlags) bool {
+	return flags != nil && (flags.Force || flags.Yes)
+}
+
+// confirmationRequiredError is the typed cli.confirmation_required failure
+// (exit 2). flag names the override the user must pass.
+func confirmationRequiredError(message, flag string) error {
+	hint := "re-run with " + flag + " to confirm"
+	switch flag {
+	case "--force":
+		hint = "re-run with --force (or --yes) to confirm"
+	case "--yes":
+		hint = "re-run with --yes to confirm; --force does not bypass this confirmation"
+	}
+	return newHintedError(errors.New(message), errorConfirmationRequired, ExitUsage, hint)
 }
 
 func readJSONInput(file string) (map[string]any, error) {
