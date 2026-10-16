@@ -3,6 +3,7 @@ package devserver
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,7 +18,17 @@ type ChildConfig struct {
 	CWD      string
 	Env      map[string]string
 	ReadyURL string
+
+	// Stdout and Stderr receive the child's output. Nil means the child
+	// inherits nimbu's own stdout/stderr (raw passthrough).
+	Stdout io.Writer
+	Stderr io.Writer
 }
+
+// outputDrainDelay bounds how long Wait keeps copying output after the child
+// exits when output goes through a pipe (non-*os.File writers). A detached
+// grandchild holding the pipe open must not block shutdown.
+const outputDrainDelay = 2 * time.Second
 
 // Process supervises the child development server.
 type Process struct {
@@ -25,6 +36,7 @@ type Process struct {
 
 	mu      sync.Mutex
 	cmd     *exec.Cmd
+	group   *childGroup
 	exitCh  chan error
 	running bool
 }
@@ -57,13 +69,22 @@ func (p *Process) Start() error {
 	}
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
+	if p.config.Stdout != nil {
+		cmd.Stdout = p.config.Stdout
+	}
 	cmd.Stderr = os.Stderr
+	if p.config.Stderr != nil {
+		cmd.Stderr = p.config.Stderr
+	}
+	cmd.WaitDelay = outputDrainDelay
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start child dev server: %w", err)
 	}
+	group := attachChildGroup(cmd)
 	p.mu.Lock()
 	p.cmd = cmd
+	p.group = group
 	p.running = true
 	exitCh := p.exitCh
 	p.mu.Unlock()
@@ -74,7 +95,9 @@ func (p *Process) Start() error {
 		p.mu.Lock()
 		p.running = false
 		p.cmd = nil
+		p.group = nil
 		p.mu.Unlock()
+		releaseChildGroup(group)
 
 		exitCh <- waitErr
 		close(exitCh)
@@ -153,9 +176,13 @@ func (p *Process) WaitReady(ctx context.Context, timeout time.Duration) error {
 	}
 }
 
+// Stop asks the child's process tree to exit and force-kills it after
+// gracePeriod. If the interrupt cannot be delivered at all, it kills at once
+// instead of waiting out the grace period.
 func (p *Process) Stop(gracePeriod time.Duration) error {
 	p.mu.Lock()
 	cmd := p.cmd
+	group := p.group
 	exitCh := p.exitCh
 	running := p.running
 	p.mu.Unlock()
@@ -167,14 +194,49 @@ func (p *Process) Stop(gracePeriod time.Duration) error {
 		gracePeriod = 5 * time.Second
 	}
 
-	_ = interruptChild(cmd)
+	if err := interruptChild(cmd, group); err != nil {
+		_ = killChild(cmd, group)
+		<-exitCh
+		return nil
+	}
 
+	timer := time.NewTimer(gracePeriod)
+	defer timer.Stop()
 	select {
-	case <-time.After(gracePeriod):
-		_ = killChild(cmd)
+	case <-timer.C:
+		_ = killChild(cmd, group)
 		<-exitCh
 	case <-exitCh:
 	}
 
+	return nil
+}
+
+// Kill force-kills the child's whole process tree immediately and waits up to
+// timeout for it to be reaped. It is the second-Ctrl-C path.
+func (p *Process) Kill(timeout time.Duration) error {
+	p.mu.Lock()
+	cmd := p.cmd
+	group := p.group
+	exitCh := p.exitCh
+	running := p.running
+	p.mu.Unlock()
+
+	if !running || cmd == nil || cmd.Process == nil {
+		return nil
+	}
+	if err := killChild(cmd, group); err != nil {
+		return fmt.Errorf("kill child dev server: %w", err)
+	}
+	if timeout <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-exitCh:
+	case <-timer.C:
+		return fmt.Errorf("child dev server did not exit within %s after kill", timeout)
+	}
 	return nil
 }
