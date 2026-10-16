@@ -104,6 +104,38 @@ func TestProcessKillTakesWholeProcessGroup(t *testing.T) {
 	t.Fatalf("grandchild %d survived Kill", grandchild)
 }
 
+func TestProcessStopReapsLeftoverGroupMembers(t *testing.T) {
+	pidPath := filepath.Join(t.TempDir(), "background.pid")
+	// The backgrounded sleep ignores SIGINT (shells do that for & jobs), so
+	// the graceful interrupt only ends the shell itself.
+	p := NewProcess(ChildConfig{
+		Command: "sh",
+		Args:    []string{"-c", `sleep 60 & echo $! > "$0"; wait`, pidPath},
+	})
+	if err := p.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	background := waitForPID(t, pidPath)
+
+	if err := p.Stop(5 * time.Second); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	waitForProcessGone(t, background)
+}
+
+func waitForProcessGone(t *testing.T, pid int) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	_ = syscall.Kill(pid, syscall.SIGKILL)
+	t.Fatalf("process %d survived", pid)
+}
+
 func TestProcessKillWhenNotRunningIsNoop(t *testing.T) {
 	p := NewProcess(ChildConfig{Command: "sh"})
 	if err := p.Kill(time.Second); err != nil {
