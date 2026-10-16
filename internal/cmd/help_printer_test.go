@@ -142,6 +142,17 @@ func TestRootHelpSectionsCoverEveryCommand(t *testing.T) {
 		}
 	}
 
+	// Order names real top-level commands of that section, so a rename
+	// cannot silently push a command to the end of its section.
+	for _, s := range rootHelpSections {
+		for _, name := range s.Order {
+			child := findChildCommand(parser.Model.Node, name)
+			if child == nil || commandHelpSection(child) != s.Key {
+				t.Errorf("section %q orders %q, which is not a command in that section", s.Key, name)
+			}
+		}
+	}
+
 	pinHelpEnv(t)
 	out := helpOutput(t, "--help")
 	if strings.Contains(out, "·") {
@@ -353,6 +364,9 @@ func TestRewriteHelpArgs(t *testing.T) {
 		{[]string{"api"}, []string{"api"}},       // default subcommand
 		{[]string{"server"}, []string{"server"}}, // leaf
 		{[]string{"channels", "--", "x"}, []string{"channels", "--", "x"}},
+		// A trailing value flag keeps Kong's "expected value" error.
+		{[]string{"channels", "--site"}, []string{"channels", "--site"}},
+		{[]string{"help", "channels", "--site"}, []string{"channels", "--site", "--help"}},
 		{[]string{"translations", "get", "help"}, []string{"translations", "get", "help"}},
 		{[]string{}, []string{}},
 	}
@@ -397,6 +411,46 @@ func TestHelpColorProfileUsesSharedPolicy(t *testing.T) {
 				t.Fatalf("colored = %v (profile %v), want %v", got, profile, tc.colored)
 			}
 		})
+	}
+}
+
+// Aliases are not part of the runnable path: `nimbu mail` hints must say
+// "nimbu mails ...", not Kong's "nimbu mails (mail) ...".
+func TestHelpHintsUseRunnableCommandPath(t *testing.T) {
+	pinHelpEnv(t)
+	out := helpOutput(t, "mail")
+	for _, want := range []string{
+		"Usage: nimbu mails <command> [flags]",
+		`Run "nimbu mails <command> --help" for more information on a command.`,
+		`Run "nimbu mails --help-all" for all flags.`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "(mail)") {
+		t.Fatalf("alias leaked into usage or hints:\n%s", out)
+	}
+}
+
+// On a narrow terminal descriptions stack under their flag instead of
+// wrapping to a word per line, and no line exceeds the width.
+func TestNarrowHelpStacksDescriptions(t *testing.T) {
+	pinHelpEnv(t)
+	t.Setenv("COLUMNS", "30")
+	out := helpOutput(t, "channels", "delete", "--help")
+	flags := sectionText(t, out, "Flags:")
+	want := "Flags:\n      --channel=STRING\n        Channel ID or slug"
+	if flags != want {
+		t.Fatalf("narrow Flags section:\n%s\nwant:\n%s", flags, want)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "Usage:") || strings.HasPrefix(line, "Run ") {
+			continue
+		}
+		if len(line) > 30 {
+			t.Errorf("line wider than 30 columns: %q", line)
+		}
 	}
 }
 

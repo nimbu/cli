@@ -14,40 +14,40 @@ Content:
   channels                Manage channels and entries
   pages                   Manage pages
   menus                   Manage navigation menus
-  mails (mail)            Sync notification templates to local files
-  notifications           Manage notifications
-  uploads                 Manage uploads
   blogs                   Manage blogs
   translations            Manage translations
+  uploads                 Manage uploads
+  mails (mail)            Sync notification templates to local files
+  notifications           Manage notifications
 
 Commerce:
   products                Manage products
-  shipping-rates          Manage shipping rates
-  collections             Manage collections
-  coupons                 Manage coupons
   orders                  Manage orders
   customers               Manage customers
+  coupons                 Manage coupons
+  collections             Manage collections
+  shipping-rates          Manage shipping rates
 
 Theme & code:
+  themes                  Manage themes
   schema                  Manage declarative schemas
   release                 Release schema, cloud code and theme
   releases                List successful releases
   functions               Execute cloud functions
   jobs                    Execute cloud jobs
   apps                    Manage OAuth apps
-  themes                  Manage themes
 
 Admin:
   domains                 Manage custom domains
-  announcements           Manage platform announcements
   domain-registrations    Manage domain registrations
+  senders                 Manage email sender domains
   settings                Manage site settings
-  events                  Track and ingest events
-  realtime                Realtime grants and live queries
   roles                   Manage roles
   redirects               Manage redirects
-  senders                 Manage email sender domains
   webhooks                Manage webhooks
+  announcements           Manage platform announcements
+  events                  Track and ingest events
+  realtime                Realtime grants and live queries
 
 Advanced:
   api                     Raw API access

@@ -7,19 +7,46 @@ import (
 )
 
 // rootHelpSection is one titled block of top-level commands in root help.
-// Commands opt in with a `section:"<key>"` tag on their CLI field.
+// Commands opt in with a `section:"<key>"` tag on their CLI field. Order
+// lists the commands to show first, most used first; the rest follow in CLI
+// struct order. Help order is independent of the `nimbu commands` contract,
+// which keeps struct order.
 type rootHelpSection struct {
 	Key   string
 	Title string
+	Order []string
 }
 
 var rootHelpSections = []rootHelpSection{
-	{Key: "start", Title: "Getting started"},
-	{Key: "content", Title: "Content"},
-	{Key: "commerce", Title: "Commerce"},
-	{Key: "code", Title: "Theme & code"},
-	{Key: "admin", Title: "Admin"},
-	{Key: "advanced", Title: "Advanced"},
+	{Key: "start", Title: "Getting started", Order: []string{"auth", "init", "sites", "server", "env", "config"}},
+	{Key: "content", Title: "Content", Order: []string{"channels", "pages", "menus", "blogs", "translations", "uploads", "mails", "notifications"}},
+	{Key: "commerce", Title: "Commerce", Order: []string{"products", "orders", "customers", "coupons", "collections", "shipping-rates"}},
+	{Key: "code", Title: "Theme & code", Order: []string{"themes", "schema", "release", "releases", "functions", "jobs", "apps"}},
+	{Key: "admin", Title: "Admin", Order: []string{"domains", "domain-registrations", "senders", "settings", "roles", "redirects", "webhooks", "announcements", "events", "realtime"}},
+	{Key: "advanced", Title: "Advanced", Order: []string{"api", "commands", "completion"}},
+}
+
+// orderedSectionCommands returns the section's commands: those named in
+// Order first, in that order, then the others in their given order.
+func orderedSectionCommands(section rootHelpSection, nodes []*kong.Node) []*kong.Node {
+	rank := map[string]int{}
+	for i, name := range section.Order {
+		rank[name] = i
+	}
+	out := make([]*kong.Node, 0, len(nodes))
+	for _, name := range section.Order {
+		for _, node := range nodes {
+			if node.Name == name {
+				out = append(out, node)
+			}
+		}
+	}
+	for _, node := range nodes {
+		if _, ok := rank[node.Name]; !ok {
+			out = append(out, node)
+		}
+	}
+	return out
 }
 
 // suppressedFlagGroups are hidden from default help and shown by --help-all.

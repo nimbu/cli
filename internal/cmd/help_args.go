@@ -35,6 +35,12 @@ func rewriteHelpArgs(app *kong.Application, args []string) []string {
 		}
 		if strings.HasPrefix(arg, "-") && arg != "-" {
 			if scope.takesValue(arg) {
+				if i+1 >= len(args) {
+					// A trailing flag with no value: let Kong report it
+					// instead of feeding it the --help we would append.
+					unmatched = true
+					break
+				}
 				i++
 			}
 			continue
