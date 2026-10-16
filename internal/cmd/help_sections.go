@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"strings"
-
 	"github.com/alecthomas/kong"
 )
 
@@ -58,17 +56,19 @@ var suppressedFlagGroups = map[string]bool{
 
 const (
 	forceFlagName  = "force"
+	yesFlagName    = "yes"
 	dryRunFlagName = "dry-run"
 )
 
-// requiresForce reports whether a command's help says it needs --force.
-// Those commands show --force (and --dry-run) under "Safety:" in default
-// help instead of hiding it in the Agent/CI group.
-func requiresForce(node *kong.Node) bool {
-	if node == nil || node.Type == kong.ApplicationNode {
+// needsConfirmation reports whether a command can stop on a confirmation
+// (see confirmationCommands). Those commands show --force, --yes and
+// --dry-run under "Safety:" in default help instead of hiding them in the
+// Agent/CI group.
+func needsConfirmation(node *kong.Node) bool {
+	if node == nil || node.Type != kong.CommandNode || !node.Target.IsValid() {
 		return false
 	}
-	return strings.Contains(node.Help, "--force") || strings.Contains(node.Detail, "--force")
+	return confirmationCommands[node.Target.Type()]
 }
 
 // flagSections classifies every visible flag by the Kong model, not by the
@@ -80,7 +80,7 @@ func flagSections(app *kong.Application, node *kong.Node, opts helpRenderOptions
 	for _, flag := range app.Flags {
 		appFlags[flag] = true
 	}
-	safetyMode := requiresForce(node)
+	safetyMode := needsConfirmation(node)
 
 	var command, safety, global []*kong.Flag
 	var commandGroups, appGroups []string
@@ -91,7 +91,7 @@ func flagSections(app *kong.Application, node *kong.Node, opts helpRenderOptions
 		for _, flag := range level {
 			isApp := appFlags[flag]
 			switch {
-			case safetyMode && flag.Name == forceFlagName && isApp:
+			case safetyMode && (flag.Name == forceFlagName || flag.Name == yesFlagName) && isApp:
 				safety = append(safety, flag)
 			case safetyMode && flag.Name == dryRunFlagName && !isApp:
 				safety = append(safety, flag)

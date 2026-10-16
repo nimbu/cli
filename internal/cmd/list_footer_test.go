@@ -33,10 +33,21 @@ func TestWriteListFooter(t *testing.T) {
 			want:     "\nShowing 3 of 327 sites (page 1, per-page 3). Use --page 2 for more, or --all for everything.\n",
 		},
 		{
+			// Regression: the last page used to say results were missing.
 			name:     "last page of a known total",
 			resource: "sites",
 			meta:     listFooterMeta{Page: 3, PerPage: 3, Returned: 1, Total: 7, TotalKnown: true},
-			want:     "\nShowing 1 of 7 sites (page 3, per-page 3). Use --all for full results.\n",
+		},
+		{
+			name:     "full last page of a known total",
+			resource: "sites",
+			meta:     listFooterMeta{Page: 4, PerPage: 25, Returned: 25, Total: 100, TotalKnown: true},
+		},
+		{
+			name:     "middle page of a known total",
+			resource: "sites",
+			meta:     listFooterMeta{Page: 3, PerPage: 25, Returned: 25, Total: 100, TotalKnown: true},
+			want:     "\nShowing 25 of 100 sites (page 3, per-page 25). Use --page 4 for more, or --all for everything.\n",
 		},
 		{
 			name:     "unknown total with next page",
@@ -128,6 +139,11 @@ func TestNoteMoreResults(t *testing.T) {
 			mode: output.Mode{Plain: true},
 			meta: listFooterMeta{Page: 4, PerPage: 1, Returned: 1, HasNext: true},
 			want: "nimbu: showing 1 product; pass --all or --page 5\n",
+		},
+		{
+			name: "json last page of a known total",
+			mode: output.Mode{JSON: true},
+			meta: listFooterMeta{Page: 4, PerPage: 25, Returned: 25, Total: 100, TotalKnown: true},
 		},
 		{
 			name: "json complete listing",

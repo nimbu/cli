@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/nimbu/cli/internal/config"
 	"github.com/nimbu/cli/internal/migrate"
@@ -38,20 +37,23 @@ func (c *EnvListCmd) Run(ctx context.Context) error {
 	if output.FromContext(ctx).JSON {
 		return output.JSON(ctx, rows)
 	}
-	writer := tabwriter.NewWriter(output.WriterFromContext(ctx).Out, 0, 0, 2, ' ', 0)
-	if !output.FromContext(ctx).Plain {
-		_, _ = fmt.Fprintln(writer, "NAME\tHOST\tSITE\tPROTECTED")
-	}
+	table := make([]envListRow, 0, len(rows))
 	for _, row := range rows {
-		if output.FromContext(ctx).Plain {
-			if _, err := output.Fprintf(ctx, "%s\t%s\t%s\t%t\n", row.Name, row.Host, row.Site, row.Protected); err != nil {
-				return err
-			}
-		} else {
-			_, _ = fmt.Fprintf(writer, "%s\t%s\t%s\t%t\n", row.Name, row.Host, row.Site, row.Protected)
-		}
+		table = append(table, envListRow{Name: row.Name, Host: row.Host, Site: row.Site, Protected: row.Protected})
 	}
-	return writer.Flush()
+	fields := []string{"name", "host", "site", "protected"}
+	if output.FromContext(ctx).Plain {
+		return output.PlainFromSlice(ctx, table, fields)
+	}
+	return output.WriteTable(ctx, table, fields, []string{"NAME", "HOST", "SITE", "PROTECTED"})
+}
+
+// envListRow is one `env list` row for the plain and table renderers.
+type envListRow struct {
+	Name      string `json:"name"`
+	Host      string `json:"host"`
+	Site      string `json:"site"`
+	Protected bool   `json:"protected"`
 }
 
 type EnvAddCmd struct {

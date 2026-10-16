@@ -74,15 +74,15 @@ func (c *ChannelEntriesCopyCmd) Run(ctx context.Context, flags *RootFlags) error
 	if mode.JSON {
 		return output.JSON(ctx, result)
 	}
-	for _, item := range result.Items {
-		if mode.Plain {
-			if _, err := output.Fprintf(ctx, "%s\t%s\t%s\t%s\n", item.Action, item.Resource, item.Identifier, item.TargetID); err != nil {
+	if mode.Plain {
+		if err := writeRecordCopyPlain(ctx, result.Items); err != nil {
+			return err
+		}
+	} else {
+		for _, item := range result.Items {
+			if _, err := output.Fprintf(ctx, "%s %s %s\n", item.Action, item.Resource, item.Identifier); err != nil {
 				return err
 			}
-			continue
-		}
-		if _, err := output.Fprintf(ctx, "%s %s %s\n", item.Action, item.Resource, item.Identifier); err != nil {
-			return err
 		}
 	}
 	for _, warning := range result.Warnings {
@@ -91,4 +91,15 @@ func (c *ChannelEntriesCopyCmd) Run(ctx context.Context, flags *RootFlags) error
 		}
 	}
 	return nil
+}
+
+// writeRecordCopyPlain writes one --plain row per copied record
+// (action, resource, identifier, target id) through the shared TSV writer, so
+// identifiers containing tabs, newlines or backslashes stay one escaped field.
+func writeRecordCopyPlain(ctx context.Context, items []migrate.RecordCopyItem) error {
+	rows := make([][]any, 0, len(items))
+	for _, item := range items {
+		rows = append(rows, []any{item.Action, item.Resource, item.Identifier, item.TargetID})
+	}
+	return output.PlainRows(ctx, rows)
 }

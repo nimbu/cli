@@ -64,10 +64,8 @@ func (c *CustomersCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, result)
 	}
 	if mode.Plain {
-		for _, item := range result.Items {
-			if _, err := output.Fprintf(ctx, "%s\t%s\t%s\t%s\n", item.Action, item.Resource, item.Identifier, item.TargetID); err != nil {
-				return err
-			}
+		if err := writeRecordCopyPlain(ctx, result.Items); err != nil {
+			return err
 		}
 		for _, warning := range result.Warnings {
 			if err := output.Warn(ctx, warning); err != nil {

@@ -55,9 +55,10 @@ func (m *listFooterMeta) probeTotal(ctx context.Context, client *api.Client, pat
 	m.TotalKnown = true
 }
 
-// moreAvailable reports whether the listing left results out, or may have:
-// the server advertised a next page, the known total exceeds what was
-// returned, or (total unknown) a full page came back without a Link header.
+// moreAvailable reports whether results remain after this page, or may: the
+// server advertised a next page, the known total runs past this page, or
+// (total unknown) a full page came back without a Link header. The last page
+// of a known total is complete even though earlier pages were not shown.
 func (m listFooterMeta) moreAvailable() bool {
 	if m.All {
 		return false
@@ -66,9 +67,17 @@ func (m listFooterMeta) moreAvailable() bool {
 		return true
 	}
 	if m.TotalKnown {
-		return m.Total > m.Returned
+		return m.knownRemaining()
 	}
 	return m.MaybeMore
+}
+
+// knownRemaining reports whether the known total runs past this page.
+func (m listFooterMeta) knownRemaining() bool {
+	if m.Page < 1 || m.PerPage < 1 {
+		return m.Total > m.Returned
+	}
+	return (m.Page-1)*m.PerPage+m.Returned < m.Total
 }
 
 // nextPage is the page to suggest, or 0 when the current page is the last.
@@ -77,7 +86,7 @@ func (m listFooterMeta) nextPage() int {
 		return m.Page + 1
 	}
 	if m.TotalKnown {
-		if m.PerPage > 0 && m.Page*m.PerPage < m.Total {
+		if m.Page >= 1 && m.PerPage >= 1 && m.knownRemaining() {
 			return m.Page + 1
 		}
 		return 0

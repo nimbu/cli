@@ -539,6 +539,16 @@ func (m *initTeaModel) onSitesLoaded(sites []api.Site) (tea.Model, tea.Cmd) {
 		}
 	}
 	m.enterStep(initTeaStepSite)
+	// NIMBU_SITE alone preselects its site but still asks.
+	if m.presets.DefaultSite != "" {
+		if site, err := matchInitSite(sites, m.presets.DefaultSite); err == nil {
+			for idx, option := range m.filteredOptions() {
+				if option.ID == site.ID {
+					m.cursor = idx
+				}
+			}
+		}
+	}
 	return m, nil
 }
 
