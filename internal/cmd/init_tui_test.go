@@ -663,9 +663,8 @@ func TestInitTeaDonePhaseShowsFooter(t *testing.T) {
 		{Label: "Directory", Value: "theme-zenjoy"},
 	}
 
-	// Footer is rendered outside the TUI (in runInteractiveTTY) to guarantee
-	// visibility after Bubble Tea exits. Verify it renders correctly.
-	footer := renderInitTeaDoneFooter(model)
+	// The footer is the last frame Bubble Tea leaves in the scrollback.
+	footer := strings.Join(renderInitTeaDoneFooter(model, model.width), "\n")
 	for _, needle := range []string{"Done!", "To start working, run:", "cd theme-zenjoy"} {
 		if !strings.Contains(footer, needle) {
 			t.Fatalf("expected done footer containing %q, got:\n%s", needle, footer)

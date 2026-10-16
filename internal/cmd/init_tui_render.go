@@ -179,7 +179,8 @@ func renderInitTimeline(m *initTeaModel, layout initLayout) []string {
 
 	switch {
 	case m.phase == initTeaPhaseDone:
-		lines = append(lines, rail, renderInitTeaDoneFooter(m))
+		lines = append(lines, rail)
+		lines = append(lines, renderInitTeaDoneFooter(m, m.width)...)
 	case m.quitting:
 		// The last frame stays in the scrollback: replace the live prompt with
 		// a closing line. Errors are printed by the command after exit.
@@ -240,16 +241,33 @@ func transcriptEntryLines(m *initTeaModel, entry initTranscriptEntry, width int)
 	return []string{renderLabelValueLine(m, entry.Label, entry.Value, width)}
 }
 
-func renderInitTeaDoneFooter(m *initTeaModel) string {
+// renderInitTeaDoneFooter is the closing line that stays in the scrollback. It
+// is never truncated: when the next-step command does not fit beside the
+// label it moves to its own line(s), so it can always be read and copied.
+func renderInitTeaDoneFooter(m *initTeaModel, width int) []string {
 	command := initNextStepCommand(m.result.Path)
-	parts := []string{m.theme.muted("└"), m.theme.done("Done!")}
+	lead := m.theme.muted("└") + " " + m.theme.done("Done!")
 	if command == "" {
 		// In-place into the current directory — nothing to cd into.
-		parts = append(parts, m.theme.muted("Your project is ready."))
-	} else {
-		parts = append(parts, m.theme.muted("To start working, run:"), m.theme.value(command))
+		return wrapInitLine(lead+" "+m.theme.muted("Your project is ready."), width)
 	}
-	return strings.Join(parts, " ")
+	label := lead + " " + m.theme.muted("To start working, run:")
+	if line := label + " " + m.theme.value(command); width <= 0 || lipgloss.Width(line) <= width {
+		return []string{line}
+	}
+	lines := wrapInitLine(label, width)
+	for _, part := range strings.Split(ansi.Hardwrap(command, max(width-2, 1), false), "\n") {
+		lines = append(lines, "  "+m.theme.value(part))
+	}
+	return lines
+}
+
+// wrapInitLine word-wraps a styled line to width cells.
+func wrapInitLine(line string, width int) []string {
+	if width <= 0 || lipgloss.Width(line) <= width {
+		return []string{line}
+	}
+	return strings.Split(ansi.Wrap(line, width, ""), "\n")
 }
 
 // renderLabelValueLine renders "Label: value" with a muted label and a bright

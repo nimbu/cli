@@ -5,6 +5,8 @@ import (
 	"slices"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/nimbu/cli/internal/output"
 )
 
 // initTheme is the init wizard's palette as semantic tokens. Every color the
@@ -68,4 +70,15 @@ func (t initTheme) bannerLineColor(palette []string, idx int) color.Color {
 		return t.Text
 	}
 	return lipgloss.Color(palette[idx%len(palette)])
+}
+
+// stdoutColor converts hex to what stdout's terminal can show, or nil when
+// stdout gets no color. Lipgloss v2 styles render colors as given, so text
+// printed outside a Bubble Tea program must be downsampled here (v1 did this
+// implicitly through its default renderer).
+func stdoutColor(writer *output.Writer, hex string) color.Color {
+	if writer == nil || !writer.UseColor() {
+		return nil
+	}
+	return teaColorProfile(writer.OutColorProfile()).Convert(lipgloss.Color(hex))
 }

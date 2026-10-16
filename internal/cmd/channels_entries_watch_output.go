@@ -114,11 +114,11 @@ func (p *watchPrinter) colorEvent(padded, event string) string {
 	style := lipgloss.NewStyle()
 	switch event {
 	case "added":
-		style = style.Foreground(lipgloss.Color("#22c55e"))
+		style = style.Foreground(stdoutColor(p.writer, "#22c55e"))
 	case "changed":
-		style = style.Foreground(lipgloss.Color("#f59e0b"))
+		style = style.Foreground(stdoutColor(p.writer, "#f59e0b"))
 	case "removed":
-		style = style.Foreground(lipgloss.Color("#ef4444"))
+		style = style.Foreground(stdoutColor(p.writer, "#ef4444"))
 	case "resync":
 		style = style.Faint(true)
 	default:

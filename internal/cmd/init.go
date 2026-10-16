@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/bootstrap"
@@ -126,10 +128,23 @@ func (c *InitCmd) runLines(ctx context.Context, presets initPresets, noInput boo
 	if strings.TrimSpace(c.Dir) == "" {
 		cloneTask = progress.Phase("Cloning starterskit")
 	}
-	sourceDir, sourceLabel, cleanup, err := c.resolveSource(ctx)
+	// Catch ctrl+c/SIGTERM while cloning so the clone (in its own process
+	// group) is stopped and its temp dir removed instead of being orphaned.
+	// Released right after: prompts keep the default ctrl+c behavior.
+	cloneCtx, stopCloneSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	sourceDir, sourceLabel, cleanup, err := c.resolveSource(cloneCtx)
+	interrupted := cloneCtx.Err() != nil && ctx.Err() == nil
+	stopCloneSignals()
+	if err == nil && interrupted {
+		cleanup()
+		err = errInitCancelled
+	}
 	if err != nil {
 		if cloneTask != nil {
 			cloneTask.Fail(err)
+		}
+		if interrupted {
+			return &ExitError{Code: initExitInterrupted, Err: errInitCancelled}
 		}
 		return err
 	}
@@ -181,7 +196,7 @@ func (c *InitCmd) runLines(ctx context.Context, presets initPresets, noInput boo
 	var selectedSite api.Site
 	if presets.Site != "" {
 		if selectedSite, err = matchInitSite(sites, presets.Site); err != nil {
-			return err
+			return &ExitError{Code: ExitUsage, Err: err}
 		}
 	} else {
 		idx, err := prompter.ChooseSite(initSiteChoices(sites))
@@ -207,7 +222,7 @@ func (c *InitCmd) runLines(ctx context.Context, presets initPresets, noInput boo
 	switch {
 	case presets.Theme != "":
 		if selectedTheme, err = matchInitTheme(themes, presets.Theme); err != nil {
-			return err
+			return &ExitError{Code: ExitUsage, Err: err}
 		}
 	case len(themes) == 1:
 		selectedTheme = themes[0]

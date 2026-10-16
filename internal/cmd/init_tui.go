@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
@@ -166,11 +169,20 @@ func (c *InitCmd) runInteractiveTTY(ctx context.Context, flags *RootFlags) error
 		tea.WithOutput(writer.Err),
 		tea.WithColorProfile(initColorProfile(writer)),
 		tea.WithFilter(initTeaFilter),
+		// Bubble Tea's own handler stops listening after the first signal, so
+		// a second SIGINT/SIGTERM during the file write would kill the process
+		// mid-copy with the terminal still in raw mode. Forward every signal
+		// instead; the filter holds them while files are written.
+		tea.WithoutSignalHandler(),
 	)
+	stopSignals := forwardInitSignals(program)
+	defer stopSignals()
 
 	finalModel, runErr := program.Run()
 	// Stop clones and wait for running jobs before any cleanup or exit.
+	// Signals stay caught until then so nothing is left half-written.
 	model.work.shutdown()
+	stopSignals()
 
 	final, ok := finalModel.(*initTeaModel)
 	if !ok || final == nil {
@@ -234,7 +246,46 @@ func initTeaFilter(model tea.Model, msg tea.Msg) tea.Msg {
 	if m.phase == initTeaPhaseApply {
 		return initTeaHoldMsg{}
 	}
+	// A quit ends the program gracefully and Bubble Tea renders the model
+	// once more: mark it quitting so that last frame says "Cancelled." instead
+	// of leaving a live prompt in the scrollback.
+	m.quitting = true
 	return msg
+}
+
+// forwardInitSignals delivers every SIGINT/SIGTERM to the program as Bubble
+// Tea's handler would (InterruptMsg/QuitMsg), for as long as the wizard runs.
+// The returned stop function releases the signals.
+func forwardInitSignals(program *tea.Program) func() {
+	sigs := make(chan os.Signal, 2)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case sig := <-sigs:
+				// Send is a no-op once the program has exited.
+				program.Send(initSignalMsg(sig))
+			}
+		}
+	}()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			signal.Stop(sigs)
+			close(done)
+		})
+	}
+}
+
+// initSignalMsg maps a signal to the message Bubble Tea's own handler sends.
+func initSignalMsg(sig os.Signal) tea.Msg {
+	if sig == os.Interrupt {
+		return tea.InterruptMsg{}
+	}
+	return tea.QuitMsg{}
 }
 
 // initColorProfile maps the stderr color decision to the program's profile:
@@ -243,7 +294,13 @@ func initColorProfile(writer *output.Writer) colorprofile.Profile {
 	if writer == nil {
 		return colorprofile.ASCII
 	}
-	switch writer.ErrColorProfile() {
+	return teaColorProfile(writer.ErrColorProfile())
+}
+
+// teaColorProfile maps a termenv profile (the output package's color
+// decision) to the colorprofile the Charm v2 stack renders with.
+func teaColorProfile(profile termenv.Profile) colorprofile.Profile {
+	switch profile {
 	case termenv.TrueColor:
 		return colorprofile.TrueColor
 	case termenv.ANSI256:
@@ -443,13 +500,13 @@ func (m *initTeaModel) onManifestLoaded(manifest bootstrap.Manifest) (tea.Model,
 	m.prompt.RepeatableOptions = manifest.Repeatables
 	if m.presets.Repeatables != "" {
 		if _, err := parseInitRepeatables(m.presets.Repeatables, manifest.Repeatables); err != nil {
-			m.err = err
+			m.err = &ExitError{Code: ExitUsage, Err: err}
 			return m, m.quit()
 		}
 	}
 	if m.presets.Bundles != "" {
 		if _, err := parseInitBundles(m.presets.Bundles, manifest.Bundles); err != nil {
-			m.err = err
+			m.err = &ExitError{Code: ExitUsage, Err: err}
 			return m, m.quit()
 		}
 	}
@@ -472,7 +529,7 @@ func (m *initTeaModel) onSitesLoaded(sites []api.Site) (tea.Model, tea.Cmd) {
 	if m.presets.Site != "" {
 		site, err := matchInitSite(sites, m.presets.Site)
 		if err != nil {
-			m.err = err
+			m.err = &ExitError{Code: ExitUsage, Err: err}
 			return m, m.quit()
 		}
 		for _, choice := range m.prompt.Sites {
@@ -503,7 +560,7 @@ func (m *initTeaModel) onThemesLoaded(themes []api.Theme) (tea.Model, tea.Cmd) {
 	case m.presets.Theme != "":
 		theme, err := matchInitTheme(themes, m.presets.Theme)
 		if err != nil {
-			m.err = err
+			m.err = &ExitError{Code: ExitUsage, Err: err}
 			return m, m.quit()
 		}
 		for idx, choice := range m.prompt.Themes {

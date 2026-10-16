@@ -203,7 +203,7 @@ func writeAppLog(ctx context.Context, log api.AppLog) error {
 	timestamp := appLogTimestamp(log).Format("2006-01-02 15:04:05.000")
 	level := strings.ToUpper(strings.TrimSpace(log.Level))
 	paddedLevel := fmt.Sprintf("%-5s", level)
-	paddedLevel = colorAppLogLevel(paddedLevel, level, output.WriterFromContext(ctx).UseColor())
+	paddedLevel = colorAppLogLevel(paddedLevel, level, output.WriterFromContext(ctx))
 	message := renderAppLogData(log.Data)
 	_, err := output.Fprintf(ctx, "%s %s %s\n", timestamp, paddedLevel, message)
 	return err
@@ -318,18 +318,21 @@ func formatAppLogSince(value float64) string {
 	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
-func colorAppLogLevel(paddedLevel, level string, useColor bool) string {
-	if !useColor {
-		return paddedLevel
-	}
+func colorAppLogLevel(paddedLevel, level string, writer *output.Writer) string {
+	var hex string
 	switch level {
 	case "ERROR", "FATAL":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444")).Bold(true).Render(paddedLevel)
+		hex = "#ef4444"
 	case "WARN":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b")).Bold(true).Render(paddedLevel)
+		hex = "#f59e0b"
 	default:
 		return paddedLevel
 	}
+	fg := stdoutColor(writer, hex)
+	if fg == nil {
+		return paddedLevel
+	}
+	return lipgloss.NewStyle().Foreground(fg).Bold(true).Render(paddedLevel)
 }
 
 func contextCanceled(ctx context.Context, err error) bool {

@@ -151,8 +151,9 @@ func defaultInitCloneRunner() initCloneRunner {
 			// CommandContext kills git/gh when the wizard is cancelled, so a
 			// clone never outlives the command that started it.
 			cmd := exec.CommandContext(ctx, name, args...)
-			// git's ssh/credential helpers can hold the output pipe open after
-			// git is killed; stop waiting for them shortly after.
+			initCloneProcess(cmd)
+			// Give git a moment to clean up after the cancel signal, then
+			// kill it and stop waiting on pipes its helpers may hold open.
 			cmd.WaitDelay = 2 * time.Second
 			if len(env) > 0 {
 				cmd.Env = append(os.Environ(), env...)
@@ -282,6 +283,7 @@ func initCloneEnv(getenv func(string) string) []string {
 	env := []string{
 		"GIT_TERMINAL_PROMPT=0",
 		"GCM_INTERACTIVE=never",
+		"GH_PROMPT_DISABLED=1",
 	}
 	sshCommand := strings.TrimSpace(getenv("GIT_SSH_COMMAND"))
 	switch {
