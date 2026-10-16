@@ -9,9 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 	"golang.org/x/term"
 
 	"github.com/nimbu/cli/internal/config"
@@ -23,7 +21,7 @@ type ConfigBannerCmd struct{}
 
 func (c *ConfigBannerCmd) Run(ctx context.Context) error {
 	writer := output.WriterFromContext(ctx)
-	if err := bannerPickerUsable(writer, term.IsTerminal(int(os.Stdin.Fd())), os.Getenv("CI")); err != nil {
+	if err := bannerPickerUsable(writer, term.IsTerminal(int(os.Stdin.Fd())), ciEnvironment()); err != nil {
 		return err
 	}
 
@@ -41,7 +39,7 @@ func (c *ConfigBannerCmd) Run(ctx context.Context) error {
 	model := newBannerPickerModel(BannerThemes(), cfg.BannerTheme, writer.ErrUseColor())
 	final, err := runBannerPicker(ctx, model,
 		tea.WithOutput(errOut),
-		tea.WithColorProfile(colorprofileFromTermenv(writer.ErrColorProfile())),
+		tea.WithColorProfile(output.CharmProfile(writer.ErrColorProfile())),
 	)
 	if err != nil {
 		return err
@@ -64,7 +62,7 @@ func (c *ConfigBannerCmd) Run(ctx context.Context) error {
 
 // bannerPickerUsable refuses to start the picker where nobody can answer it:
 // stdin or stderr is not a terminal, or the process runs in CI.
-func bannerPickerUsable(w *output.Writer, stdinTTY bool, ci string) error {
+func bannerPickerUsable(w *output.Writer, stdinTTY, ci bool) error {
 	if stdinTTY && shouldShowBanner(w.ErrIsTTY(), ci) {
 		return nil
 	}
@@ -89,21 +87,6 @@ func runBannerPicker(ctx context.Context, model bannerPickerModel, opts ...tea.P
 		return model, nil
 	}
 	return final, nil
-}
-
-// colorprofileFromTermenv maps the CLI's per-stream color decision onto the
-// profile Bubble Tea and Lipgloss v2 downsample to.
-func colorprofileFromTermenv(p termenv.Profile) colorprofile.Profile {
-	switch p {
-	case termenv.TrueColor:
-		return colorprofile.TrueColor
-	case termenv.ANSI256:
-		return colorprofile.ANSI256
-	case termenv.ANSI:
-		return colorprofile.ANSI
-	default:
-		return colorprofile.ASCII
-	}
 }
 
 const (
@@ -205,12 +188,12 @@ func (m bannerPickerModel) size() (int, int) {
 // redraws never stack on narrow terminals.
 func (m bannerPickerModel) render() string {
 	w, h := m.size()
-	ld := lipgloss.LightDark(m.dark)
 	accent := lipgloss.NewStyle().Bold(true)
 	dim := lipgloss.NewStyle()
 	if m.color {
-		accent = accent.Foreground(ld(lipgloss.Color("#15803d"), lipgloss.Color("#22c55e")))
-		dim = dim.Foreground(ld(lipgloss.Color("#475569"), lipgloss.Color("#94a3b8")))
+		palette := output.PaletteFor(m.dark)
+		accent = accent.Foreground(lipgloss.Color(palette.Success))
+		dim = dim.Foreground(lipgloss.Color(palette.Muted))
 	}
 
 	// Keep one row free so an inline frame never fills the whole screen.

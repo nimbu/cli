@@ -10,6 +10,8 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/muesli/termenv"
+
+	"github.com/nimbu/cli/internal/output"
 )
 
 // pinHelpEnv makes help output deterministic: 80 columns, no color, no
@@ -411,6 +413,62 @@ func TestHelpColorProfileUsesSharedPolicy(t *testing.T) {
 				t.Fatalf("colored = %v (profile %v), want %v", got, profile, tc.colored)
 			}
 		})
+	}
+}
+
+// Help must not color machine output, whether --json/--plain come from args
+// or the environment; "auto" (explicit or default) yields to them, while an
+// explicit always/never still wins.
+func TestHelpColorModeHonorsMachineOutput(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		env  map[string]string
+		want string
+	}{
+		{"default", nil, nil, "auto"},
+		{"--json", []string{"--json"}, nil, "never"},
+		{"--plain", []string{"--plain"}, nil, "never"},
+		{"--json=true", []string{"--json=true"}, nil, "never"},
+		{"--json=false", []string{"--json=false"}, nil, "auto"},
+		{"explicit auto with --json", []string{"--json", "--color=auto"}, nil, "never"},
+		{"NIMBU_JSON=1", nil, map[string]string{"NIMBU_JSON": "1"}, "never"},
+		{"NIMBU_PLAIN=true", nil, map[string]string{"NIMBU_PLAIN": "true"}, "never"},
+		{"NIMBU_JSON=0", nil, map[string]string{"NIMBU_JSON": "0"}, "auto"},
+		{"--json after --", []string{"--", "--json"}, nil, "auto"},
+		{"--color=always beats --json", []string{"--json", "--color=always"}, nil, "always"},
+		{"NIMBU_COLOR=never", nil, map[string]string{"NIMBU_COLOR": "never"}, "never"},
+		{"--no-input is not a color signal", []string{"--no-input"}, nil, "auto"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, key := range []string{"NIMBU_COLOR", "NIMBU_JSON", "NIMBU_PLAIN"} {
+				t.Setenv(key, "")
+			}
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			if got := helpColorMode(tc.args); got != tc.want {
+				t.Fatalf("helpColorMode(%q) = %q, want %q", tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
+// Help colors come from the shared palette and follow the stdout profile.
+func TestHelpStyleUsesSharedPaletteAndProfile(t *testing.T) {
+	style := newHelpStyle(termenv.ANSI256)
+	for _, got := range []string{style.usage("Usage:"), style.section("Flags:"), style.command("list"), style.flag("--json")} {
+		if strings.Contains(got, "38;2;") || !strings.Contains(got, "38;5;") {
+			t.Fatalf("256-color help emitted %q", got)
+		}
+	}
+	truecolor := newHelpStyle(termenv.TrueColor)
+	if got := truecolor.flag("--json"); got != output.NewTheme(termenv.TrueColor).Muted("--json") {
+		t.Fatalf("help flags should use the shared Muted token, got %q", got)
+	}
+	if got := newHelpStyle(termenv.Ascii).usage("Usage:"); got != "Usage:" {
+		t.Fatalf("no color must leave help plain, got %q", got)
 	}
 }
 

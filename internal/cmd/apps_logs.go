@@ -13,8 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/lipgloss/v2"
-
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/apps"
 	"github.com/nimbu/cli/internal/output"
@@ -318,21 +316,18 @@ func formatAppLogSince(value float64) string {
 	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
+// colorAppLogLevel colors warning and error levels through the shared theme,
+// downsampled to stdout's color profile; the level word carries the meaning.
 func colorAppLogLevel(paddedLevel, level string, writer *output.Writer) string {
-	var hex string
+	theme := writer.OutTheme()
 	switch level {
 	case "ERROR", "FATAL":
-		hex = "#ef4444"
+		return theme.Error(paddedLevel)
 	case "WARN":
-		hex = "#f59e0b"
+		return theme.Warning(paddedLevel)
 	default:
 		return paddedLevel
 	}
-	fg := stdoutColor(writer, hex)
-	if fg == nil {
-		return paddedLevel
-	}
-	return lipgloss.NewStyle().Foreground(fg).Bold(true).Render(paddedLevel)
 }
 
 func contextCanceled(ctx context.Context, err error) bool {

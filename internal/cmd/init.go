@@ -117,10 +117,8 @@ func (c *InitCmd) runLines(ctx context.Context, presets initPresets, noInput boo
 		return err
 	}
 
-	writer := output.WriterFromContext(ctx)
-	if writer != nil && writer.ErrIsTTY() {
-		newServerPresenter(ctx, false).PrintBanner()
-	}
+	// The presenter applies the shared banner rule (ShouldShowBanner).
+	newServerPresenter(ctx, false).PrintBanner()
 
 	progress := output.ProgressFromContext(ctx)
 

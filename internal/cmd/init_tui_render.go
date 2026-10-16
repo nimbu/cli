@@ -38,7 +38,7 @@ func renderInitTea(m *initTeaModel) string {
 		return clampInitLines(renderInitTooSmall(m), m.width)
 	}
 	candidates := []initLayout{{compact: false}, {compact: true}}
-	if m.height >= initBannerMinHeight && m.width >= initBannerWidth() {
+	if m.showBanner && m.height >= initBannerMinHeight && m.width >= initBannerWidth() {
 		candidates = append([]initLayout{{bigHeader: true}}, candidates...)
 	}
 	for _, layout := range candidates {
@@ -132,6 +132,7 @@ func renderInitHeader(m *initTeaModel, big bool) string {
 	lines := initBannerLines()
 	widest := initBannerWidth() - 6
 	border := m.theme.style(m.theme.Border, false)
+	palette := m.banner.PaletteFor(m.isDark)
 
 	frameWidth := widest + 4
 	rows := []string{
@@ -140,7 +141,7 @@ func renderInitHeader(m *initTeaModel, big bool) string {
 	}
 	for idx, line := range lines {
 		padded := line + strings.Repeat(" ", widest-lipgloss.Width(line))
-		text := m.theme.style(m.theme.bannerLineColor(m.palette, idx), false).Render(padded)
+		text := m.theme.style(m.theme.bannerLineColor(palette, idx), false).Render(padded)
 		rows = append(rows, border.Render("|  ")+text+border.Render("  |"))
 	}
 	rows = append(rows, border.Render("+"+strings.Repeat("-", frameWidth)+"+"))

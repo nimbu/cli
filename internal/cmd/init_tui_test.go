@@ -691,6 +691,7 @@ func renderInitTeaViewForTheme(t *testing.T, theme string) string {
 	})
 	ctx = context.WithValue(ctx, configKey{}, &cfg)
 
+	forceBannerTerminal(t, true)
 	model := newInitTeaModel(ctx, &InitCmd{Dir: "."}, &RootFlags{})
 	model.width = 120
 	model.height = 40
@@ -702,4 +703,53 @@ func renderInitTeaViewForTheme(t *testing.T, theme string) string {
 
 func initView(model *initTeaModel) string {
 	return model.View().Content
+}
+
+// The wizard banner follows tea.BackgroundColorMsg: a light terminal gets the
+// configured theme's light palette, not the dark one.
+func TestInitTeaBannerUsesLightPaletteOnLightBackground(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	view := renderInitTeaViewForTheme(t, "sakura")
+	theme, _ := BannerThemeByName("sakura")
+	if !strings.Contains(view, rgbSGR(theme.Palette[0])) {
+		t.Fatalf("dark default should draw the dark palette:\n%q", view)
+	}
+
+	cfg := config.Defaults()
+	cfg.BannerTheme = "sakura"
+	ctx := output.WithMode(context.Background(), output.Mode{})
+	ctx = output.WithWriter(ctx, &output.Writer{Out: &strings.Builder{}, Err: &strings.Builder{}, Color: "always"})
+	ctx = context.WithValue(ctx, configKey{}, &cfg)
+	forceBannerTerminal(t, true)
+	model := newInitTeaModel(ctx, &InitCmd{Dir: "."}, &RootFlags{})
+	model.width, model.height = 120, 40
+	model.Update(teaBackground(false))
+	light := initView(model)
+	if !strings.Contains(light, rgbSGR(theme.Light[0])) {
+		t.Fatalf("light background should draw the light palette %v:\n%q", theme.Light, light)
+	}
+	if strings.Contains(light, rgbSGR(theme.Palette[0])) {
+		t.Fatal("light background still draws the dark palette")
+	}
+}
+
+// The wizard shares the one banner rule: in CI the big banner is skipped
+// even when the terminal has room for it.
+func TestInitTeaHidesBannerInCI(t *testing.T) {
+	ctx := output.WithMode(context.Background(), output.Mode{})
+	ctx = output.WithWriter(ctx, &output.Writer{Out: &strings.Builder{}, Err: &strings.Builder{}, Color: "never"})
+	forceBannerTerminal(t, true)
+	t.Setenv("CI", "true")
+	model := newInitTeaModel(ctx, &InitCmd{Dir: "."}, &RootFlags{})
+	model.width, model.height = 120, 40
+	if view := initView(model); strings.Contains(view, "██╗") {
+		t.Fatalf("banner shown in CI:\n%s", view)
+	}
+
+	t.Setenv("CI", "")
+	model = newInitTeaModel(ctx, &InitCmd{Dir: "."}, &RootFlags{})
+	model.width, model.height = 120, 40
+	if view := initView(model); !strings.Contains(view, "██╗") {
+		t.Fatalf("banner missing on a roomy terminal outside CI:\n%s", view)
+	}
 }

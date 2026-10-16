@@ -1,10 +1,13 @@
 package output
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/colorprofile"
+	"github.com/lucasb-eyer/go-colorful"
 	"github.com/muesli/termenv"
 )
 
@@ -150,4 +153,86 @@ func TestSyncTimelineHoldsSpinnerBackForShortCategories(t *testing.T) {
 	if !strings.Contains(buf.String(), "layouts — 0/1  layouts/default.liquid") {
 		t.Fatalf("expected live line once the delay passed, got %q", buf.String())
 	}
+}
+
+// Every chrome token stays readable on its background: at least 3:1 (WCAG
+// non-text and large/bold text) against a typical dark and light background.
+func TestPaletteContrast(t *testing.T) {
+	backgrounds := map[bool]string{true: "#1e1e1e", false: "#fafafa"}
+	for dark, bg := range backgrounds {
+		p := PaletteFor(dark)
+		for name, hex := range map[string]string{
+			"Success": p.Success, "Warning": p.Warning, "Error": p.Error, "Accent": p.Accent,
+			"Muted": p.Muted, "Path": p.Path, "Border": p.Border,
+		} {
+			if hex == "" {
+				t.Fatalf("dark=%v: %s is empty", dark, name)
+			}
+			if ratio := contrastRatio(t, hex, bg); ratio < 3 {
+				t.Errorf("dark=%v: %s %s on %s has contrast %.2f, want >= 3", dark, name, hex, bg, ratio)
+			}
+		}
+	}
+	if PaletteFor(true) == PaletteFor(false) {
+		t.Fatal("light and dark palettes must differ")
+	}
+}
+
+func TestThemeForBackgroundUsesMatchingPalette(t *testing.T) {
+	light := NewThemeFor(termenv.TrueColor, false)
+	if light.Palette() != PaletteFor(false) {
+		t.Fatal("light theme does not use the light palette")
+	}
+	if NewTheme(termenv.TrueColor).Palette() != PaletteFor(true) {
+		t.Fatal("default theme must use the dark palette (background unknown)")
+	}
+	if got := light.Muted("x"); !strings.Contains(got, "38;2;71;85;105") {
+		t.Fatalf("light muted = %q, want #475569", got)
+	}
+}
+
+// termenv downsamples hex colors; a 256-color profile must never carry
+// 24-bit sequences.
+func TestThemeDownsamplesToProfile(t *testing.T) {
+	theme := NewTheme(termenv.ANSI256)
+	for _, got := range []string{theme.Success("a"), theme.Error("b"), theme.Paint("c", "#a78bfa", true), theme.Border("d")} {
+		if strings.Contains(got, "38;2;") || !strings.Contains(got, "38;5;") {
+			t.Fatalf("256-color theme emitted %q", got)
+		}
+	}
+	if got := NewTheme(termenv.ANSI).Accent("e"); strings.Contains(got, "38;5;") || strings.Contains(got, "38;2;") {
+		t.Fatalf("16-color theme emitted %q", got)
+	}
+}
+
+func TestCharmProfileMapping(t *testing.T) {
+	cases := map[termenv.Profile]colorprofile.Profile{
+		termenv.TrueColor: colorprofile.TrueColor,
+		termenv.ANSI256:   colorprofile.ANSI256,
+		termenv.ANSI:      colorprofile.ANSI,
+		termenv.Ascii:     colorprofile.ASCII,
+	}
+	for in, want := range cases {
+		if got := CharmProfile(in); got != want {
+			t.Errorf("CharmProfile(%v) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+func contrastRatio(t *testing.T, a, b string) float64 {
+	t.Helper()
+	ca, err := colorful.Hex(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cb, err := colorful.Hex(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lum := func(c colorful.Color) float64 {
+		r, g, bl := c.LinearRgb()
+		return 0.2126*r + 0.7152*g + 0.0722*bl
+	}
+	la, lb := lum(ca), lum(cb)
+	return (math.Max(la, lb) + 0.05) / (math.Min(la, lb) + 0.05)
 }

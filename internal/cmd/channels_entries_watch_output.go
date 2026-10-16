@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/lipgloss/v2"
-
 	"github.com/nimbu/cli/internal/output"
 	"github.com/nimbu/cli/internal/realtime"
 )
@@ -19,28 +17,28 @@ import (
 // In --json mode stdout carries nothing but raw server event envelopes, one per
 // line; every control and status line goes to stderr.
 type watchPrinter struct {
-	ctx      context.Context
-	writer   *output.Writer
-	mode     output.Mode
-	verbose  bool
-	useColor bool
-	channel  string
-	filters  []string
-	where    string
+	ctx     context.Context
+	writer  *output.Writer
+	mode    output.Mode
+	verbose bool
+	theme   output.Theme // stdout's theme: event lines go to stdout
+	channel string
+	filters []string
+	where   string
 }
 
 func newWatchPrinter(ctx context.Context, channel string, filters []string, where string) *watchPrinter {
 	writer := output.WriterFromContext(ctx)
 	flags := rootFlagsFromContext(ctx, nil)
 	return &watchPrinter{
-		ctx:      ctx,
-		writer:   writer,
-		mode:     output.FromContext(ctx),
-		verbose:  flags.Verbose || flags.Debug,
-		useColor: writer.UseColor(),
-		channel:  channel,
-		filters:  filters,
-		where:    where,
+		ctx:     ctx,
+		writer:  writer,
+		mode:    output.FromContext(ctx),
+		verbose: flags.Verbose || flags.Debug,
+		theme:   writer.OutTheme(),
+		channel: channel,
+		filters: filters,
+		where:   where,
 	}
 }
 
@@ -107,24 +105,22 @@ func (p *watchPrinter) resyncHint() string {
 	return strings.Join(parts, " ")
 }
 
+// colorEvent colors the event word through the shared theme for stdout's
+// color profile; the word itself carries the meaning.
 func (p *watchPrinter) colorEvent(padded, event string) string {
-	if !p.useColor {
-		return padded
-	}
-	style := lipgloss.NewStyle()
+	theme := p.theme
 	switch event {
 	case "added":
-		style = style.Foreground(stdoutColor(p.writer, "#22c55e"))
+		return theme.Success(padded)
 	case "changed":
-		style = style.Foreground(stdoutColor(p.writer, "#f59e0b"))
+		return theme.Warning(padded)
 	case "removed":
-		style = style.Foreground(stdoutColor(p.writer, "#ef4444"))
+		return theme.Error(padded)
 	case "resync":
-		style = style.Faint(true)
+		return theme.Faint(padded)
 	default:
 		return padded
 	}
-	return style.Render(padded)
 }
 
 // watchEventJSONLine returns the server envelope as a single compact line.

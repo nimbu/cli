@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nimbu/cli/internal/output"
@@ -68,37 +67,33 @@ func TestScopeLinesWrapsWhenVerbose(t *testing.T) {
 	}
 }
 
+// Lipgloss v2 styles never downsample; status lines must still follow the
+// stdout profile: no 24-bit sequences on a 256-color terminal.
 func TestStatusStylerFollowsStdoutProfile(t *testing.T) {
-	off := statusStyler{}
-	if got := off.symbol("✓", "#22c55e"); got != "✓" {
-		t.Fatalf("color off: symbol = %q", got)
-	}
-	if got := off.bold("host"); got != "host" {
-		t.Fatalf("color off: bold = %q", got)
-	}
-
-	truecolor := statusStyler{on: true, profile: colorprofile.TrueColor}.symbol("✓", "#22c55e")
-	if !strings.Contains(truecolor, "38;2;34;197;94") {
-		t.Fatalf("truecolor symbol = %q", truecolor)
-	}
-	ansi256 := statusStyler{on: true, profile: colorprofile.ANSI256}.symbol("✓", "#22c55e")
-	if strings.Contains(ansi256, "38;2;") || !strings.Contains(ansi256, "38;5;") {
-		t.Fatalf("256-color symbol = %q, want an indexed color", ansi256)
-	}
-	if ansi.Strip(ansi256) != "✓" {
-		t.Fatalf("styled symbol text = %q", ansi.Strip(ansi256))
-	}
-}
-
-func TestNewStatusStylerUsesStdoutDecision(t *testing.T) {
-	st := newStatusStyler(&output.Writer{Out: &strings.Builder{}, Color: "never"})
-	if st.on {
-		t.Fatal("--color=never must turn status color off")
-	}
 	t.Setenv("NO_COLOR", "")
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("COLORTERM", "")
+	glyphs := output.GlyphSet(output.ASCIIOnly())
+
+	off := newStatusStyler(&output.Writer{Out: &strings.Builder{}, Color: "never"})
+	if got := off.ok() + off.bold("host"); got != glyphs.OK+"host" {
+		t.Fatalf("color off: %q", got)
+	}
+
+	st := newStatusStyler(&output.Writer{Out: &strings.Builder{}, Color: "always"})
+	for _, got := range []string{st.ok(), st.warn(), st.fail()} {
+		if strings.Contains(got, "38;2;") || !strings.Contains(got, "38;5;") {
+			t.Fatalf("256-color symbol = %q, want an indexed color", got)
+		}
+	}
+	if ansi.Strip(st.ok()) != glyphs.OK || ansi.Strip(st.fail()) != glyphs.Fail {
+		t.Fatalf("styled symbols lost their glyphs: %q %q", ansi.Strip(st.ok()), ansi.Strip(st.fail()))
+	}
+
+	t.Setenv("COLORTERM", "truecolor")
 	st = newStatusStyler(&output.Writer{Out: &strings.Builder{}, Color: "always"})
-	if !st.on || st.profile == colorprofile.ASCII {
-		t.Fatalf("--color=always: on=%v profile=%v", st.on, st.profile)
+	if !strings.Contains(st.ok(), "38;2;34;197;94") {
+		t.Fatalf("truecolor symbol = %q", st.ok())
 	}
 }
 

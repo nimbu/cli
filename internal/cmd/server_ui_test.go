@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/config"
 	"github.com/nimbu/cli/internal/output"
 )
 
@@ -19,6 +20,7 @@ func TestServerPresenterPrintSummary(t *testing.T) {
 	ctx := output.WithMode(context.Background(), output.Mode{})
 	ctx = output.WithWriter(ctx, &output.Writer{Out: &buf, Err: &buf, Color: "never"})
 
+	forceBannerTerminal(t, true)
 	presenter := newServerPresenter(ctx, false)
 	presenter.PrintBanner()
 	presenter.PrintSummary(serverSummary{
@@ -332,4 +334,100 @@ func TestFormatServerChildCommandTruncatesByCellWidth(t *testing.T) {
 	if !utf8.ValidString(wide) {
 		t.Fatalf("wide command is not valid UTF-8: %q", wide)
 	}
+}
+
+// fakeBannerBackground answers the background lookup without a terminal.
+func fakeBannerBackground(t *testing.T, dark bool) {
+	t.Helper()
+	orig := lookupBannerBackground
+	lookupBannerBackground = func(*output.Writer) bool { return dark }
+	t.Cleanup(func() { lookupBannerBackground = orig })
+}
+
+func serverColorContext(t *testing.T, buf *bytes.Buffer, theme string) context.Context {
+	t.Helper()
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("COLORTERM", "truecolor")
+	cfg := config.Defaults()
+	cfg.BannerTheme = theme
+	ctx := output.WithMode(context.Background(), output.Mode{})
+	ctx = output.WithWriter(ctx, &output.Writer{Out: buf, Err: buf, Color: "always"})
+	return context.WithValue(ctx, configKey{}, &cfg)
+}
+
+// The line-path banner follows the background: a light terminal gets the
+// theme's light palette and the light chrome palette.
+func TestServerPresenterBannerUsesLightPaletteOnLightBackground(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := serverColorContext(t, &buf, "sakura")
+	forceBannerTerminal(t, true)
+	fakeBannerBackground(t, false)
+
+	newServerPresenter(ctx, false).PrintBanner()
+	theme, _ := BannerThemeByName("sakura")
+	got := buf.String()
+	if !strings.Contains(got, rgbSGR(theme.Light[0])) {
+		t.Fatalf("banner does not use the light palette %v:\n%q", theme.Light, got)
+	}
+	if strings.Contains(got, rgbSGR(theme.Palette[0])) {
+		t.Fatal("banner still uses the dark palette on a light background")
+	}
+
+	buf.Reset()
+	presenter := newServerPresenter(ctx, false)
+	presenter.PrintStopping("")
+	if !strings.Contains(buf.String(), rgbSGR(output.PaletteFor(false).Muted)) {
+		t.Fatalf("chrome does not use the light muted color: %q", buf.String())
+	}
+}
+
+// Without the banner (not a terminal, CI) nothing queries the background.
+func TestServerPresenterSkipsBackgroundQueryWithoutBanner(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := serverColorContext(t, &buf, "sakura")
+	forceBannerTerminal(t, false)
+	orig := lookupBannerBackground
+	lookupBannerBackground = func(*output.Writer) bool {
+		t.Fatal("background queried without a banner")
+		return true
+	}
+	t.Cleanup(func() { lookupBannerBackground = orig })
+	newServerPresenter(ctx, false).PrintBanner()
+}
+
+// Values keep the terminal's foreground (a near-white hex vanished on light
+// backgrounds), and on a 256-color terminal no 24-bit sequence is emitted.
+func TestServerPresenterChromeFollowsProfileAndKeepsTextColor(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := serverColorContext(t, &buf, "rainbow")
+	t.Setenv("COLORTERM", "")
+	forceBannerTerminal(t, true)
+	fakeBannerBackground(t, true)
+
+	presenter := newServerPresenter(ctx, false)
+	presenter.PrintBanner()
+	presenter.PrintSummary(serverSummary{
+		APIHost:  "staging-api.nimbu.io",
+		ProxyURL: "http://127.0.0.1:4568",
+		ReadyURL: "http://127.0.0.1:3456",
+		SiteHost: "demo.nimbu.io",
+	})
+	presenter.PrintReady("http://localhost:4568")
+	got := buf.String()
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatalf("expected colored chrome, got %q", got)
+	}
+	if strings.Contains(got, "38;2;") {
+		t.Fatalf("256-color terminal got 24-bit sequences: %q", got)
+	}
+	if !strings.Contains(got, " staging-api.nimbu.io\n") {
+		t.Fatalf("summary value should be uncolored, got %q", got)
+	}
+}
+
+// rgbSGR is the 24-bit foreground parameter for hex, without the terminator
+// (termenv may append bold to the same sequence).
+func rgbSGR(hex string) string {
+	return strings.TrimSuffix(truecolorFG(hex), "m")
 }

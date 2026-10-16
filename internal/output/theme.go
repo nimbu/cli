@@ -5,33 +5,97 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/colorprofile"
 	"github.com/muesli/termenv"
 )
 
-// Semantic color tokens. Hex values are degraded by termenv to the nearest
-// 256/16-color entry on less capable terminals.
-const (
-	colorSuccess = "#22c55e" // green
-	colorWarning = "#f59e0b" // amber, also used for dry-run accents
-	colorError   = "#ef4444" // red
-	colorAccent  = "#60a5fa" // blue: spinners, active work
-	colorMuted   = "#94a3b8" // slate: rails, secondary text
-	colorPath    = "#38bdf8" // sky: file paths, identifiers
-)
-
-// Theme styles text with the CLI's semantic palette. The zero value (or a
-// Theme built with color off) returns text unchanged, so callers never need
-// their own "if color" branches.
-type Theme struct {
-	out *termenv.Output
+// Palette is the CLI's one semantic chrome palette, as hex colors. Every
+// non-banner color (line output, the init wizard, the banner picker, help,
+// nimbu server) comes from here, so meaning and tone stay consistent.
+//
+// There is deliberately no "text" token: body text and values keep the
+// terminal's own foreground (use Strong for emphasis), which is readable on
+// any background. Meaning never rests on color alone; markers and words carry
+// it too.
+type Palette struct {
+	Success string // completed work, healthy state
+	Warning string // warnings, dry-run accents, unverified state
+	Error   string // failures
+	Accent  string // active work, selections, primary actions, headings
+	Muted   string // rails, labels, hints, secondary text
+	Path    string // file paths, identifiers, types
+	Border  string // frames and separators (non-text)
 }
 
-// NewTheme builds a theme for a termenv profile; termenv.Ascii disables color.
+// darkPalette is tuned for dark terminal backgrounds. It is also the default
+// when the background is unknown: line output never queries the terminal.
+var darkPalette = Palette{
+	Success: "#22c55e",
+	Warning: "#f59e0b",
+	Error:   "#ef4444",
+	Accent:  "#60a5fa",
+	Muted:   "#94a3b8",
+	Path:    "#38bdf8",
+	Border:  "#64748b",
+}
+
+// lightPalette holds the same tokens, darkened for light backgrounds.
+var lightPalette = Palette{
+	Success: "#15803d",
+	Warning: "#b45309",
+	Error:   "#b91c1c",
+	Accent:  "#1d4ed8",
+	Muted:   "#475569",
+	Path:    "#0369a1",
+	Border:  "#64748b",
+}
+
+// PaletteFor returns the palette variant for a dark or light background.
+func PaletteFor(dark bool) Palette {
+	if dark {
+		return darkPalette
+	}
+	return lightPalette
+}
+
+// CharmProfile maps a termenv profile (the output package's per-stream color
+// decision) to the colorprofile that Bubble Tea and Lipgloss v2 render with.
+func CharmProfile(profile termenv.Profile) colorprofile.Profile {
+	switch profile {
+	case termenv.TrueColor:
+		return colorprofile.TrueColor
+	case termenv.ANSI256:
+		return colorprofile.ANSI256
+	case termenv.ANSI:
+		return colorprofile.ANSI
+	default:
+		return colorprofile.ASCII
+	}
+}
+
+// Theme styles text with the CLI's semantic palette, downsampled to the
+// stream's color profile. The zero value (or a Theme built with color off)
+// returns text unchanged, so callers never need their own "if color" branches.
+type Theme struct {
+	out     *termenv.Output
+	palette Palette
+}
+
+// NewTheme builds a theme for a termenv profile with the default (dark)
+// palette; termenv.Ascii disables color.
 func NewTheme(profile termenv.Profile) Theme {
+	return NewThemeFor(profile, true)
+}
+
+// NewThemeFor builds a theme for a profile and a known terminal background.
+func NewThemeFor(profile termenv.Profile, dark bool) Theme {
 	if profile == termenv.Ascii {
 		return Theme{}
 	}
-	return Theme{out: termenv.NewOutput(io.Discard, termenv.WithProfile(profile))}
+	return Theme{
+		out:     termenv.NewOutput(io.Discard, termenv.WithProfile(profile)),
+		palette: PaletteFor(dark),
+	}
 }
 
 // OutTheme returns the theme for content written to stdout.
@@ -42,6 +106,20 @@ func (w *Writer) ErrTheme() Theme { return NewTheme(w.ErrColorProfile()) }
 
 // Enabled reports whether the theme emits escape sequences.
 func (t Theme) Enabled() bool { return t.out != nil }
+
+// Palette returns the theme's palette (the dark one for a disabled theme).
+func (t Theme) Palette() Palette {
+	if t.out == nil {
+		return darkPalette
+	}
+	return t.palette
+}
+
+// Paint styles s with a hex color (empty keeps the terminal's foreground),
+// optionally bold, downsampled to the theme's profile.
+func (t Theme) Paint(s, hex string, bold bool) string {
+	return t.style(s, hex, bold)
+}
 
 func (t Theme) style(s, hex string, bold bool) string {
 	if t.out == nil || s == "" {
@@ -58,25 +136,28 @@ func (t Theme) style(s, hex string, bold bool) string {
 }
 
 // Success marks completed work (bold green).
-func (t Theme) Success(s string) string { return t.style(s, colorSuccess, true) }
+func (t Theme) Success(s string) string { return t.style(s, t.palette.Success, true) }
 
 // Warning marks warnings and dry-run accents (bold amber).
-func (t Theme) Warning(s string) string { return t.style(s, colorWarning, true) }
+func (t Theme) Warning(s string) string { return t.style(s, t.palette.Warning, true) }
 
 // WarningText colors longer warning prose without bold.
-func (t Theme) WarningText(s string) string { return t.style(s, colorWarning, false) }
+func (t Theme) WarningText(s string) string { return t.style(s, t.palette.Warning, false) }
 
 // Error marks failures (bold red).
-func (t Theme) Error(s string) string { return t.style(s, colorError, true) }
+func (t Theme) Error(s string) string { return t.style(s, t.palette.Error, true) }
 
 // Accent marks active work such as spinners (bold blue).
-func (t Theme) Accent(s string) string { return t.style(s, colorAccent, true) }
+func (t Theme) Accent(s string) string { return t.style(s, t.palette.Accent, true) }
 
 // Muted de-emphasizes secondary text such as rails, hints and footers.
-func (t Theme) Muted(s string) string { return t.style(s, colorMuted, false) }
+func (t Theme) Muted(s string) string { return t.style(s, t.palette.Muted, false) }
 
 // Path highlights file paths and identifiers.
-func (t Theme) Path(s string) string { return t.style(s, colorPath, false) }
+func (t Theme) Path(s string) string { return t.style(s, t.palette.Path, false) }
+
+// Border colors frames and separators.
+func (t Theme) Border(s string) string { return t.style(s, t.palette.Border, false) }
 
 // Strong emphasizes headings and names. It only adds bold and keeps the
 // terminal's own foreground, so it stays readable on light and dark themes.
