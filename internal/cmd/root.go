@@ -243,16 +243,14 @@ func execute(args []string) (err error) {
 	host := apps.NormalizeHost(cli.APIURL)
 	ctx = context.WithValue(ctx, authResolverKey{}, newAuthCredentialResolver(host))
 
-	// Resolve site: --env, then --site/NIMBU_SITE, then nimbu.yml, then default_site.
-	site := resolveSite(&cli.RootFlags, &cfg).Site
-
 	// Store values in context
 	ctx = context.WithValue(ctx, rootFlagsKey{}, &cli.RootFlags)
 	ctx = context.WithValue(ctx, configKey{}, &cfg)
 
 	kctx.BindTo(ctx, (*context.Context)(nil))
 	kctx.Bind(&cli.RootFlags)
-	kctx.Bind(site) // Bind resolved site
+	// Commands resolve their site lazily with RequireSite (see resolveSite),
+	// so commands that need none never read nimbu.yml or the git root.
 
 	if err = kctx.Run(); err != nil {
 		if interrupted(ctx) {

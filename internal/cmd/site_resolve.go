@@ -58,6 +58,11 @@ func resolveSite(flags *RootFlags, cfg *config.Config) siteResolution {
 	if projErr == nil && projectSite != "" {
 		return siteResolution{Site: projectSite, Source: siteSourceProject}
 	}
+	if projErr != nil && !errors.Is(projErr, config.ErrNotFound) {
+		// A nimbu.yml exists but cannot be read: falling back to the global
+		// default would silently target a different site.
+		return siteResolution{ProjectErr: projErr}
+	}
 	if projErr == nil {
 		projErr = errProjectHasNoSite
 	}
@@ -75,6 +80,13 @@ var errProjectHasNoSite = errors.New("nimbu.yml has no site")
 // siteRequiredError is the usage error for a command that needs a site and
 // found none in any source.
 func siteRequiredError(projErr error) error {
+	if projErr != nil && !errors.Is(projErr, config.ErrNotFound) && !errors.Is(projErr, errProjectHasNoSite) {
+		return newHintedError(
+			fmt.Errorf("cannot read the site from %s: %w", config.ProjectFileName, projErr),
+			errorSiteRequired, ExitUsage,
+			fmt.Sprintf("fix %s, or pass --site <site> to choose the site explicitly", config.ProjectFileName),
+		)
+	}
 	lookup := config.ProjectFileName
 	if !errors.Is(projErr, errProjectHasNoSite) {
 		lookup = config.DescribeProjectLookup(projErr)

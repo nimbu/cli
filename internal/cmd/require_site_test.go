@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -193,5 +194,21 @@ func TestRequireSiteErrorNamesSearchBoundary(t *testing.T) {
 	}
 	if !strings.Contains(desc.Hint, "--site") || !strings.Contains(desc.Hint, "nimbu.yml (searched up to "+repo+")") {
 		t.Fatalf("hint %q missing --site or search boundary", desc.Hint)
+	}
+}
+
+func TestResolveSiteBrokenProjectFileDoesNotFallBackToDefault(t *testing.T) {
+	stubProjectSite(t, "", errors.New("yaml: line 2: did not find expected key"))
+	got := resolveSite(&RootFlags{}, &config.Config{DefaultSite: "config-site"})
+	if got.Site != "" {
+		t.Fatalf("resolveSite() = %q; a broken nimbu.yml must not fall back to default_site", got.Site)
+	}
+	desc := classifyError(siteRequiredError(got.ProjectErr))
+	if desc.Code != errorSiteRequired || !strings.Contains(desc.Message, "cannot read the site from nimbu.yml") || !strings.Contains(desc.Hint, "--site") {
+		t.Fatalf("desc = %+v", desc)
+	}
+	// An explicit --site still works with a broken project file.
+	if got := resolveSite(&RootFlags{Site: "flag-site"}, nil); got.Site != "flag-site" {
+		t.Fatalf("resolveSite() = %q", got.Site)
 	}
 }
