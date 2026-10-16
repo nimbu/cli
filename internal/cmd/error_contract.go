@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -36,6 +39,10 @@ const (
 	errorNetworkFailure    canonicalErrorCode = "network.failure"
 	errorServerError       canonicalErrorCode = "server.error"
 	errorUnknown           canonicalErrorCode = "internal.unknown"
+
+	errorSiteRequired         canonicalErrorCode = "cli.usage.site_required"
+	errorConfirmationRequired canonicalErrorCode = "cli.confirmation_required"
+	errorInterrupted          canonicalErrorCode = "cli.interrupted"
 )
 
 type errorEnvelope struct {
@@ -120,26 +127,48 @@ func emitCommandError(ctx context.Context, err error) error {
 		return &ExitError{Code: desc.ExitCode, Err: err}
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		payload := errorEnvelope{Status: "error", Error: desc}
-		data, marshalErr := json.MarshalIndent(payload, "", "  ")
-		if marshalErr != nil {
-			_, _ = fmt.Fprintln(os.Stderr, err)
-		} else {
-			_, _ = fmt.Fprintln(os.Stderr, string(data))
-		}
+	writer := output.WriterFromContext(ctx)
+	if output.FromContext(ctx).JSON {
+		writeErrorEnvelope(writer.Err, desc)
 	} else {
-		if results := batchResultsFromError(err); len(results) > 0 {
-			writeBatchResultLines(os.Stderr, nil, results)
-		}
-		_, _ = fmt.Fprintln(os.Stderr, desc.Message)
-		if desc.Hint != "" {
-			_, _ = fmt.Fprintln(os.Stderr, desc.Hint)
-		}
+		writeHumanError(writer, err, desc)
 	}
 
 	return &ExitError{Code: desc.ExitCode, Err: err}
+}
+
+// writeErrorEnvelope prints the JSON error envelope; <, > and & stay readable.
+func writeErrorEnvelope(w io.Writer, desc errorDescriptor) {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(errorEnvelope{Status: "error", Error: desc}); err != nil {
+		_, _ = fmt.Fprintf(w, "error: %s\n", desc.Message)
+		return
+	}
+	_, _ = w.Write(buf.Bytes())
+}
+
+// writeHumanError prints "error: <message>" and, when there is one, a
+// "hint: <fix>" line last. Labels are colored only when stderr gets color.
+// A signal interrupt prints nothing: the user pressed Ctrl-C and knows why.
+// A cancellation no signal explains still says what failed.
+func writeHumanError(writer *output.Writer, err error, desc errorDescriptor) {
+	if errors.Is(err, errInterrupted) {
+		return
+	}
+	w := writer.Err
+	if results := batchResultsFromError(err); len(results) > 0 {
+		writeBatchResultLines(w, nil, results)
+	}
+	profile := writer.ErrColorProfile()
+	errorLabel := profile.String("error:").Foreground(profile.Color("1")).Bold().String()
+	_, _ = fmt.Fprintf(w, "%s %s\n", errorLabel, desc.Message)
+	if desc.Hint != "" {
+		hintLabel := profile.String("hint:").Foreground(profile.Color("6")).String()
+		_, _ = fmt.Fprintf(w, "%s %s\n", hintLabel, desc.Hint)
+	}
 }
 
 func classifyError(err error) errorDescriptor {
@@ -148,6 +177,15 @@ func classifyError(err error) errorDescriptor {
 		Message:   err.Error(),
 		ExitCode:  ExitGeneral,
 		Retryable: false,
+	}
+
+	if errors.Is(err, errInterrupted) || errors.Is(err, context.Canceled) {
+		desc.Code = errorInterrupted
+		desc.ExitCode = ExitInterrupted
+		if errors.Is(err, errInterrupted) {
+			desc.Message = "interrupted"
+		}
+		return desc
 	}
 
 	var detailed *detailedError
@@ -190,6 +228,10 @@ func classifyError(err error) errorDescriptor {
 			"path":       resolveErr.Path,
 			"candidates": resolveErr.Candidates,
 		}
+		return desc
+	}
+
+	if classifyTransportError(err, &desc) {
 		return desc
 	}
 
@@ -267,7 +309,7 @@ func classifyError(err error) errorDescriptor {
 		desc.Code = errorReadonly
 		desc.ExitCode = ExitUsage
 		desc.Message = readonlyErr.Error()
-		desc.Hint = "unset NIMBU_READONLY or remove --readonly to allow write operations"
+		desc.Hint = readonlyHint
 		return desc
 	}
 
@@ -321,28 +363,42 @@ func classifyError(err error) errorDescriptor {
 		return desc
 	}
 
+	// Legacy heuristic for untyped local argument checks ("invalid --since",
+	// "--file required"). Typed errors above always win; new failures should
+	// use newHintedError/newDetailedError instead of relying on wording.
 	lower := strings.ToLower(err.Error())
-	if strings.Contains(lower, "timeout") {
-		desc.Code = errorNetworkTimeout
-		desc.ExitCode = ExitNetwork
-		desc.Retryable = true
-		desc.Hint = "check network and retry"
-		return desc
-	}
-	if strings.Contains(lower, "connection") || strings.Contains(lower, "dial") {
-		desc.Code = errorNetworkFailure
-		desc.ExitCode = ExitNetwork
-		desc.Retryable = true
-		desc.Hint = "check network connectivity and API URL"
-		return desc
-	}
-
 	if strings.Contains(lower, "invalid") || strings.Contains(lower, "required") {
 		desc.Code = errorValidationFailed
 		desc.ExitCode = ExitValidation
 	}
 
 	return desc
+}
+
+// classifyTransportError recognizes network failures by type: timeouts
+// (context deadline, net.Error.Timeout) and other transport errors such as
+// refused connections or DNS failures, which arrive as *url.Error/*net.OpError.
+func classifyTransportError(err error, desc *errorDescriptor) bool {
+	var apiErr *api.Error
+	if errors.As(err, &apiErr) && apiErr.StatusCode != 0 {
+		return false // the server answered; not a transport failure
+	}
+	var netErr net.Error
+	timeout := errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) ||
+		(errors.As(err, &netErr) && netErr.Timeout())
+	switch {
+	case timeout:
+		desc.Code = errorNetworkTimeout
+		desc.Hint = "the request timed out; check the network, raise --timeout, or retry"
+	case netErr != nil:
+		desc.Code = errorNetworkFailure
+		desc.Hint = "check network connectivity and the API URL (--apiurl / NIMBU_API_URL)"
+	default:
+		return false
+	}
+	desc.ExitCode = ExitNetwork
+	desc.Retryable = true
+	return true
 }
 
 func isScopeError(apiErr *api.Error) bool {

@@ -163,7 +163,7 @@ func TestReleaseSchemaSuccessRecordsSingleJSONAndSiteFallback(t *testing.T) {
 	defer server.Close()
 	ctx, out, _ := newSitesListTestContext(t, server.URL, output.Mode{JSON: true})
 	err := withWorkingDir(t, root, func() error {
-		return (&ReleaseCmd{Only: []string{"schema"}, AllowDirty: true, Yes: true}).Run(ctx, &RootFlags{APIURL: server.URL, NoInput: true})
+		return (&ReleaseCmd{Only: []string{"schema"}, AllowDirty: true}).Run(ctx, &RootFlags{APIURL: server.URL, NoInput: true, Yes: true})
 	})
 	if err != nil {
 		t.Fatal(err)

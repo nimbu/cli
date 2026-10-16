@@ -159,8 +159,10 @@ func siteCopyConflictResolver(flags *RootFlags, tl *output.CopyTimeline) migrate
 		if flags != nil && flags.Force {
 			return migrate.ExistingContentDecision{Action: migrate.ExistingContentUpdate, ApplyToAll: true}, nil
 		}
-		if flags != nil && flags.NoInput {
-			return migrate.ExistingContentDecision{}, fmt.Errorf("use --force to update existing %s", strings.ToLower(prompt.Type))
+		if reason := promptBlocker(flags); reason != "" {
+			return migrate.ExistingContentDecision{}, confirmationRequiredError(
+				fmt.Sprintf("refusing to update existing %s without --force (cannot prompt: %s)", strings.ToLower(prompt.Type), reason),
+				"--force")
 		}
 		if tl != nil {
 			tl.PreparePrompt()
@@ -174,6 +176,7 @@ func siteCopyConflictResolver(flags *RootFlags, tl *output.CopyTimeline) migrate
 			errw = os.Stderr
 		}
 		style := newSiteCopyPromptStyle(w, errw)
+		defer beginPrompt()()
 		if prompt.Item != "" {
 			return readSiteCopyItemConflictDecision(reader, errw, prompt, style)
 		}

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -28,7 +29,7 @@ type AuthLoginCmd struct {
 	Scopes string `help:"Comma-separated OAuth scopes to request (default: full CLI access)"`
 	// Deliberately not bound to NIMBU_TOKEN: an exported CI token must not
 	// turn a login into storing that token.
-	Token string `help:"Store an existing API token instead of logging in" short:"t"`
+	Token string `help:"Store an existing API token instead of logging in; - reads it from stdin" short:"t"`
 
 	// Deprecated email/password login, kept for scripts. Either flag selects it.
 	Email     string `help:"Deprecated: log in with email and password" short:"e" hidden:""`
@@ -44,7 +45,7 @@ func (c *AuthLoginCmd) Run(ctx context.Context, flags *RootFlags) error {
 		oauthLogin := c.Token == "" && c.Email == "" && c.Password == ""
 		if oauthLogin && (flags.NoInput || !loginStdinIsTerminal()) {
 			return newDetailedError(
-				errors.New("NIMBU_TOKEN is set and overrides stored credentials; unset it, or pass --token to store it"),
+				errors.New("NIMBU_TOKEN is set and overrides stored credentials; unset it, or store it with `nimbu auth login --token -` (reads stdin)"),
 				errorUsageInvalid, ExitUsage, nil)
 		}
 		_, _ = fmt.Fprintln(output.WriterFromContext(ctx).Err,
@@ -53,7 +54,11 @@ func (c *AuthLoginCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	switch {
 	case c.Token != "":
-		return c.storeToken(ctx, c.Token, "", host)
+		token, err := c.readToken(ctx, flags)
+		if err != nil {
+			return err
+		}
+		return c.storeToken(ctx, token, "", host)
 	case c.Email != "" || c.Password != "":
 		_, _ = fmt.Fprintln(output.WriterFromContext(ctx).Err,
 			"warning: password login is deprecated and will be removed; run `nimbu auth login` to log in with your browser")
@@ -61,6 +66,53 @@ func (c *AuthLoginCmd) Run(ctx context.Context, flags *RootFlags) error {
 	default:
 		return c.runOAuthLogin(ctx, flags, host)
 	}
+}
+
+// maxTokenInput bounds what `--token -` reads from stdin.
+const maxTokenInput = 64 << 10
+
+// promptTokenSecret reads a token without echo; swapped in tests.
+var promptTokenSecret = promptPassword
+
+// readToken returns the token to store. `--token -` reads it from stdin
+// (hidden prompt on a terminal), which keeps it out of shell history and
+// process listings; a literal token still works but gets a warning.
+func (c *AuthLoginCmd) readToken(ctx context.Context, flags *RootFlags) (string, error) {
+	if c.Token != "-" {
+		_, _ = fmt.Fprintln(output.WriterFromContext(ctx).Err,
+			"warning: a token on the command line can leak through shell history and process lists; pipe it instead: nimbu auth login --token - < token-file")
+		return c.Token, nil
+	}
+
+	var token string
+	if loginStdinIsTerminal() {
+		if flags != nil && flags.NoInput {
+			return "", newHintedError(errors.New("--token - needs the token on stdin"), errorUsageInvalid, ExitUsage,
+				"pipe the token in, e.g. `nimbu auth login --token - < token-file`, or drop --no-input to type it")
+		}
+		secret, err := promptTokenSecret("API token: ")
+		if err != nil {
+			return "", fmt.Errorf("read token: %w", err)
+		}
+		token = secret
+	} else {
+		data, err := io.ReadAll(io.LimitReader(os.Stdin, maxTokenInput+1))
+		if err != nil {
+			return "", fmt.Errorf("read token from stdin: %w", err)
+		}
+		if len(data) > maxTokenInput {
+			return "", newHintedError(fmt.Errorf("token on stdin exceeds %d bytes", maxTokenInput), errorUsageInvalid, ExitUsage,
+				"pipe only the token itself")
+		}
+		token = string(data)
+	}
+
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "", newHintedError(errors.New("no token read from stdin"), errorUsageInvalid, ExitUsage,
+			"pipe the token in, e.g. `nimbu auth login --token - < token-file`")
+	}
+	return token, nil
 }
 
 func (c *AuthLoginCmd) runPasswordLogin(ctx context.Context, flags *RootFlags, host string) error {
@@ -234,6 +286,7 @@ func revokeReplacedSession(ctx context.Context, host string, previous auth.Crede
 }
 
 func prompt(message string) (string, error) {
+	defer beginPrompt()()
 	fmt.Fprint(os.Stderr, message)
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
@@ -244,6 +297,7 @@ func prompt(message string) (string, error) {
 }
 
 func promptPassword(message string) (string, error) {
+	defer beginPrompt()()
 	fmt.Fprint(os.Stderr, message)
 	password, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Fprintln(os.Stderr) // newline after password

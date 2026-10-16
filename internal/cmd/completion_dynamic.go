@@ -534,16 +534,9 @@ func completionSiteFromContext(ctx context.Context, words []string) string {
 	if site, ok := completionOriginalFlagValue(words, "site"); ok {
 		return site
 	}
-	if flags, ok := ctx.Value(rootFlagsKey{}).(*RootFlags); ok && flags != nil && strings.TrimSpace(flags.Site) != "" {
-		return flags.Site
-	}
-	if cfg, ok := ctx.Value(configKey{}).(*config.Config); ok && cfg != nil && strings.TrimSpace(cfg.DefaultSite) != "" {
-		return cfg.DefaultSite
-	}
-	if proj, err := config.ReadProjectConfig(); err == nil && strings.TrimSpace(proj.Site) != "" {
-		return proj.Site
-	}
-	return ""
+	flags, _ := ctx.Value(rootFlagsKey{}).(*RootFlags)
+	cfg, _ := ctx.Value(configKey{}).(*config.Config)
+	return resolveSite(flags, cfg).Site
 }
 
 func completionOriginalFlagValue(words []string, flag string) (string, bool) {

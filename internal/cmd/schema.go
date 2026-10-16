@@ -30,7 +30,6 @@ type SchemaApplyCmd struct {
 	DisableRenamePrompts bool         `kong:"-"`
 	Plans                []schemaPlan `kong:"-"`
 	Prune                bool         `help:"Remove fields and options absent from supplied arrays"`
-	Yes                  bool         `help:"Confirm schema changes, including destructive changes"`
 }
 type schemaDocument struct {
 	Path, Target, Endpoint string

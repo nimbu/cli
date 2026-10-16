@@ -46,8 +46,8 @@ func (c *SettingsConsentConfigReplaceCmd) Run(ctx context.Context, flags *RootFl
 	if err := requireWrite(flags, "replace consent configuration"); err != nil {
 		return err
 	}
-	if flags == nil || !flags.Force {
-		return fmt.Errorf("use --force to replace the whole consent configuration")
+	if !confirmedByFlag(flags) {
+		return confirmationRequiredError("refusing to replace the whole consent configuration without --force", "--force")
 	}
 	body, err := readJSONInputUseNumber(c.File)
 	if err != nil {

@@ -17,11 +17,12 @@ var bsonObjectIDRE = regexp.MustCompile(`^[0-9a-fA-F]{24}$`)
 func requireExactConfirm(confirm, expected, target string) error {
 	confirm = strings.TrimSpace(confirm)
 	expected = strings.TrimSpace(expected)
+	flag := fmt.Sprintf("--confirm %q", expected)
 	if confirm == "" {
-		return fmt.Errorf("use --confirm %q to confirm %s", expected, target)
+		return confirmationRequiredError(fmt.Sprintf("use %s to confirm %s", flag, target), flag)
 	}
 	if confirm != expected {
-		return fmt.Errorf("--confirm must exactly match %q to confirm %s", expected, target)
+		return confirmationRequiredError(fmt.Sprintf("--confirm must exactly match %q to confirm %s", expected, target), flag)
 	}
 	return nil
 }

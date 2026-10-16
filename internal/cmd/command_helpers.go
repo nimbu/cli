@@ -7,24 +7,65 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"golang.org/x/term"
 )
 
 const maxJSONInputBytes int64 = 10 << 20
 
 var errNoJSONInput = errors.New("no JSON input provided")
 
+const readonlyHint = "unset NIMBU_READONLY or remove --readonly to allow write operations"
+
 func requireWrite(flags *RootFlags, action string) error {
 	if flags != nil && flags.Readonly {
-		return fmt.Errorf("cannot %s in readonly mode", action)
+		return readonlyModeError(action)
 	}
 	return nil
 }
 
+// readonlyModeError is the typed cli.readonly failure for a write attempted
+// with --readonly / NIMBU_READONLY.
+func readonlyModeError(action string) error {
+	return newHintedError(fmt.Errorf("cannot %s in readonly mode", action), errorReadonly, ExitUsage, readonlyHint)
+}
+
 func requireForce(flags *RootFlags, target string) error {
-	if flags != nil && !flags.Force {
-		return fmt.Errorf("use --force to confirm deletion of %s", target)
+	return requireForceAction(flags, "delete "+target)
+}
+
+// requireForceAction guards a destructive action (e.g. "empty channel news")
+// behind --force or --yes.
+func requireForceAction(flags *RootFlags, action string) error {
+	if flags != nil && !confirmedByFlag(flags) {
+		return confirmationRequiredError(fmt.Sprintf("refusing to %s without --force", action), "--force")
 	}
 	return nil
+}
+
+// confirmedByFlag reports whether --force or its alias --yes was passed.
+func confirmedByFlag(flags *RootFlags) bool {
+	return flags != nil && (flags.Force || flags.Yes)
+}
+
+// confirmationRequiredError is the typed cli.confirmation_required failure
+// (exit 2). flag names the override the user must pass.
+func confirmationRequiredError(message, flag string) error {
+	hint := "re-run with " + flag + " to confirm"
+	switch flag {
+	case "--force":
+		hint = "re-run with --force (or --yes) to confirm"
+	case "--yes":
+		hint = "re-run with --yes (or --force) to confirm"
+	}
+	return newHintedError(errors.New(message), errorConfirmationRequired, ExitUsage, hint)
+}
+
+// protectedConfirmationError is the confirmation failure for a protected
+// environment, which only --yes confirms.
+func protectedConfirmationError(message string) error {
+	return newHintedError(errors.New(message), errorConfirmationRequired, ExitUsage,
+		"re-run with --yes to confirm; --force does not bypass a protected environment")
 }
 
 func readJSONInput(file string) (map[string]any, error) {
@@ -139,10 +180,13 @@ func readLimitedBytes(input io.Reader) ([]byte, error) {
 	return data, nil
 }
 
+// stdinIsTerminal reports whether stdin is an interactive terminal. A
+// character-device check is not enough: /dev/null (CI's usual stdin) is a
+// character device too, and reading a prompt answer from it yields a bare EOF.
 func stdinIsTerminal() bool {
-	info, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return (info.Mode() & os.ModeCharDevice) != 0
+	return fileIsTerminal(os.Stdin)
+}
+
+func fileIsTerminal(f *os.File) bool {
+	return f != nil && term.IsTerminal(int(f.Fd()))
 }

@@ -41,6 +41,7 @@ func TestConfirmThemeOverwriteReusesReaderAcrossPrompts(t *testing.T) {
 		Color: "never",
 		NoTTY: true,
 	})
+	stubInteractivePrompt(t, true)
 	confirm := confirmThemeOverwrite(&RootFlags{})
 	conflict := &api.Error{StatusCode: 409, Message: "Conflict (Peter edited article.liquid)"}
 

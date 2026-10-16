@@ -34,7 +34,61 @@
 ## validation_local
 {
   "code": "cli.validation.failed",
-  "message": "site required",
+  "message": "--file required",
   "exit_code": 6,
   "retryable": false
 }
+
+## site_required
+{
+  "code": "cli.usage.site_required",
+  "message": "no site selected",
+  "hint": "pass --site \u003csite\u003e, set NIMBU_SITE, add site: to nimbu.yml, or set default_site with `nimbu config set --key default_site --value \u003csite\u003e`",
+  "exit_code": 2,
+  "retryable": false
+}
+
+## confirmation_required
+{
+  "code": "cli.confirmation_required",
+  "message": "refusing to delete channel news without --force",
+  "hint": "re-run with --force (or --yes) to confirm",
+  "exit_code": 2,
+  "retryable": false
+}
+
+## network_refused
+{
+  "code": "network.failure",
+  "message": "dial tcp: connection refused",
+  "hint": "check network connectivity and the API URL (--apiurl / NIMBU_API_URL)",
+  "exit_code": 8,
+  "retryable": true
+}
+
+## network_timeout
+{
+  "code": "network.timeout",
+  "message": "deadline",
+  "hint": "the request timed out; check the network, raise --timeout, or retry",
+  "exit_code": 8,
+  "retryable": true
+}
+
+## local_text_mentions_timeout
+{
+  "code": "internal.unknown",
+  "message": "parse timeout: connection setting unknown",
+  "exit_code": 1,
+  "retryable": false
+}
+
+## interrupted
+{
+  "code": "cli.interrupted",
+  "message": "interrupted",
+  "exit_code": 130,
+  "retryable": false
+}
+
+

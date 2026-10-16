@@ -155,8 +155,8 @@ func requireRelationShrinks(flags *RootFlags, roleID string, diffs []roleRelatio
 			continue
 		}
 		action := fmt.Sprintf("drop more than half of the %s relation on role %s (%d → %d)", diff.Field, roleID, diff.Before, diff.After)
-		if flags == nil || !flags.Force {
-			return fmt.Errorf("use --force to %s", action)
+		if !confirmedByFlag(flags) {
+			return confirmationRequiredError(fmt.Sprintf("refusing to %s without --force", action), "--force")
 		}
 	}
 	return nil

@@ -427,7 +427,10 @@ pushes the theme. Commit your changes first; use `--allow-dirty` for a deliberat
 uncommitted deployment.
 
 Protected environments require confirmation. In CI, pass `--no-input --yes` to
-`schema apply` or `release`; `--force` does not bypass protection. Review `plan`
+`schema apply` or `release`; `--force` does not bypass protection. Elsewhere
+`--yes` (`-y`) and `--force` are interchangeable. Without a terminal on stdin,
+or with `CI` set, nimbu never prompts: it fails with
+`cli.confirmation_required` (exit 2) and names the flag to pass. Review `plan`
 before adding `--prune`, which removes omitted fields and options. Creating
 circular channel references may leave placeholder fields; remove those with a
 reviewed `--prune` apply.
@@ -595,12 +598,26 @@ nimbu auth logout                         # Revoke the session on the server and
   in the Nimbu admin. After that, commands fail with `auth.not_logged_in`
   (exit code 3); run `nimbu auth login` again.
 - **CI and scripts** should keep using an API token: `NIMBU_TOKEN=... nimbu ...`,
-  or `nimbu auth login --token <token>` to store one. These tokens are never
+  or `nimbu auth login --token - < token-file` to store one (`--token -` reads
+  stdin, so the token stays out of shell history). These tokens are never
   refreshed.
 - Password login (`nimbu auth login --email you@example.com`) still works for
   now, but is deprecated and prints a warning.
 
 ## Configuration
+
+### Site Selection
+
+Every command that needs a site picks it in this order, first match wins:
+
+1. `--env <name>`: a named environment from `nimbu.yml` (sets site and API URL together)
+2. `--site <site>` or `NIMBU_SITE`
+3. `site:` in the nearest `nimbu.yml`
+4. `default_site` in the global config file
+
+Inside a project, `nimbu.yml` beats the global `default_site`, so a write never
+lands on a site you made the default for another project. `nimbu sites current`
+prints the site and which source chose it.
 
 ### Environment Variables
 
@@ -613,7 +630,10 @@ NIMBU_PLAIN          # Default TSV output (1/true)
 NIMBU_NO_INPUT       # Disable prompts for CI
 NIMBU_READONLY       # Disable write operations
 NIMBU_ENABLE_COMMANDS # Command allowlist (comma-separated)
+NIMBU_COLOR          # auto | always | never
 ```
+
+An empty variable (`NIMBU_JSON=`) counts as unset.
 
 ### Config File
 

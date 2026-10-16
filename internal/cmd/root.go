@@ -52,18 +52,19 @@ type RootFlags struct {
 	Environment                  string `name:"env" help:"Named project environment (overrides site and API URL)"`
 	SelectedEnvironmentProtected bool   `kong:"-"`
 	// Essential (ungrouped — always visible in help)
-	Site    string `help:"Site ID or subdomain, else nimbu.yml site" env:"NIMBU_SITE"`
+	Site    string `help:"Site; else nimbu.yml site, then default_site" env:"NIMBU_SITE"`
 	JSON    bool   `help:"Output JSON to stdout" default:"${json}" env:"NIMBU_JSON"`
 	Plain   bool   `help:"Output stable TSV to stdout" default:"${plain}" env:"NIMBU_PLAIN"`
 	Verbose bool   `help:"Enable verbose logging"`
 	Debug   bool   `help:"Enable debug logging (HTTP traces)"`
 
 	// Output (suppressed in default help)
-	Color      string `help:"Color output: auto|always|never" default:"${color}" env:"NIMBU_COLOR" group:"Output"`
+	Color      string `help:"Color output: auto|always|never" default:"${color}" enum:"auto,always,never" env:"NIMBU_COLOR" group:"Output"`
 	NoProgress bool   `help:"Disable live progress UI" env:"NIMBU_NO_PROGRESS" group:"Output"`
 
 	// Agent/CI (suppressed in default help)
 	Force          bool   `help:"Skip confirmations for destructive operations" group:"Agent/CI"`
+	Yes            bool   `short:"y" help:"Same as --force; also confirms protected environments" group:"Agent/CI"`
 	NoInput        bool   `help:"Never prompt; fail instead (for CI)" env:"NIMBU_NO_INPUT" group:"Agent/CI"`
 	Readonly       bool   `help:"Disable all write operations" env:"NIMBU_READONLY" group:"Agent/CI"`
 	EnableCommands string `help:"Comma-separated allowlist of commands" env:"NIMBU_ENABLE_COMMANDS" group:"Agent/CI"`
@@ -166,6 +167,7 @@ func execute(args []string) (err error) {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		return err
 	}
+	unsetEmptyFlagEnv(parser.Model)
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -183,8 +185,11 @@ func execute(args []string) (err error) {
 
 	kctx, err := parser.Parse(args)
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
-		return wrapParseError(err)
+		return emitEarlyError(requestedJSON(args), cli.Color, parseUsageError(err))
+	}
+	if cli.Yes {
+		// --yes answers every confirmation --force does.
+		cli.Force = true
 	}
 	isInternalComplete := kctx.Command() == "__complete" || strings.HasPrefix(kctx.Command(), "__complete ")
 
@@ -200,23 +205,20 @@ func execute(args []string) (err error) {
 		Level: logLevel,
 	})))
 
-	// Create context with values
-	ctx := context.Background()
+	// Root context: canceled on the first Ctrl-C/SIGTERM; a second one exits 130.
+	ctx, stopInterrupts := withInterrupt(context.Background())
+	defer stopInterrupts()
 
 	// Set up output mode
 	outMode, err := output.FromFlags(cli.JSON, cli.Plain)
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
-		return &ExitError{Code: ExitUsage, Err: err}
+		return emitEarlyError(cli.JSON, cli.Color, newHintedError(err, errorUsageInvalid, ExitUsage,
+			"pass only one of --json and --plain; check NIMBU_JSON and NIMBU_PLAIN"))
 	}
 	ctx = output.WithMode(ctx, outMode)
 
 	// Set up output writer
-	writer := output.DefaultWriter()
-	writer.Mode = outMode
-	writer.Color = cli.Color
-	writer.NoTTY = cli.NoInput
-	writer.NoSpin = cli.NoProgress
+	writer := newRootWriter(cli.RootFlags, outMode)
 	ctx = output.WithWriter(ctx, writer)
 	progress := output.NewProgress(ctx)
 	defer progress.Close()
@@ -224,10 +226,15 @@ func execute(args []string) (err error) {
 
 	// Load config
 	cfg, cfgErr := config.Read()
-	if cfgErr != nil && !isInternalComplete {
-		_, _ = fmt.Fprintf(os.Stderr, "warning: %v\n", cfgErr)
+	warn := func(message string) {
+		if !isInternalComplete {
+			writeRootWarning(writer.Err, outMode.JSON, message)
+		}
 	}
-	cli.RootFlags = applyRootConfigDefaults(cli.RootFlags, cfg, args)
+	if cfgErr != nil {
+		warn(cfgErr.Error())
+	}
+	cli.RootFlags = applyRootConfigDefaultsWarn(cli.RootFlags, cfg, args, warn)
 	if err := applyEnvironment(&cli.RootFlags); err != nil {
 		return emitCommandError(ctx, err)
 	}
@@ -236,30 +243,33 @@ func execute(args []string) (err error) {
 	host := apps.NormalizeHost(cli.APIURL)
 	ctx = context.WithValue(ctx, authResolverKey{}, newAuthCredentialResolver(host))
 
-	// Resolve site from flags, config, or project file
-	site := cli.Site
-	if site == "" {
-		site = cfg.DefaultSite
-	}
-	if site == "" {
-		if proj, err := config.ReadProjectConfig(); err == nil {
-			site = proj.Site
-		}
-	}
-
 	// Store values in context
 	ctx = context.WithValue(ctx, rootFlagsKey{}, &cli.RootFlags)
 	ctx = context.WithValue(ctx, configKey{}, &cfg)
 
 	kctx.BindTo(ctx, (*context.Context)(nil))
 	kctx.Bind(&cli.RootFlags)
-	kctx.Bind(site) // Bind resolved site
+	// Commands resolve their site lazily with RequireSite (see resolveSite),
+	// so commands that need none never read nimbu.yml or the git root.
 
 	if err = kctx.Run(); err != nil {
+		if interrupted(ctx) {
+			err = &interruptedError{err: err}
+		}
 		return emitCommandError(ctx, err)
 	}
 	maybeNotifyUpdate(ctx, kctx.Command(), cli.RootFlags, version)
 	return nil
+}
+
+// newRootWriter configures output from the global flags. --no-input only
+// means "never prompt": terminal and color detection stay per stream.
+func newRootWriter(flags RootFlags, mode output.Mode) *output.Writer {
+	writer := output.DefaultWriter()
+	writer.Mode = mode
+	writer.Color = flags.Color
+	writer.NoSpin = flags.NoProgress
+	return writer
 }
 
 func newParser() (*kong.Kong, *CLI, error) {
@@ -294,17 +304,6 @@ func newParser() (*kong.Kong, *CLI, error) {
 	return parser, cli, nil
 }
 
-func wrapParseError(err error) error {
-	if err == nil {
-		return nil
-	}
-	var parseErr *kong.ParseError
-	if errors.As(err, &parseErr) {
-		return &ExitError{Code: ExitUsage, Err: parseErr}
-	}
-	return err
-}
-
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -320,6 +319,12 @@ func boolString(v bool) string {
 }
 
 func applyRootConfigDefaults(flags RootFlags, cfg config.Config, args []string) RootFlags {
+	return applyRootConfigDefaultsWarn(flags, cfg, args, func(message string) {
+		writeRootWarning(os.Stderr, false, message)
+	})
+}
+
+func applyRootConfigDefaultsWarn(flags RootFlags, cfg config.Config, args []string, warn func(string)) RootFlags {
 	if cfg.APIURL != "" && !hasCLIFlag(args, "--apiurl") && os.Getenv("NIMBU_API_URL") == "" {
 		flags.APIURL = cfg.APIURL
 	}
@@ -328,7 +333,7 @@ func applyRootConfigDefaults(flags RootFlags, cfg config.Config, args []string) 
 		if timeout, err := time.ParseDuration(cfg.Timeout); err == nil {
 			flags.Timeout = timeout
 		} else {
-			_, _ = fmt.Fprintf(os.Stderr, "warning: invalid timeout in config: %q\n", cfg.Timeout)
+			warn(fmt.Sprintf("invalid timeout in config: %q", cfg.Timeout))
 		}
 	}
 
@@ -377,6 +382,8 @@ const (
 	ExitValidation = 6
 	ExitRateLimit  = 7
 	ExitNetwork    = 8
+	// ExitInterrupted follows the shell convention 128 + SIGINT.
+	ExitInterrupted = 130
 )
 
 // GetAPIClient creates an API client from context.
@@ -435,28 +442,21 @@ func GetAPIClientWithBaseURL(ctx context.Context, baseURL, site string) (*api.Cl
 	return client, nil
 }
 
-// RequireSite ensures a site is specified.
+// RequireSite ensures a site is specified. A non-empty site (already
+// resolved upstream) is returned as is; otherwise resolveSite applies the
+// documented precedence.
 func RequireSite(ctx context.Context, site string) (string, error) {
-	if site != "" {
+	if site = strings.TrimSpace(site); site != "" {
 		return site, nil
 	}
 
-	flags := ctx.Value(rootFlagsKey{}).(*RootFlags)
-	if flags.Site != "" {
-		return flags.Site, nil
+	flags, _ := ctx.Value(rootFlagsKey{}).(*RootFlags)
+	cfg, _ := ctx.Value(configKey{}).(*config.Config)
+	resolved := resolveSite(flags, cfg)
+	if resolved.Site != "" {
+		return resolved.Site, nil
 	}
-
-	cfg := ctx.Value(configKey{}).(*config.Config)
-	if cfg.DefaultSite != "" {
-		return cfg.DefaultSite, nil
-	}
-
-	proj, projErr := config.ReadProjectConfig()
-	if projErr == nil && proj.Site != "" {
-		return proj.Site, nil
-	}
-
-	return "", fmt.Errorf("site required; use --site flag, NIMBU_SITE env, or %s", config.DescribeProjectLookup(projErr))
+	return "", siteRequiredError(resolved.ProjectErr)
 }
 
 // MapAPIError maps API errors to exit codes.
