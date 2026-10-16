@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nimbu/cli/internal/output"
 )
 
 func TestEmptyFlagEnvIsTreatedAsUnset(t *testing.T) {
@@ -78,5 +80,15 @@ func TestColorFlagRejectsUnknownValues(t *testing.T) {
 		if _, err := parser.Parse([]string{"--color", value, "config", "path"}); err != nil || cli.Color != value {
 			t.Fatalf("--color %s: color=%q err=%v", value, cli.Color, err)
 		}
+	}
+}
+
+func TestNoInputDoesNotDisableTerminalDetection(t *testing.T) {
+	writer := newRootWriter(RootFlags{NoInput: true, Color: "always", NoProgress: true}, output.Mode{})
+	if writer.NoTTY {
+		t.Fatal("--no-input must not mark the streams as non-terminals")
+	}
+	if !writer.ErrUseColor() || !writer.NoSpin {
+		t.Fatalf("writer = %+v; color and --no-progress must still apply", writer)
 	}
 }

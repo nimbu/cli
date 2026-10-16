@@ -29,8 +29,14 @@ func readonlyModeError(action string) error {
 }
 
 func requireForce(flags *RootFlags, target string) error {
+	return requireForceAction(flags, "delete "+target)
+}
+
+// requireForceAction guards a destructive action (e.g. "empty channel news")
+// behind --force or --yes.
+func requireForceAction(flags *RootFlags, action string) error {
 	if flags != nil && !confirmedByFlag(flags) {
-		return confirmationRequiredError(fmt.Sprintf("refusing to delete %s without --force", target), "--force")
+		return confirmationRequiredError(fmt.Sprintf("refusing to %s without --force", action), "--force")
 	}
 	return nil
 }

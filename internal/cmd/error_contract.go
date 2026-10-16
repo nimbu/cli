@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -125,26 +127,47 @@ func emitCommandError(ctx context.Context, err error) error {
 		return &ExitError{Code: desc.ExitCode, Err: err}
 	}
 
-	mode := output.FromContext(ctx)
-	if mode.JSON {
-		payload := errorEnvelope{Status: "error", Error: desc}
-		data, marshalErr := json.MarshalIndent(payload, "", "  ")
-		if marshalErr != nil {
-			_, _ = fmt.Fprintln(os.Stderr, err)
-		} else {
-			_, _ = fmt.Fprintln(os.Stderr, string(data))
-		}
+	writer := output.WriterFromContext(ctx)
+	if output.FromContext(ctx).JSON {
+		writeErrorEnvelope(writer.Err, desc)
 	} else {
-		if results := batchResultsFromError(err); len(results) > 0 {
-			writeBatchResultLines(os.Stderr, nil, results)
-		}
-		_, _ = fmt.Fprintln(os.Stderr, desc.Message)
-		if desc.Hint != "" {
-			_, _ = fmt.Fprintln(os.Stderr, desc.Hint)
-		}
+		writeHumanError(writer, err, desc)
 	}
 
 	return &ExitError{Code: desc.ExitCode, Err: err}
+}
+
+// writeErrorEnvelope prints the JSON error envelope; <, > and & stay readable.
+func writeErrorEnvelope(w io.Writer, desc errorDescriptor) {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(errorEnvelope{Status: "error", Error: desc}); err != nil {
+		_, _ = fmt.Fprintf(w, "error: %s\n", desc.Message)
+		return
+	}
+	_, _ = w.Write(buf.Bytes())
+}
+
+// writeHumanError prints "error: <message>" and, when there is one, a
+// "hint: <fix>" line last. Labels are colored only when stderr gets color.
+// An interrupt prints nothing: the user pressed Ctrl-C and knows why.
+func writeHumanError(writer *output.Writer, err error, desc errorDescriptor) {
+	if desc.Code == errorInterrupted {
+		return
+	}
+	w := writer.Err
+	if results := batchResultsFromError(err); len(results) > 0 {
+		writeBatchResultLines(w, nil, results)
+	}
+	profile := writer.ErrColorProfile()
+	errorLabel := profile.String("error:").Foreground(profile.Color("1")).Bold().String()
+	_, _ = fmt.Fprintf(w, "%s %s\n", errorLabel, desc.Message)
+	if desc.Hint != "" {
+		hintLabel := profile.String("hint:").Foreground(profile.Color("6")).String()
+		_, _ = fmt.Fprintf(w, "%s %s\n", hintLabel, desc.Hint)
+	}
 }
 
 func classifyError(err error) errorDescriptor {

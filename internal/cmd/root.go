@@ -185,8 +185,7 @@ func execute(args []string) (err error) {
 
 	kctx, err := parser.Parse(args)
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
-		return wrapParseError(err)
+		return emitEarlyError(requestedJSON(args), cli.Color, parseUsageError(err))
 	}
 	if cli.Yes {
 		// --yes answers every confirmation --force does.
@@ -213,17 +212,13 @@ func execute(args []string) (err error) {
 	// Set up output mode
 	outMode, err := output.FromFlags(cli.JSON, cli.Plain)
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
-		return &ExitError{Code: ExitUsage, Err: err}
+		return emitEarlyError(cli.JSON, cli.Color, newHintedError(err, errorUsageInvalid, ExitUsage,
+			"pass only one of --json and --plain; check NIMBU_JSON and NIMBU_PLAIN"))
 	}
 	ctx = output.WithMode(ctx, outMode)
 
 	// Set up output writer
-	writer := output.DefaultWriter()
-	writer.Mode = outMode
-	writer.Color = cli.Color
-	writer.NoTTY = cli.NoInput
-	writer.NoSpin = cli.NoProgress
+	writer := newRootWriter(cli.RootFlags, outMode)
 	ctx = output.WithWriter(ctx, writer)
 	progress := output.NewProgress(ctx)
 	defer progress.Close()
@@ -231,10 +226,15 @@ func execute(args []string) (err error) {
 
 	// Load config
 	cfg, cfgErr := config.Read()
-	if cfgErr != nil && !isInternalComplete {
-		_, _ = fmt.Fprintf(os.Stderr, "warning: %v\n", cfgErr)
+	warn := func(message string) {
+		if !isInternalComplete {
+			writeRootWarning(writer.Err, outMode.JSON, message)
+		}
 	}
-	cli.RootFlags = applyRootConfigDefaults(cli.RootFlags, cfg, args)
+	if cfgErr != nil {
+		warn(cfgErr.Error())
+	}
+	cli.RootFlags = applyRootConfigDefaultsWarn(cli.RootFlags, cfg, args, warn)
 	if err := applyEnvironment(&cli.RootFlags); err != nil {
 		return emitCommandError(ctx, err)
 	}
@@ -262,6 +262,16 @@ func execute(args []string) (err error) {
 	}
 	maybeNotifyUpdate(ctx, kctx.Command(), cli.RootFlags, version)
 	return nil
+}
+
+// newRootWriter configures output from the global flags. --no-input only
+// means "never prompt": terminal and color detection stay per stream.
+func newRootWriter(flags RootFlags, mode output.Mode) *output.Writer {
+	writer := output.DefaultWriter()
+	writer.Mode = mode
+	writer.Color = flags.Color
+	writer.NoSpin = flags.NoProgress
+	return writer
 }
 
 func newParser() (*kong.Kong, *CLI, error) {
@@ -296,17 +306,6 @@ func newParser() (*kong.Kong, *CLI, error) {
 	return parser, cli, nil
 }
 
-func wrapParseError(err error) error {
-	if err == nil {
-		return nil
-	}
-	var parseErr *kong.ParseError
-	if errors.As(err, &parseErr) {
-		return &ExitError{Code: ExitUsage, Err: parseErr}
-	}
-	return err
-}
-
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -322,6 +321,12 @@ func boolString(v bool) string {
 }
 
 func applyRootConfigDefaults(flags RootFlags, cfg config.Config, args []string) RootFlags {
+	return applyRootConfigDefaultsWarn(flags, cfg, args, func(message string) {
+		writeRootWarning(os.Stderr, false, message)
+	})
+}
+
+func applyRootConfigDefaultsWarn(flags RootFlags, cfg config.Config, args []string, warn func(string)) RootFlags {
 	if cfg.APIURL != "" && !hasCLIFlag(args, "--apiurl") && os.Getenv("NIMBU_API_URL") == "" {
 		flags.APIURL = cfg.APIURL
 	}
@@ -330,7 +335,7 @@ func applyRootConfigDefaults(flags RootFlags, cfg config.Config, args []string) 
 		if timeout, err := time.ParseDuration(cfg.Timeout); err == nil {
 			flags.Timeout = timeout
 		} else {
-			_, _ = fmt.Fprintf(os.Stderr, "warning: invalid timeout in config: %q\n", cfg.Timeout)
+			warn(fmt.Sprintf("invalid timeout in config: %q", cfg.Timeout))
 		}
 	}
 
