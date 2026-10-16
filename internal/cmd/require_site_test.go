@@ -65,7 +65,7 @@ func TestRequireSitePrecedence(t *testing.T) {
 		t.Fatalf("RequireSite() = %q, want flag-site", got)
 	}
 
-	// A site already resolved upstream (flag or NIMBU_SITE) wins over all.
+	// A site already resolved upstream wins over all.
 	got, err = RequireSite(requireSiteContext(t, "flag-site", "config-site"), "resolved-site")
 	if err != nil {
 		t.Fatalf("RequireSite: %v", err)
@@ -74,14 +74,97 @@ func TestRequireSitePrecedence(t *testing.T) {
 		t.Fatalf("RequireSite() = %q, want resolved-site", got)
 	}
 
-	// Config default wins over nimbu.yml.
+	// Inside a project, nimbu.yml beats the global default_site.
 	got, err = RequireSite(requireSiteContext(t, "", "config-site"), "")
 	if err != nil {
 		t.Fatalf("RequireSite: %v", err)
 	}
-	if got != "config-site" {
-		t.Fatalf("RequireSite() = %q, want config-site", got)
+	if got != "yml-site" {
+		t.Fatalf("RequireSite() = %q, want yml-site", got)
 	}
+}
+
+func TestResolveSitePrecedencePairs(t *testing.T) {
+	type sources struct {
+		env, flag, project, config string
+	}
+	tests := []struct {
+		name       string
+		in         sources
+		wantSite   string
+		wantSource string
+	}{
+		{"env beats flag", sources{env: "env-site", flag: "flag-site"}, "env-site", siteSourceEnvironment},
+		{"env beats project", sources{env: "env-site", project: "yml-site"}, "env-site", siteSourceEnvironment},
+		{"env beats config", sources{env: "env-site", config: "config-site"}, "env-site", siteSourceEnvironment},
+		{"flag beats project", sources{flag: "flag-site", project: "yml-site"}, "flag-site", siteSourceFlag},
+		{"flag beats config", sources{flag: "flag-site", config: "config-site"}, "flag-site", siteSourceFlag},
+		{"project beats config", sources{project: "yml-site", config: "config-site"}, "yml-site", siteSourceProject},
+		{"config alone", sources{config: "config-site"}, "config-site", siteSourceConfig},
+		{"project alone", sources{project: "yml-site"}, "yml-site", siteSourceProject},
+		{"nothing", sources{}, "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stubProjectSite(t, tt.in.project, nil)
+			flags := &RootFlags{Site: tt.in.flag}
+			if tt.in.env != "" {
+				// applyEnvironment overwrites Site with the environment's site.
+				flags.Site, flags.Environment = tt.in.env, "production"
+			}
+			got := resolveSite(flags, &config.Config{DefaultSite: tt.in.config})
+			if got.Site != tt.wantSite || got.Source != tt.wantSource {
+				t.Fatalf("resolveSite() = %q (%s), want %q (%s)", got.Site, got.Source, tt.wantSite, tt.wantSource)
+			}
+		})
+	}
+}
+
+func TestResolveSiteEnvironmentFlagOverridesExplicitSite(t *testing.T) {
+	environmentProject(t)
+	flags := &RootFlags{Environment: "production", Site: "explicit-site"}
+	if err := applyEnvironment(flags); err != nil {
+		t.Fatal(err)
+	}
+	got := resolveSite(flags, &config.Config{DefaultSite: "config-site"})
+	if got.Site != "prod-site" || got.Source != siteSourceEnvironment {
+		t.Fatalf("resolveSite() = %+v, want prod-site from environment", got)
+	}
+}
+
+func TestResolveSiteNimbuSiteEnvBeatsProject(t *testing.T) {
+	stubProjectSite(t, "yml-site", nil)
+	t.Setenv("NIMBU_SITE", "env-var-site")
+	parser, cli, err := newParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parser.Parse([]string{"sites", "current"}); err != nil {
+		t.Fatal(err)
+	}
+	got := resolveSite(&cli.RootFlags, &config.Config{DefaultSite: "config-site"})
+	if got.Site != "env-var-site" || got.Source != siteSourceFlag {
+		t.Fatalf("resolveSite() = %+v, want env-var-site from NIMBU_SITE", got)
+	}
+}
+
+func TestResolveSiteToleratesMissingContext(t *testing.T) {
+	stubProjectSite(t, "", config.ErrNotFound)
+	if got := resolveSite(nil, nil); got.Site != "" || got.ProjectErr == nil {
+		t.Fatalf("resolveSite(nil, nil) = %+v", got)
+	}
+	_, err := RequireSite(context.Background(), "")
+	desc := classifyError(err)
+	if desc.Code != errorSiteRequired || desc.ExitCode != ExitUsage {
+		t.Fatalf("missing site classified as %s exit %d, want %s exit %d", desc.Code, desc.ExitCode, errorSiteRequired, ExitUsage)
+	}
+}
+
+func stubProjectSite(t *testing.T, site string, err error) {
+	t.Helper()
+	original := readProjectSite
+	readProjectSite = func() (string, error) { return site, err }
+	t.Cleanup(func() { readProjectSite = original })
 }
 
 func TestRequireSiteErrorNamesSearchBoundary(t *testing.T) {
@@ -101,11 +184,14 @@ func TestRequireSiteErrorNamesSearchBoundary(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	want := "site required; use --site flag, NIMBU_SITE env, or nimbu.yml (searched up to " + repo + ")"
-	if err.Error() != want {
-		t.Fatalf("error %q, want %q", err, want)
+	desc := classifyError(err)
+	if desc.Code != errorSiteRequired || desc.ExitCode != ExitUsage {
+		t.Fatalf("classified as %s exit %d, want %s exit %d", desc.Code, desc.ExitCode, errorSiteRequired, ExitUsage)
 	}
-	if !strings.Contains(err.Error(), "searched up to") {
-		t.Fatalf("error %q missing search boundary", err)
+	if desc.Message != "no site selected" {
+		t.Fatalf("message %q", desc.Message)
+	}
+	if !strings.Contains(desc.Hint, "--site") || !strings.Contains(desc.Hint, "nimbu.yml (searched up to "+repo+")") {
+		t.Fatalf("hint %q missing --site or search boundary", desc.Hint)
 	}
 }

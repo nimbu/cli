@@ -36,6 +36,10 @@ const (
 	errorNetworkFailure    canonicalErrorCode = "network.failure"
 	errorServerError       canonicalErrorCode = "server.error"
 	errorUnknown           canonicalErrorCode = "internal.unknown"
+
+	errorSiteRequired         canonicalErrorCode = "cli.usage.site_required"
+	errorConfirmationRequired canonicalErrorCode = "cli.confirmation_required"
+	errorInterrupted          canonicalErrorCode = "cli.interrupted"
 )
 
 type errorEnvelope struct {

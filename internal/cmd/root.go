@@ -52,7 +52,7 @@ type RootFlags struct {
 	Environment                  string `name:"env" help:"Named project environment (overrides site and API URL)"`
 	SelectedEnvironmentProtected bool   `kong:"-"`
 	// Essential (ungrouped — always visible in help)
-	Site    string `help:"Site ID or subdomain, else nimbu.yml site" env:"NIMBU_SITE"`
+	Site    string `help:"Site; else nimbu.yml site, then default_site" env:"NIMBU_SITE"`
 	JSON    bool   `help:"Output JSON to stdout" default:"${json}" env:"NIMBU_JSON"`
 	Plain   bool   `help:"Output stable TSV to stdout" default:"${plain}" env:"NIMBU_PLAIN"`
 	Verbose bool   `help:"Enable verbose logging"`
@@ -236,16 +236,8 @@ func execute(args []string) (err error) {
 	host := apps.NormalizeHost(cli.APIURL)
 	ctx = context.WithValue(ctx, authResolverKey{}, newAuthCredentialResolver(host))
 
-	// Resolve site from flags, config, or project file
-	site := cli.Site
-	if site == "" {
-		site = cfg.DefaultSite
-	}
-	if site == "" {
-		if proj, err := config.ReadProjectConfig(); err == nil {
-			site = proj.Site
-		}
-	}
+	// Resolve site: --env, then --site/NIMBU_SITE, then nimbu.yml, then default_site.
+	site := resolveSite(&cli.RootFlags, &cfg).Site
 
 	// Store values in context
 	ctx = context.WithValue(ctx, rootFlagsKey{}, &cli.RootFlags)
@@ -435,28 +427,21 @@ func GetAPIClientWithBaseURL(ctx context.Context, baseURL, site string) (*api.Cl
 	return client, nil
 }
 
-// RequireSite ensures a site is specified.
+// RequireSite ensures a site is specified. A non-empty site (already
+// resolved upstream) is returned as is; otherwise resolveSite applies the
+// documented precedence.
 func RequireSite(ctx context.Context, site string) (string, error) {
-	if site != "" {
+	if site = strings.TrimSpace(site); site != "" {
 		return site, nil
 	}
 
-	flags := ctx.Value(rootFlagsKey{}).(*RootFlags)
-	if flags.Site != "" {
-		return flags.Site, nil
+	flags, _ := ctx.Value(rootFlagsKey{}).(*RootFlags)
+	cfg, _ := ctx.Value(configKey{}).(*config.Config)
+	resolved := resolveSite(flags, cfg)
+	if resolved.Site != "" {
+		return resolved.Site, nil
 	}
-
-	cfg := ctx.Value(configKey{}).(*config.Config)
-	if cfg.DefaultSite != "" {
-		return cfg.DefaultSite, nil
-	}
-
-	proj, projErr := config.ReadProjectConfig()
-	if projErr == nil && proj.Site != "" {
-		return proj.Site, nil
-	}
-
-	return "", fmt.Errorf("site required; use --site flag, NIMBU_SITE env, or %s", config.DescribeProjectLookup(projErr))
+	return "", siteRequiredError(resolved.ProjectErr)
 }
 
 // MapAPIError maps API errors to exit codes.

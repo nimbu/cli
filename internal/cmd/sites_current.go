@@ -12,30 +12,13 @@ type SitesCurrentCmd struct{}
 
 // Run executes the current command.
 func (c *SitesCurrentCmd) Run(ctx context.Context, flags *RootFlags) error {
-	var site, source string
-
-	// Check flag first
-	if flags.Site != "" {
-		site = flags.Site
-		source = "flag"
+	cfg, _ := ctx.Value(configKey{}).(*config.Config)
+	if cfg == nil {
+		read, _ := config.Read()
+		cfg = &read
 	}
-
-	// Check config
-	if site == "" {
-		cfg, err := config.Read()
-		if err == nil && cfg.DefaultSite != "" {
-			site = cfg.DefaultSite
-			source = "config"
-		}
-	}
-
-	// Check project file
-	if site == "" {
-		if proj, err := config.ReadProjectConfig(); err == nil && proj.Site != "" {
-			site = proj.Site
-			source = "project"
-		}
-	}
+	resolved := resolveSite(flags, cfg)
+	site, source := resolved.Site, resolved.Source
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
@@ -65,10 +48,10 @@ func (c *SitesCurrentCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if _, err := output.Fprintln(ctx, "  NIMBU_SITE environment variable"); err != nil {
 			return err
 		}
-		if _, err := output.Fprintln(ctx, "  default_site in config file"); err != nil {
+		if _, err := output.Fprintln(ctx, "  site in nimbu.yml project file"); err != nil {
 			return err
 		}
-		if _, err := output.Fprintln(ctx, "  site in nimbu.yml project file"); err != nil {
+		if _, err := output.Fprintln(ctx, "  default_site in config file"); err != nil {
 			return err
 		}
 		return nil

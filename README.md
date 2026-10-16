@@ -602,6 +602,19 @@ nimbu auth logout                         # Revoke the session on the server and
 
 ## Configuration
 
+### Site Selection
+
+Every command that needs a site picks it in this order, first match wins:
+
+1. `--env <name>`: a named environment from `nimbu.yml` (sets site and API URL together)
+2. `--site <site>` or `NIMBU_SITE`
+3. `site:` in the nearest `nimbu.yml`
+4. `default_site` in the global config file
+
+Inside a project, `nimbu.yml` beats the global `default_site`, so a write never
+lands on a site you made the default for another project. `nimbu sites current`
+prints the site and which source chose it.
+
 ### Environment Variables
 
 ```bash
