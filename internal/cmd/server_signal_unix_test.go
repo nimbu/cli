@@ -303,7 +303,11 @@ func TestServerRunSecondInterruptForcesStop(t *testing.T) {
 	t.Setenv("NIMBU_SERVER_SIGNAL_INTERRUPTED_PATH", interruptedPath)
 
 	flags := &RootFlags{APIURL: apiServer.URL, Site: "demo", Timeout: 2 * time.Second}
-	ctx := newServerSignalTestContext(flags)
+	// Run under the real root handler, as Execute does: the server must own
+	// both presses, so the root neither cancels ctx on the first (racing the
+	// readiness wait) nor force-exits on the second (orphaning the child and
+	// leaving shortcut input mode on).
+	ctx, rootExits := withTestRootInterrupt(t, newServerSignalTestContext(flags))
 	cmd := &ServerCmd{
 		Arg:          []string{"-test.run=^TestServerSignalChildHelperProcess$"},
 		CMD:          os.Args[0],
@@ -314,11 +318,6 @@ func TestServerRunSecondInterruptForcesStop(t *testing.T) {
 		ReadyURL:     readyURL,
 		TemplateRoot: root,
 	}
-
-	// Keep a stray SIGINT (after Run stops listening) from killing the test.
-	guard := make(chan os.Signal, 4)
-	signal.Notify(guard, os.Interrupt)
-	defer signal.Stop(guard)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -339,6 +338,9 @@ func TestServerRunSecondInterruptForcesStop(t *testing.T) {
 		t.Fatalf("run returned during the graceful stop: %v", err)
 	default:
 	}
+	if ctx.Err() != nil {
+		t.Fatal("the root canceled ctx on a signal the server claimed")
+	}
 
 	forcedAt := time.Now()
 	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
@@ -355,6 +357,7 @@ func TestServerRunSecondInterruptForcesStop(t *testing.T) {
 		if elapsed := time.Since(forcedAt); elapsed > 3*time.Second {
 			t.Fatalf("forced stop took %s", elapsed)
 		}
+		assertNoForceExit(t, rootExits)
 	case <-time.After(4 * time.Second):
 		t.Fatal("second SIGINT did not force the stop")
 	}
@@ -432,7 +435,11 @@ func TestServerRunInterruptForcesStopAfterReadinessFailure(t *testing.T) {
 	t.Setenv("NIMBU_SERVER_SIGNAL_INTERRUPTED_PATH", interruptedPath)
 
 	flags := &RootFlags{APIURL: apiServer.URL, Site: "demo", Timeout: 2 * time.Second}
-	ctx := newServerSignalTestContext(flags)
+	// Run under the real root handler, as Execute does: the server must own
+	// both presses, so the root neither cancels ctx on the first (racing the
+	// readiness wait) nor force-exits on the second (orphaning the child and
+	// leaving shortcut input mode on).
+	ctx, rootExits := withTestRootInterrupt(t, newServerSignalTestContext(flags))
 	cmd := &ServerCmd{
 		Arg:       []string{"-test.run=^TestServerSignalChildHelperProcess$"},
 		CMD:       os.Args[0],
@@ -472,6 +479,7 @@ func TestServerRunInterruptForcesStopAfterReadinessFailure(t *testing.T) {
 		if elapsed := time.Since(forcedAt); elapsed > 3*time.Second {
 			t.Fatalf("forced stop took %s", elapsed)
 		}
+		assertNoForceExit(t, rootExits)
 	case <-time.After(4 * time.Second):
 		t.Fatal("SIGINT during failure cleanup did not force the stop")
 	}

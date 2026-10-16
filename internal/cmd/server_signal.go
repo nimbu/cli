@@ -1,6 +1,9 @@
 package cmd
 
-import "errors"
+import (
+	"errors"
+	"os"
+)
 
 // serverExitInterrupted is the conventional exit status for a run ended by
 // Ctrl-C (128 + SIGINT); nimbu server uses it for a forced stop.
@@ -48,4 +51,24 @@ func (s *serverStop) Begin(term *serverShortcutListener) bool {
 		}
 	}()
 	return true
+}
+
+// serverSignalName names a stop signal for the stopping notice; a stop asked
+// for with the 'q' shortcut has none.
+func serverSignalName(sig os.Signal) string {
+	if sig == nil {
+		return ""
+	}
+	return sig.String()
+}
+
+// serverForceHint says how to force the stop. Ctrl-C is only named when it
+// can be pressed: stdin is a terminal, and the stop came from Ctrl-C itself
+// or from the 'q' shortcut. A SIGTERM/SIGHUP from a supervisor is forced by
+// sending it again.
+func serverForceHint(sig os.Signal, stdinTTY bool) string {
+	if stdinTTY && (sig == nil || sig == os.Interrupt) {
+		return "Ctrl-C again to force"
+	}
+	return "send the signal again to force"
 }

@@ -3,7 +3,9 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/muesli/termenv"
@@ -71,7 +73,7 @@ func TestServerPresenterHonorsNoColor(t *testing.T) {
 	ctx = output.WithWriter(ctx, &output.Writer{Out: &buf, Err: &buf, Color: "auto"})
 
 	presenter := newServerPresenter(ctx, false)
-	presenter.PrintStopping("interrupt")
+	presenter.PrintStopping("interrupt", serverForceHint(os.Interrupt, true))
 	presenter.PrintReady("http://localhost:3456")
 
 	if strings.Contains(buf.String(), "\x1b[") {
@@ -86,7 +88,7 @@ func TestServerPresenterStopAndReadyNotices(t *testing.T) {
 
 	presenter := newServerPresenter(ctx, false)
 	presenter.PrintReady("http://localhost:3456")
-	presenter.PrintStopping("interrupt")
+	presenter.PrintStopping("interrupt", serverForceHint(os.Interrupt, true))
 	presenter.PrintForceStop()
 
 	want := "  ✓ ready http://localhost:3456\nStopping… (Ctrl-C again to force)\nForcing stop.\n"
@@ -102,13 +104,45 @@ func TestServerPresenterMachineModeStopNotices(t *testing.T) {
 
 	presenter := newServerPresenter(ctx, false)
 	presenter.PrintReady("http://localhost:3456")
-	presenter.PrintStopping("")
-	presenter.PrintStopping("hangup")
+	presenter.PrintStopping("", serverForceHint(nil, false))
+	presenter.PrintStopping("hangup", serverForceHint(syscall.SIGHUP, false))
 	presenter.PrintForceStop()
 
-	want := "received signal: hangup; stopping (Ctrl-C again to force)\nforcing stop\n"
+	want := "received signal: hangup; stopping (send the signal again to force)\nforcing stop\n"
 	if got := buf.String(); got != want {
 		t.Fatalf("machine notices = %q, want %q", got, want)
+	}
+}
+
+// Regression: a SIGTERM from a supervisor (or any signal without a terminal on
+// stdin) was answered with "Ctrl-C again to force".
+func TestServerForceHintNamesCtrlCOnlyForInteractiveInterrupts(t *testing.T) {
+	cases := []struct {
+		name     string
+		sig      os.Signal
+		stdinTTY bool
+		want     string
+	}{
+		{"ctrl-c on a terminal", os.Interrupt, true, "Ctrl-C again to force"},
+		{"q shortcut", nil, true, "Ctrl-C again to force"},
+		{"sigint without a terminal", os.Interrupt, false, "send the signal again to force"},
+		{"sigterm on a terminal", syscall.SIGTERM, true, "send the signal again to force"},
+		{"sigterm without a terminal", syscall.SIGTERM, false, "send the signal again to force"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := serverForceHint(tc.sig, tc.stdinTTY); got != tc.want {
+				t.Fatalf("serverForceHint(%v, %v) = %q, want %q", tc.sig, tc.stdinTTY, got, tc.want)
+			}
+		})
+	}
+
+	var buf bytes.Buffer
+	ctx := output.WithMode(context.Background(), output.Mode{JSON: true})
+	ctx = output.WithWriter(ctx, &output.Writer{Out: &buf, Err: &buf, Color: "never"})
+	newServerPresenter(ctx, false).PrintStopping(serverSignalName(syscall.SIGTERM), serverForceHint(syscall.SIGTERM, false))
+	if got := buf.String(); strings.Contains(got, "Ctrl-C") || !strings.Contains(got, "received signal: terminated; stopping") {
+		t.Fatalf("machine SIGTERM notice = %q", got)
 	}
 }
 

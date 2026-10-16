@@ -25,7 +25,7 @@ func (initSignalCountModel) View() tea.View                        { return tea.
 
 // Bubble Tea's own handler stops listening after the first signal, so a
 // second SIGTERM during the file write used to kill nimbu mid-copy with the
-// terminal still raw. forwardInitSignals keeps delivering every signal.
+// terminal still raw. forwardProgramSignals keeps delivering every signal.
 func TestForwardInitSignalsDeliversRepeatedSignals(t *testing.T) {
 	quits := make(chan struct{}, 4)
 	filter := func(_ tea.Model, msg tea.Msg) tea.Msg {
@@ -44,7 +44,7 @@ func TestForwardInitSignalsDeliversRepeatedSignals(t *testing.T) {
 		tea.WithoutSignalHandler(),
 		tea.WithFilter(filter),
 	)
-	stop := forwardInitSignals(program)
+	stop := forwardProgramSignals(program)
 	defer stop()
 
 	done := make(chan error, 1)

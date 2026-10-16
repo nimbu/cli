@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/signal"
 	"time"
 
 	"golang.org/x/term"
@@ -123,7 +122,20 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		summary.ChildCWD = cwd
 	}
 
-	interactiveShortcuts := presenter.Enabled() && term.IsTerminal(int(os.Stdin.Fd()))
+	// From here on the server owns every stop signal: the root handler
+	// forwards SIGINT/SIGTERM instead of canceling ctx or force-exiting, so the
+	// first one stops gracefully and the second forces the stop below, each
+	// counted once. Claimed before shortcut mode so no signal can reach the
+	// root's force exit while the terminal is in no-echo input mode.
+	sigCh, releaseSignals := claimInterrupts(serverShutdownSignals()...)
+	defer releaseSignals()
+	if err := ctx.Err(); err != nil {
+		// Interrupted before the claim (during login or proxy start).
+		return err
+	}
+
+	stdinTTY := term.IsTerminal(int(os.Stdin.Fd()))
+	interactiveShortcuts := presenter.Enabled() && stdinTTY
 	shortcutLinks := serverShortcutLinksFromSummary(summary)
 	var shortcutListener *serverShortcutListener
 	if interactiveShortcuts {
@@ -136,6 +148,9 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 					_, _ = fmt.Fprintf(streams.err, "warning: restore shortcut input: %s\n", closeErr)
 				}
 			}()
+			// A forced exit skips the Close above; give the terminal back
+			// its echo and line mode anyway.
+			defer registerTerminalRestore(func() { _ = shortcutListener.Close() })()
 			// Panics on this goroutine unwind through the Close above; panics
 			// on goroutines nimbu starts are covered by RestoreOnPanic.
 			defer watchServerSuspend(shortcutListener)()
@@ -157,10 +172,6 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		Stdout:   streams.childOut,
 		Stderr:   streams.childErr,
 	})
-
-	sigCh := make(chan os.Signal, 2)
-	signal.Notify(sigCh, serverShutdownSignals()...)
-	defer signal.Stop(sigCh)
 
 	if err := child.Start(); err != nil {
 		return err
@@ -202,9 +213,9 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	// requestStop handles Ctrl-C, SIGTERM/SIGHUP and 'q'. The first request
 	// stops gracefully in the background; a second one forces the stop.
-	requestStop := func(signalName string) error {
+	requestStop := func(sig os.Signal) error {
 		if stop.Begin(shortcutListener) {
-			presenter.PrintStopping(signalName)
+			presenter.PrintStopping(serverSignalName(sig), serverForceHint(sig, stdinTTY))
 			return nil
 		}
 		forced = true
@@ -224,7 +235,7 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 	for {
 		select {
 		case sig := <-sigCh:
-			if err := requestStop(sig.String()); err != nil {
+			if err := requestStop(sig); err != nil {
 				return err
 			}
 		case <-stop.Done():
@@ -259,7 +270,7 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 			}
 			decision := decideServerShortcut(key, shortcutReady, shortcutLinks)
 			if decision.Action == serverShortcutQuit {
-				if err := requestStop(""); err != nil {
+				if err := requestStop(nil); err != nil {
 					return err
 				}
 				continue

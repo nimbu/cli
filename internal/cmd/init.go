@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/bootstrap"
@@ -128,14 +126,12 @@ func (c *InitCmd) runLines(ctx context.Context, presets initPresets, noInput boo
 	if strings.TrimSpace(c.Dir) == "" {
 		cloneTask = progress.Phase("Cloning starterskit")
 	}
-	// Catch ctrl+c/SIGTERM while cloning so the clone (in its own process
-	// group) is stopped and its temp dir removed instead of being orphaned.
-	// Released right after: prompts keep the default ctrl+c behavior.
-	cloneCtx, stopCloneSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	sourceDir, sourceLabel, cleanup, err := c.resolveSource(cloneCtx)
-	interrupted := cloneCtx.Err() != nil && ctx.Err() == nil
-	stopCloneSignals()
-	if err == nil && interrupted {
+	// Ctrl-C/SIGTERM while cloning cancel ctx (the root handler owns the
+	// signals), which stops the clone (in its own process group); its temp
+	// dir is removed instead of being orphaned.
+	sourceDir, sourceLabel, cleanup, err := c.resolveSource(ctx)
+	cloneInterrupted := interrupted(ctx)
+	if err == nil && cloneInterrupted {
 		cleanup()
 		err = errInitCancelled
 	}
@@ -143,7 +139,7 @@ func (c *InitCmd) runLines(ctx context.Context, presets initPresets, noInput boo
 		if cloneTask != nil {
 			cloneTask.Fail(err)
 		}
-		if interrupted {
+		if cloneInterrupted {
 			return &ExitError{Code: initExitInterrupted, Err: errInitCancelled}
 		}
 		return err

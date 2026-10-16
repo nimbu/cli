@@ -73,11 +73,16 @@ func bannerPickerUsable(w *output.Writer, stdinTTY bool, ci string) error {
 }
 
 // runBannerPicker runs the picker program until the user selects or cancels.
-// Bubble Tea owns raw mode, SIGINT/SIGTERM and terminal restore on every exit
-// path; an interrupt counts as a cancel.
+// Bubble Tea owns raw mode and terminal restore on every exit path; an
+// interrupt counts as a cancel. SIGINT/SIGTERM are claimed from the root
+// handler and forwarded to the program, so a signal cancels the picker once
+// instead of also canceling ctx (killing the program) or force-exiting.
 func runBannerPicker(ctx context.Context, model bannerPickerModel, opts ...tea.ProgramOption) (bannerPickerModel, error) {
-	opts = append([]tea.ProgramOption{tea.WithContext(ctx)}, opts...)
-	result, err := tea.NewProgram(model, opts...).Run()
+	opts = append([]tea.ProgramOption{tea.WithContext(ctx), tea.WithoutSignalHandler()}, opts...)
+	program := tea.NewProgram(model, opts...)
+	stopSignals := forwardProgramSignals(program)
+	defer stopSignals()
+	result, err := program.Run()
 	if errors.Is(err, tea.ErrInterrupted) {
 		return model, nil
 	}

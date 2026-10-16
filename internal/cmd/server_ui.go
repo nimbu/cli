@@ -202,19 +202,24 @@ func (p *serverPresenter) PrintSummary(summary serverSummary) {
 	_, _ = fmt.Fprintln(p.out)
 }
 
-// PrintStopping acknowledges the first stop request. In machine modes it
-// keeps the plain "received signal" line for signal-driven stops.
-func (p *serverPresenter) PrintStopping(signalName string) {
+// PrintStopping acknowledges the first stop request; forceHint says how to
+// force the stop (see serverForceHint). In machine modes it keeps the plain
+// "received signal" line for signal-driven stops.
+func (p *serverPresenter) PrintStopping(signalName, forceHint string) {
 	if p == nil {
 		return
 	}
+	suffix := ""
+	if forceHint != "" {
+		suffix = " (" + forceHint + ")"
+	}
 	if !p.Enabled() {
 		if signalName != "" {
-			_, _ = fmt.Fprintf(p.out, "received signal: %s; stopping (Ctrl-C again to force)\n", signalName)
+			_, _ = fmt.Fprintf(p.out, "received signal: %s; stopping%s\n", signalName, suffix)
 		}
 		return
 	}
-	_, _ = fmt.Fprintln(p.out, p.dim("Stopping… (Ctrl-C again to force)"))
+	_, _ = fmt.Fprintln(p.out, p.dim("Stopping…"+suffix))
 }
 
 // PrintForceStop acknowledges the second stop request.

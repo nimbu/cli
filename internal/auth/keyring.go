@@ -132,6 +132,15 @@ func allowedBackends(backend string) ([]keyring.BackendType, error) {
 	}
 }
 
+// BeginPrompt marks a prompt blocked on stdin; call the returned func when
+// the read returns. The command layer sets it so Ctrl-C ends the prompt at
+// once (exit 130) instead of only canceling a context the read never sees.
+// This package cannot import the command layer, hence the hook.
+var BeginPrompt = func() func() { return func() {} }
+
+// terminalPrompt reads the file-backend password; swapped in tests.
+var terminalPrompt = keyring.TerminalPrompt
+
 func fileKeyringPasswordFunc() keyring.PromptFunc {
 	password := os.Getenv(keyringPasswordEnv)
 	if password != "" {
@@ -139,11 +148,19 @@ func fileKeyringPasswordFunc() keyring.PromptFunc {
 	}
 
 	if term.IsTerminal(int(os.Stdin.Fd())) {
-		return keyring.TerminalPrompt
+		return markedPrompt(terminalPrompt)
 	}
 
 	return func(_ string) (string, error) {
 		return "", fmt.Errorf("%w; set %s", errNoTTY, keyringPasswordEnv)
+	}
+}
+
+// markedPrompt wraps a stdin prompt with BeginPrompt.
+func markedPrompt(prompt keyring.PromptFunc) keyring.PromptFunc {
+	return func(message string) (string, error) {
+		defer BeginPrompt()()
+		return prompt(message)
 	}
 }
 

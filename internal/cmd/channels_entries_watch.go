@@ -5,10 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/nimbu/cli/internal/api"
@@ -57,9 +54,8 @@ func (c *ChannelEntriesWatchCmd) Run(ctx context.Context, flags *RootFlags) erro
 
 	printer := newWatchPrinter(ctx, c.Channel, c.Filters, c.Where)
 
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
+	// Ctrl-C/SIGTERM end the watch through ctx: the root handler cancels it
+	// on the first signal (a clean exit 0) and force-exits on a second one.
 	printer.OnStatus(fmt.Sprintf("watching %s on %s (Ctrl-C to stop)", c.Channel, host))
 
 	reason, watchErr := realtime.Watch(ctx, realtime.WatchOptions{

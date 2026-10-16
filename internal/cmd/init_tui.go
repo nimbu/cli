@@ -5,11 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
-	"syscall"
 
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
@@ -171,11 +168,13 @@ func (c *InitCmd) runInteractiveTTY(ctx context.Context, flags *RootFlags) error
 		tea.WithFilter(initTeaFilter),
 		// Bubble Tea's own handler stops listening after the first signal, so
 		// a second SIGINT/SIGTERM during the file write would kill the process
-		// mid-copy with the terminal still in raw mode. Forward every signal
-		// instead; the filter holds them while files are written.
+		// mid-copy with the terminal still in raw mode. The wizard claims every
+		// signal from the root instead (so the root neither cancels ctx, which
+		// would kill the program past the filter, nor force-exits); the filter
+		// holds them while files are written.
 		tea.WithoutSignalHandler(),
 	)
-	stopSignals := forwardInitSignals(program)
+	stopSignals := forwardProgramSignals(program)
 	defer stopSignals()
 
 	finalModel, runErr := program.Run()
@@ -251,41 +250,6 @@ func initTeaFilter(model tea.Model, msg tea.Msg) tea.Msg {
 	// of leaving a live prompt in the scrollback.
 	m.quitting = true
 	return msg
-}
-
-// forwardInitSignals delivers every SIGINT/SIGTERM to the program as Bubble
-// Tea's handler would (InterruptMsg/QuitMsg), for as long as the wizard runs.
-// The returned stop function releases the signals.
-func forwardInitSignals(program *tea.Program) func() {
-	sigs := make(chan os.Signal, 2)
-	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
-	done := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			case sig := <-sigs:
-				// Send is a no-op once the program has exited.
-				program.Send(initSignalMsg(sig))
-			}
-		}
-	}()
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			signal.Stop(sigs)
-			close(done)
-		})
-	}
-}
-
-// initSignalMsg maps a signal to the message Bubble Tea's own handler sends.
-func initSignalMsg(sig os.Signal) tea.Msg {
-	if sig == os.Interrupt {
-		return tea.InterruptMsg{}
-	}
-	return tea.QuitMsg{}
 }
 
 // initColorProfile maps the stderr color decision to the program's profile:

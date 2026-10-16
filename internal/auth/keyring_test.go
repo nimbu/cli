@@ -210,3 +210,31 @@ func TestDecodeCredentialNormalizesStoredValues(t *testing.T) {
 		t.Fatalf("credential = %#v", cred)
 	}
 }
+
+// Regression: the file-backend password prompt blocked on stdin without being
+// marked as a prompt, so Ctrl-C needed a second press to end it.
+func TestMarkedPromptMarksTheRead(t *testing.T) {
+	orig := BeginPrompt
+	t.Cleanup(func() { BeginPrompt = orig })
+	active := 0
+	BeginPrompt = func() func() {
+		active++
+		return func() { active-- }
+	}
+
+	var during int
+	prompt := markedPrompt(func(message string) (string, error) {
+		during = active
+		return "secret", nil
+	})
+	got, err := prompt("Password: ")
+	if err != nil || got != "secret" {
+		t.Fatalf("prompt = %q, %v", got, err)
+	}
+	if during != 1 {
+		t.Fatalf("prompt was not marked while reading (active=%d)", during)
+	}
+	if active != 0 {
+		t.Fatalf("prompt mark leaked: %d", active)
+	}
+}

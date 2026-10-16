@@ -236,7 +236,7 @@ func TestServerPresenterDisabledForMachineModes(t *testing.T) {
 			presenter := newServerPresenter(ctx, tc.events)
 			presenter.PrintBanner()
 			presenter.PrintSummary(serverSummary{SiteHost: "acme.nimbu.io", ProxyURL: "http://127.0.0.1:4568"})
-			presenter.PrintStopping("")
+			presenter.PrintStopping("", "")
 			presenter.PrintGoodbye()
 
 			if buf.Len() != 0 {

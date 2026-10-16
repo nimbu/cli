@@ -56,10 +56,10 @@ func TestInitTeaSigtermDuringPromptDrawsClosingFrame(t *testing.T) {
 }
 
 func TestInitSignalMsgMatchesBubbleTea(t *testing.T) {
-	if _, ok := initSignalMsg(os.Interrupt).(tea.InterruptMsg); !ok {
+	if _, ok := programSignalMsg(os.Interrupt).(tea.InterruptMsg); !ok {
 		t.Fatal("expected SIGINT to become an InterruptMsg")
 	}
-	if _, ok := initSignalMsg(syscall.SIGTERM).(tea.QuitMsg); !ok {
+	if _, ok := programSignalMsg(syscall.SIGTERM).(tea.QuitMsg); !ok {
 		t.Fatal("expected SIGTERM to become a QuitMsg")
 	}
 }

@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
-	"os/signal"
 	"strconv"
 	"strings"
 	"time"
@@ -77,9 +75,8 @@ func (c *AppsLogsCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 func (c *AppsLogsCmd) tail(ctx context.Context, client *api.Client, appKey string, opts api.AppLogOptions) error {
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
-	defer stop()
-
+	// Ctrl-C ends the tail through ctx: the root handler cancels it on the
+	// first signal (exit 0 below) and force-exits on a second one.
 	logs, err := api.ListAppLogs(ctx, client, appKey, opts)
 	if err != nil {
 		if contextCanceled(ctx, err) {

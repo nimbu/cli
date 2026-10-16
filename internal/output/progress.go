@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -20,9 +19,13 @@ const clearLine = "\r\033[2K"
 //
 // On an animated terminal the active task is redrawn in place on one line
 // every tick. The line only appears once a task has run for spinnerDelay, so
-// near-instant work never flashes a spinner. While a line is on screen an
-// interrupt handler is armed that erases it before the process dies, so
-// Ctrl-C never leaves a half-drawn line under the shell prompt.
+// near-instant work never flashes a spinner.
+//
+// Progress installs no signal handler of its own: the command layer owns
+// SIGINT/SIGTERM and cancels the context on the first one. When that context
+// is canceled the live line is erased and drawing stops, so Ctrl-C never
+// leaves a half-drawn line under the shell prompt or under the error that
+// follows.
 type Progress struct {
 	mu           sync.Mutex
 	writer       io.Writer
@@ -36,8 +39,7 @@ type Progress struct {
 	task         *Task
 	lineOpen     bool // an animated line is drawn without its trailing newline
 	interrupted  bool
-	armed        bool
-	interrupts   chan os.Signal
+	cancel       <-chan struct{} // closed when the command is interrupted
 	stopCh       chan struct{}
 	doneCh       chan struct{}
 	closeOnce    sync.Once
@@ -75,10 +77,12 @@ func NewProgress(ctx context.Context) *Progress {
 	if out == nil {
 		out = writer.Out
 	}
-	return newProgress(out, writer.ErrTheme(), writer.Glyphs(), writer.ErrAnimated())
+	return newProgress(ctx.Done(), out, writer.ErrTheme(), writer.Glyphs(), writer.ErrAnimated())
 }
 
-func newProgress(out io.Writer, theme Theme, glyphs Glyphs, animated bool) *Progress {
+// newProgress builds a progress session; cancel (may be nil) ends the live
+// line early when the command is interrupted.
+func newProgress(cancel <-chan struct{}, out io.Writer, theme Theme, glyphs Glyphs, animated bool) *Progress {
 	p := &Progress{
 		writer:       out,
 		theme:        theme,
@@ -86,7 +90,7 @@ func newProgress(out io.Writer, theme Theme, glyphs Glyphs, animated bool) *Prog
 		enabled:      true,
 		animated:     animated,
 		spinnerDelay: spinnerDelay,
-		interrupts:   make(chan os.Signal, 1),
+		cancel:       cancel,
 		stopCh:       make(chan struct{}),
 		doneCh:       make(chan struct{}),
 	}
@@ -181,58 +185,29 @@ func (p *Progress) loop() {
 			p.mu.Lock()
 			p.renderLocked(false)
 			p.mu.Unlock()
-		case sig := <-p.interrupts:
-			p.handleInterrupt(sig)
+		case <-p.cancel:
+			// Interrupted: erase the live line and stop drawing, so the
+			// command's error or summary starts on a clean line.
+			p.mu.Lock()
+			p.interrupted = true
+			p.eraseLineLocked()
+			p.mu.Unlock()
 			return
 		case <-p.stopCh:
 			p.mu.Lock()
 			p.eraseLineLocked()
 			p.mu.Unlock()
-			// The handler is disarmed now, but a signal delivered just before
-			// that may still be queued (select picks stopCh at random when
-			// both are ready). Re-deliver it instead of swallowing Ctrl-C.
-			select {
-			case sig := <-p.interrupts:
-				raiseInterrupt(sig)
-			default:
-			}
 			return
 		}
 	}
 }
 
-// handleInterrupt erases the live line, then re-delivers the signal with the
-// handler disarmed so the process still dies (or another handler still runs)
-// exactly as it would have without progress on screen.
-func (p *Progress) handleInterrupt(sig os.Signal) {
-	p.mu.Lock()
-	p.interrupted = true
-	p.eraseLineLocked()
-	p.mu.Unlock()
-	raiseInterrupt(sig)
-}
-
-// eraseLineLocked clears an open animated line and disarms the interrupt
-// handler.
+// eraseLineLocked clears an open animated line.
 func (p *Progress) eraseLineLocked() {
 	if p.lineOpen {
 		_, _ = fmt.Fprint(p.writer, clearLine)
 	}
-	p.setLineOpenLocked(false)
-}
-
-func (p *Progress) setLineOpenLocked(open bool) {
-	p.lineOpen = open
-	switch {
-	case open && !p.armed && len(interruptSignals) > 0:
-		// Notify with no signals would subscribe to every signal, so an
-		// empty list (Windows) leaves the handler unarmed.
-		notifyInterrupt(p.interrupts, interruptSignals...)
-		p.armed = true
-	case !open && p.armed:
-		stopInterrupt(p.interrupts)
-		p.armed = false
-	}
+	p.lineOpen = false
 }
 
 func (p *Progress) renderLocked(final bool) {
@@ -250,7 +225,7 @@ func (p *Progress) renderLocked(final bool) {
 		if finished {
 			_, _ = fmt.Fprint(p.writer, "\n")
 		}
-		p.setLineOpenLocked(!finished)
+		p.lineOpen = !finished
 		return
 	}
 

@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -81,7 +79,7 @@ func (b *syncBuffer) String() string {
 func newAnimatedProgressForTest(t *testing.T, delay time.Duration) (*Progress, *syncBuffer) {
 	t.Helper()
 	buf := &syncBuffer{}
-	p := newProgress(buf, Theme{}, GlyphSet(false), true)
+	p := newProgress(nil, buf, Theme{}, GlyphSet(false), true)
 	p.mu.Lock()
 	p.spinnerDelay = delay
 	p.mu.Unlock()
@@ -106,22 +104,7 @@ func (p *Progress) lineIsOpen() bool {
 	return p.lineOpen
 }
 
-func stubInterrupts(t *testing.T) (armed *atomic.Int32, raised chan os.Signal) {
-	t.Helper()
-	armed = &atomic.Int32{}
-	raised = make(chan os.Signal, 1)
-	origNotify, origStop, origRaise := notifyInterrupt, stopInterrupt, raiseInterrupt
-	notifyInterrupt = func(chan<- os.Signal, ...os.Signal) { armed.Add(1) }
-	stopInterrupt = func(chan<- os.Signal) { armed.Add(-1) }
-	raiseInterrupt = func(sig os.Signal) { raised <- sig }
-	t.Cleanup(func() {
-		notifyInterrupt, stopInterrupt, raiseInterrupt = origNotify, origStop, origRaise
-	})
-	return armed, raised
-}
-
 func TestProgressHoldsSpinnerBackForShortWork(t *testing.T) {
-	stubInterrupts(t)
 	p, buf := newAnimatedProgressForTest(t, time.Hour)
 
 	task := p.Phase("quick work")
@@ -139,15 +122,11 @@ func TestProgressHoldsSpinnerBackForShortWork(t *testing.T) {
 	}
 }
 
-func TestProgressCloseErasesUnfinishedLineAndDisarms(t *testing.T) {
-	armed, _ := stubInterrupts(t)
+func TestProgressCloseErasesUnfinishedLine(t *testing.T) {
 	p, buf := newAnimatedProgressForTest(t, 0)
 
 	p.Phase("slow work")
 	waitFor(t, p.lineIsOpen)
-	if armed.Load() != 1 {
-		t.Fatalf("expected interrupt handler armed while a line is open, got %d", armed.Load())
-	}
 
 	p.Close()
 	p.Close() // idempotent
@@ -159,40 +138,42 @@ func TestProgressCloseErasesUnfinishedLineAndDisarms(t *testing.T) {
 	if strings.Contains(out, "done") {
 		t.Fatalf("unfinished task must not be reported as done, got %q", out)
 	}
-	if armed.Load() != 0 {
-		t.Fatalf("expected interrupt handler disarmed after close, got %d", armed.Load())
-	}
 }
 
-func TestProgressInterruptErasesLineThenReraises(t *testing.T) {
-	armed, raised := stubInterrupts(t)
-	p, buf := newAnimatedProgressForTest(t, 0)
+// Regression: progress used to arm its own SIGINT/SIGTERM handler and re-raise
+// the signal, which the root handler then counted as a second Ctrl-C and
+// force-exited. Progress now only follows the command's context.
+func TestProgressCancelErasesLineAndStopsDrawing(t *testing.T) {
+	cancel := make(chan struct{})
+	buf := &syncBuffer{}
+	p := newProgress(cancel, buf, Theme{}, GlyphSet(false), true)
+	p.mu.Lock()
+	p.spinnerDelay = 0
+	p.mu.Unlock()
+	t.Cleanup(p.Close)
 
-	p.Transfer("upload", 100)
+	task := p.Transfer("upload", 100)
 	waitFor(t, p.lineIsOpen)
 
-	p.interrupts <- os.Interrupt
-	select {
-	case sig := <-raised:
-		if sig != os.Interrupt {
-			t.Fatalf("expected os.Interrupt re-raised, got %v", sig)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("signal was not re-raised")
-	}
+	close(cancel)
 	<-p.doneCh
 
-	if out := buf.String(); !strings.HasSuffix(out, clearLine) {
+	out := buf.String()
+	if !strings.HasSuffix(out, clearLine) {
 		t.Fatalf("expected interrupted line to be erased, got %q", out)
 	}
-	if armed.Load() != 0 {
-		t.Fatalf("expected handler disarmed before re-raise, got %d", armed.Load())
+	if p.lineIsOpen() {
+		t.Fatal("line still marked open after cancel")
+	}
+	task.Fail(errors.New("canceled"))
+	if got := buf.String(); got != out {
+		t.Fatalf("expected no drawing after cancel, got extra %q", strings.TrimPrefix(got, out))
 	}
 }
 
 func TestProgressFinalLineUsesASCIIGlyphs(t *testing.T) {
 	var buf bytes.Buffer
-	p := newProgress(&buf, Theme{}, GlyphSet(true), false)
+	p := newProgress(nil, &buf, Theme{}, GlyphSet(true), false)
 	p.Phase("fetch").Done("done")
 	p.Phase("push").Fail(errors.New("boom"))
 
@@ -200,26 +181,6 @@ func TestProgressFinalLineUsesASCIIGlyphs(t *testing.T) {
 	for _, want := range []string{"ok done  fetch", "x failed  push"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected %q in %q", want, out)
-		}
-	}
-}
-
-// A signal queued just before Close disarmed the handler must still be
-// delivered: the loop may pick stopCh first when both channels are ready.
-func TestProgressCloseRedeliversQueuedInterrupt(t *testing.T) {
-	_, raised := stubInterrupts(t)
-	for i := 0; i < 50; i++ {
-		p := newProgress(&syncBuffer{}, Theme{}, GlyphSet(false), false)
-		p.interrupts <- os.Interrupt
-		close(p.stopCh)
-		p.loop()
-		select {
-		case sig := <-raised:
-			if sig != os.Interrupt {
-				t.Fatalf("expected os.Interrupt, got %v", sig)
-			}
-		default:
-			t.Fatalf("iteration %d: queued interrupt was swallowed on close", i)
 		}
 	}
 }
