@@ -595,7 +595,8 @@ nimbu auth logout                         # Revoke the session on the server and
   in the Nimbu admin. After that, commands fail with `auth.not_logged_in`
   (exit code 3); run `nimbu auth login` again.
 - **CI and scripts** should keep using an API token: `NIMBU_TOKEN=... nimbu ...`,
-  or `nimbu auth login --token <token>` to store one. These tokens are never
+  or `nimbu auth login --token - < token-file` to store one (`--token -` reads
+  stdin, so the token stays out of shell history). These tokens are never
   refreshed.
 - Password login (`nimbu auth login --email you@example.com`) still works for
   now, but is deprecated and prints a warning.
