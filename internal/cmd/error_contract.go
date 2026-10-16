@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -154,6 +155,13 @@ func classifyError(err error) errorDescriptor {
 		Retryable: false,
 	}
 
+	if errors.Is(err, errInterrupted) || errors.Is(err, context.Canceled) {
+		desc.Code = errorInterrupted
+		desc.ExitCode = ExitInterrupted
+		desc.Message = "interrupted"
+		return desc
+	}
+
 	var detailed *detailedError
 	if errors.As(err, &detailed) {
 		if detailed.code != "" {
@@ -194,6 +202,10 @@ func classifyError(err error) errorDescriptor {
 			"path":       resolveErr.Path,
 			"candidates": resolveErr.Candidates,
 		}
+		return desc
+	}
+
+	if classifyTransportError(err, &desc) {
 		return desc
 	}
 
@@ -271,7 +283,7 @@ func classifyError(err error) errorDescriptor {
 		desc.Code = errorReadonly
 		desc.ExitCode = ExitUsage
 		desc.Message = readonlyErr.Error()
-		desc.Hint = "unset NIMBU_READONLY or remove --readonly to allow write operations"
+		desc.Hint = readonlyHint
 		return desc
 	}
 
@@ -325,28 +337,42 @@ func classifyError(err error) errorDescriptor {
 		return desc
 	}
 
+	// Legacy heuristic for untyped local argument checks ("invalid --since",
+	// "--file required"). Typed errors above always win; new failures should
+	// use newHintedError/newDetailedError instead of relying on wording.
 	lower := strings.ToLower(err.Error())
-	if strings.Contains(lower, "timeout") {
-		desc.Code = errorNetworkTimeout
-		desc.ExitCode = ExitNetwork
-		desc.Retryable = true
-		desc.Hint = "check network and retry"
-		return desc
-	}
-	if strings.Contains(lower, "connection") || strings.Contains(lower, "dial") {
-		desc.Code = errorNetworkFailure
-		desc.ExitCode = ExitNetwork
-		desc.Retryable = true
-		desc.Hint = "check network connectivity and API URL"
-		return desc
-	}
-
 	if strings.Contains(lower, "invalid") || strings.Contains(lower, "required") {
 		desc.Code = errorValidationFailed
 		desc.ExitCode = ExitValidation
 	}
 
 	return desc
+}
+
+// classifyTransportError recognizes network failures by type: timeouts
+// (context deadline, net.Error.Timeout) and other transport errors such as
+// refused connections or DNS failures, which arrive as *url.Error/*net.OpError.
+func classifyTransportError(err error, desc *errorDescriptor) bool {
+	var apiErr *api.Error
+	if errors.As(err, &apiErr) && apiErr.StatusCode != 0 {
+		return false // the server answered; not a transport failure
+	}
+	var netErr net.Error
+	timeout := errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) ||
+		(errors.As(err, &netErr) && netErr.Timeout())
+	switch {
+	case timeout:
+		desc.Code = errorNetworkTimeout
+		desc.Hint = "the request timed out; check the network, raise --timeout, or retry"
+	case netErr != nil:
+		desc.Code = errorNetworkFailure
+		desc.Hint = "check network connectivity and the API URL (--apiurl / NIMBU_API_URL)"
+	default:
+		return false
+	}
+	desc.ExitCode = ExitNetwork
+	desc.Retryable = true
+	return true
 }
 
 func isScopeError(apiErr *api.Error) bool {

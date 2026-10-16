@@ -206,8 +206,9 @@ func execute(args []string) (err error) {
 		Level: logLevel,
 	})))
 
-	// Create context with values
-	ctx := context.Background()
+	// Root context: canceled on the first Ctrl-C/SIGTERM; a second one exits 130.
+	ctx, stopInterrupts := withInterrupt(context.Background())
+	defer stopInterrupts()
 
 	// Set up output mode
 	outMode, err := output.FromFlags(cli.JSON, cli.Plain)
@@ -254,6 +255,9 @@ func execute(args []string) (err error) {
 	kctx.Bind(site) // Bind resolved site
 
 	if err = kctx.Run(); err != nil {
+		if interrupted(ctx) {
+			err = &interruptedError{err: err}
+		}
 		return emitCommandError(ctx, err)
 	}
 	maybeNotifyUpdate(ctx, kctx.Command(), cli.RootFlags, version)
@@ -375,6 +379,8 @@ const (
 	ExitValidation = 6
 	ExitRateLimit  = 7
 	ExitNetwork    = 8
+	// ExitInterrupted follows the shell convention 128 + SIGINT.
+	ExitInterrupted = 130
 )
 
 // GetAPIClient creates an API client from context.
