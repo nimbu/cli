@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/nimbu/cli/internal/output"
 	"github.com/nimbu/cli/internal/realtime"
