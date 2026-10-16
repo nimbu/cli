@@ -1,0 +1,85 @@
+Usage: nimbu <command> [flags]
+
+CLI for the Nimbu API - AI-agent first, human-friendly second
+
+Getting started:
+  auth                    Authentication and credentials
+  init                    Bootstrap a local theme project
+  sites                   Manage sites
+  server                  Run local simulator proxy with child dev server
+  env                     Manage project environments
+  config                  Manage configuration
+
+Content:
+  channels                Manage channels and entries
+  pages                   Manage pages
+  menus                   Manage navigation menus
+  mails (mail)            Sync notification templates to local files
+  notifications           Manage notifications
+  uploads                 Manage uploads
+  blogs                   Manage blogs
+  translations            Manage translations
+
+Commerce:
+  products                Manage products
+  shipping-rates          Manage shipping rates
+  collections             Manage collections
+  coupons                 Manage coupons
+  orders                  Manage orders
+  customers               Manage customers
+
+Theme & code:
+  schema                  Manage declarative schemas
+  release                 Release schema, cloud code and theme
+  releases                List successful releases
+  functions               Execute cloud functions
+  jobs                    Execute cloud jobs
+  apps                    Manage OAuth apps
+  themes                  Manage themes
+
+Admin:
+  domains                 Manage custom domains
+  announcements           Manage platform announcements
+  domain-registrations    Manage domain registrations
+  settings                Manage site settings
+  events                  Track and ingest events
+  realtime                Realtime grants and live queries
+  roles                   Manage roles
+  redirects               Manage redirects
+  senders                 Manage email sender domains
+  webhooks                Manage webhooks
+
+Advanced:
+  api                     Raw API access
+  commands                Export the machine-readable command contract
+  completion              Generate shell completions
+
+Global Flags:
+  -h, --help           Show context-sensitive help.
+      --env=STRING     Named project environment (overrides site and API URL)
+      --site=STRING    Site ID or subdomain, else nimbu.yml site ($NIMBU_SITE)
+      --json           Output JSON to stdout ($NIMBU_JSON)
+      --plain          Output stable TSV to stdout ($NIMBU_PLAIN)
+      --verbose        Enable verbose logging
+      --debug          Enable debug logging (HTTP traces)
+      --version        Print version and exit
+
+Examples:
+  # Log in, then list the sites you can access
+  nimbu auth login
+  nimbu sites list
+
+  # Bootstrap a theme project and run the local dev server
+  nimbu init my-theme
+  nimbu server
+
+  # List the entries of a channel as JSON
+  nimbu channels entries list --channel blog --json
+
+  # Update an entry with inline assignments
+  nimbu channels entries update --channel blog --entry welcome title=Welcome
+
+Run "nimbu help <command>" for more information on a command.
+Create/Update supports inline payloads using: key=value, key:=json,
+key=@file.txt or key:=@file.json
+Run "nimbu --help-all" for all flags.
