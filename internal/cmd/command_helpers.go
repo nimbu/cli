@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"golang.org/x/term"
 )
 
 const maxJSONInputBytes int64 = 10 << 20
@@ -178,10 +180,13 @@ func readLimitedBytes(input io.Reader) ([]byte, error) {
 	return data, nil
 }
 
+// stdinIsTerminal reports whether stdin is an interactive terminal. A
+// character-device check is not enough: /dev/null (CI's usual stdin) is a
+// character device too, and reading a prompt answer from it yields a bare EOF.
 func stdinIsTerminal() bool {
-	info, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return (info.Mode() & os.ModeCharDevice) != 0
+	return fileIsTerminal(os.Stdin)
+}
+
+func fileIsTerminal(f *os.File) bool {
+	return f != nil && term.IsTerminal(int(f.Fd()))
 }

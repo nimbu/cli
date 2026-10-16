@@ -152,9 +152,10 @@ func writeErrorEnvelope(w io.Writer, desc errorDescriptor) {
 
 // writeHumanError prints "error: <message>" and, when there is one, a
 // "hint: <fix>" line last. Labels are colored only when stderr gets color.
-// An interrupt prints nothing: the user pressed Ctrl-C and knows why.
+// A signal interrupt prints nothing: the user pressed Ctrl-C and knows why.
+// A cancellation no signal explains still says what failed.
 func writeHumanError(writer *output.Writer, err error, desc errorDescriptor) {
-	if desc.Code == errorInterrupted {
+	if errors.Is(err, errInterrupted) {
 		return
 	}
 	w := writer.Err
@@ -181,7 +182,9 @@ func classifyError(err error) errorDescriptor {
 	if errors.Is(err, errInterrupted) || errors.Is(err, context.Canceled) {
 		desc.Code = errorInterrupted
 		desc.ExitCode = ExitInterrupted
-		desc.Message = "interrupted"
+		if errors.Is(err, errInterrupted) {
+			desc.Message = "interrupted"
+		}
 		return desc
 	}
 

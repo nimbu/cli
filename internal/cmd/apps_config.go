@@ -136,6 +136,7 @@ func (c *AppsConfigCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 func promptWithReader(reader *bufio.Reader, message string) (string, error) {
+	defer beginPrompt()()
 	fmt.Fprint(os.Stderr, message)
 	line, err := reader.ReadString('\n')
 	if err != nil && len(line) == 0 {

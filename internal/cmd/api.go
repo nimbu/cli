@@ -214,7 +214,7 @@ func writeDownloadResponse(ctx context.Context, reader io.Reader, destination st
 	}
 	if !force {
 		if _, err := os.Stat(destination); err == nil {
-			return fmt.Errorf("output file already exists: %s (use --force to overwrite)", destination)
+			return confirmationRequiredError(fmt.Sprintf("output file already exists: %s; refusing to overwrite without --force", destination), "--force")
 		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("inspect output file: %w", err)
 		}
