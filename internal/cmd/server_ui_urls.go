@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/config"
 )
@@ -29,12 +31,10 @@ func formatServerChildCommand(command string, args []string) string {
 	for _, arg := range args {
 		parts = append(parts, quoteCommandPart(arg))
 	}
-	line := strings.Join(parts, " ")
-	const maxLen = 88
-	if len(line) > maxLen {
-		return line[:maxLen-3] + "..."
-	}
-	return line
+	// Truncate by terminal cells, not bytes: a byte cut can split a multi-byte
+	// rune (accented paths, CJK) and a wide rune occupies two columns.
+	const maxWidth = 88
+	return ansi.Truncate(strings.Join(parts, " "), maxWidth, "...")
 }
 
 func quoteCommandPart(part string) string {

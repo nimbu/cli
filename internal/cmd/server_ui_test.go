@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -296,5 +299,34 @@ func TestDisplayPathFromRoot(t *testing.T) {
 	outside := filepath.FromSlash("/outside/project")
 	if got := displayPathFromRoot(root, outside); got != outside {
 		t.Fatalf("expected absolute fallback, got %q", got)
+	}
+}
+
+func TestFormatServerChildCommandTruncatesByCellWidth(t *testing.T) {
+	short := formatServerChildCommand("yarn", []string{"dev"})
+	if short != "yarn dev" {
+		t.Fatalf("short command = %q", short)
+	}
+
+	// 'é' is two bytes; a byte cut at 85 would split it into invalid UTF-8.
+	args := []string{strings.Repeat("é", 120)}
+	got := formatServerChildCommand("node", args)
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncated command is not valid UTF-8: %q", got)
+	}
+	if w := ansi.StringWidth(got); w != 88 {
+		t.Fatalf("width = %d, want 88: %q", w, got)
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Fatalf("expected ellipsis tail, got %q", got)
+	}
+
+	// Wide runes take two cells each; the result must still fit 88 columns.
+	wide := formatServerChildCommand("node", []string{strings.Repeat("界", 80)})
+	if w := ansi.StringWidth(wide); w > 88 {
+		t.Fatalf("wide width = %d, want <= 88: %q", w, wide)
+	}
+	if !utf8.ValidString(wide) {
+		t.Fatalf("wide command is not valid UTF-8: %q", wide)
 	}
 }
