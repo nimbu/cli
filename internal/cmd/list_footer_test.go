@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
 )
 
@@ -42,6 +43,27 @@ func TestWriteListFooter(t *testing.T) {
 			resource: "entries",
 			meta:     listFooterMeta{Page: 2, PerPage: 1, Returned: 1, HasNext: true},
 			want:     "\nShowing 1 entry on page 2; more results available. Use --page 3 for more, or --all for everything.\n",
+		},
+		{
+			name:     "full page without Link header, total unknown",
+			resource: "sites",
+			meta:     newListFooterMeta(2, 25, api.Pagination{}, api.Links{}, 25),
+			want:     "\nShowing 25 sites on page 2; more results may be available. Use --page 3 for more, or --all for everything.\n",
+		},
+		{
+			name:     "full page without Link header, total known and complete",
+			resource: "sites",
+			meta:     newListFooterMeta(1, 25, api.Pagination{Total: 25, TotalKnown: true}, api.Links{}, 25),
+		},
+		{
+			name:     "short page without Link header",
+			resource: "sites",
+			meta:     newListFooterMeta(2, 25, api.Pagination{}, api.Links{}, 7),
+		},
+		{
+			name:     "full last page with a Link header",
+			resource: "sites",
+			meta:     newListFooterMeta(2, 25, api.Pagination{}, api.Links{Prev: "/sites?page=1"}, 25),
 		},
 		{
 			name:     "everything fit, total unknown",

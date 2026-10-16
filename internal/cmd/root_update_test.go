@@ -92,6 +92,12 @@ func TestExecuteRunsUpdateNotifierAfterSuccessfulCommandAndWritesOnlyToStderr(t 
 		// Windows uses %APPDATA% instead of XDG_CONFIG_HOME.
 		t.Setenv("APPDATA", configHome)
 	}
+	// The notice is styled only when stderr may carry color; pin the
+	// environment so a developer's NO_COLOR or TERM=dumb cannot flip it.
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("FORCE_COLOR", "")
+	t.Setenv("NIMBU_COLOR", "")
 
 	restore := stubUpdateNotifier(t, true, func(ctx context.Context, errWriter io.Writer, currentVersion string, style updatecheck.Style) {
 		if currentVersion == "" {

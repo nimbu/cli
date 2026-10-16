@@ -65,7 +65,8 @@ func WriteDetail(w io.Writer, fields []Field) error {
 	for _, f := range visible {
 		label := f.Label + ":"
 		pad := strings.Repeat(" ", labelWidth-ansi.StringWidth(label)+1)
-		value := strings.ReplaceAll(fmt.Sprint(f.Value), "\n", "\n"+indent)
+		value := detailNewlines.Replace(fmt.Sprint(f.Value))
+		value = strings.ReplaceAll(value, "\n", "\n"+indent)
 		if _, err := fmt.Fprintln(w, strings.TrimRight(label+pad+value, " ")); err != nil {
 			return err
 		}
@@ -85,3 +86,7 @@ func isZero(v any) bool {
 		return rv.IsZero()
 	}
 }
+
+// detailNewlines normalizes CRLF and lone CR to LF, so a carriage return in a
+// value cannot jump back to column 0 and overwrite its label.
+var detailNewlines = strings.NewReplacer("\r\n", "\n", "\r", "\n")

@@ -167,3 +167,17 @@ func TestWritePlainRendersNilAndPointers(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
+
+type ptrStringer struct{ id int }
+
+func (p *ptrStringer) String() string { return "item-" + strings.Repeat("x", p.id) }
+
+func TestWritePlainKeepsPointerReceiverStringer(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WritePlain(&buf, &ptrStringer{id: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := buf.String(), "item-xx\n"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

@@ -48,6 +48,12 @@ func plainString(v any) string {
 		if rv.IsNil() {
 			return ""
 		}
+		// Keep pointer-receiver String/Error methods: dereferencing first
+		// would print the struct's fields instead.
+		switch rv.Interface().(type) {
+		case fmt.Stringer, error:
+			return fmt.Sprint(rv.Interface())
+		}
 		rv = rv.Elem()
 	}
 	return fmt.Sprint(rv.Interface())

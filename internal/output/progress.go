@@ -188,6 +188,14 @@ func (p *Progress) loop() {
 			p.mu.Lock()
 			p.eraseLineLocked()
 			p.mu.Unlock()
+			// The handler is disarmed now, but a signal delivered just before
+			// that may still be queued (select picks stopCh at random when
+			// both are ready). Re-deliver it instead of swallowing Ctrl-C.
+			select {
+			case sig := <-p.interrupts:
+				raiseInterrupt(sig)
+			default:
+			}
 			return
 		}
 	}

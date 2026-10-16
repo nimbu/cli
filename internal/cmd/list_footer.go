@@ -10,11 +10,15 @@ import (
 )
 
 type listFooterMeta struct {
-	All        bool
-	Page       int
-	PerPage    int
-	Returned   int
-	HasNext    bool
+	All      bool
+	Page     int
+	PerPage  int
+	Returned int
+	HasNext  bool
+	// MaybeMore is set for a full page that came back without any Link
+	// header: the same "probably more" signal api.PagedResponse.HasMore uses
+	// for degraded responses. It only counts while the total is unknown.
+	MaybeMore  bool
 	Total      int
 	TotalKnown bool
 }
@@ -26,6 +30,7 @@ func newListFooterMeta(page, perPage int, paged api.Pagination, links api.Links,
 		PerPage:    perPage,
 		Returned:   returned,
 		HasNext:    links.HasNext(),
+		MaybeMore:  links == (api.Links{}) && perPage > 0 && returned >= perPage,
 		Total:      paged.Total,
 		TotalKnown: paged.TotalKnown,
 	}
@@ -50,13 +55,20 @@ func (m *listFooterMeta) probeTotal(ctx context.Context, client *api.Client, pat
 	m.TotalKnown = true
 }
 
-// moreAvailable reports whether the listing left results out: the server
-// advertised a next page, or the known total exceeds what was returned.
+// moreAvailable reports whether the listing left results out, or may have:
+// the server advertised a next page, the known total exceeds what was
+// returned, or (total unknown) a full page came back without a Link header.
 func (m listFooterMeta) moreAvailable() bool {
 	if m.All {
 		return false
 	}
-	return m.HasNext || (m.TotalKnown && m.Total > m.Returned)
+	if m.HasNext {
+		return true
+	}
+	if m.TotalKnown {
+		return m.Total > m.Returned
+	}
+	return m.MaybeMore
 }
 
 // nextPage is the page to suggest, or 0 when the current page is the last.
@@ -64,7 +76,13 @@ func (m listFooterMeta) nextPage() int {
 	if m.HasNext {
 		return m.Page + 1
 	}
-	if m.TotalKnown && m.PerPage > 0 && m.Page*m.PerPage < m.Total {
+	if m.TotalKnown {
+		if m.PerPage > 0 && m.Page*m.PerPage < m.Total {
+			return m.Page + 1
+		}
+		return 0
+	}
+	if m.MaybeMore {
 		return m.Page + 1
 	}
 	return 0
@@ -84,8 +102,12 @@ func writeListFooter(ctx context.Context, resource string, meta listFooterMeta) 
 		msg = fmt.Sprintf("Showing %d of %d %s (page %d, per-page %d).",
 			meta.Returned, meta.Total, pluralNoun(meta.Total, resource), meta.Page, meta.PerPage)
 	} else {
-		msg = fmt.Sprintf("Showing %d %s on page %d; more results available.",
-			meta.Returned, pluralNoun(meta.Returned, resource), meta.Page)
+		more := "more results available"
+		if !meta.HasNext {
+			more = "more results may be available"
+		}
+		msg = fmt.Sprintf("Showing %d %s on page %d; %s.",
+			meta.Returned, pluralNoun(meta.Returned, resource), meta.Page, more)
 	}
 	if next := meta.nextPage(); next > 0 {
 		msg += fmt.Sprintf(" Use --page %d for more, or --all for everything.", next)

@@ -203,3 +203,23 @@ func TestProgressFinalLineUsesASCIIGlyphs(t *testing.T) {
 		}
 	}
 }
+
+// A signal queued just before Close disarmed the handler must still be
+// delivered: the loop may pick stopCh first when both channels are ready.
+func TestProgressCloseRedeliversQueuedInterrupt(t *testing.T) {
+	_, raised := stubInterrupts(t)
+	for i := 0; i < 50; i++ {
+		p := newProgress(&syncBuffer{}, Theme{}, GlyphSet(false), false)
+		p.interrupts <- os.Interrupt
+		close(p.stopCh)
+		p.loop()
+		select {
+		case sig := <-raised:
+			if sig != os.Interrupt {
+				t.Fatalf("expected os.Interrupt, got %v", sig)
+			}
+		default:
+			t.Fatalf("iteration %d: queued interrupt was swallowed on close", i)
+		}
+	}
+}

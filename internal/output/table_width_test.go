@@ -123,3 +123,12 @@ func assertMaxLineWidth(t *testing.T, out string, maxWidth int) {
 		}
 	}
 }
+
+func TestWriteDetailNormalizesCarriageReturns(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteDetail(&buf, []Field{FAlways("Notes", "one\r\ntwo\rthree")}); err != nil {
+		t.Fatal(err)
+	}
+	want := "Notes: one\n       two\n       three\n"
+	assertGolden(t, buf.String(), want)
+}
