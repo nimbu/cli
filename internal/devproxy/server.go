@@ -155,6 +155,15 @@ func (s *Server) Stop(ctx context.Context) error {
 	return nil
 }
 
+// Close stops the proxy at once, dropping in-flight requests. It is the
+// forced-stop path; Stop is the graceful one.
+func (s *Server) Close() error {
+	if s.httpServer != nil {
+		_ = s.httpServer.Close()
+	}
+	return s.cache.Stop()
+}
+
 func (s *Server) Errors() <-chan error {
 	return s.errCh
 }

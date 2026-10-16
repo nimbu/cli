@@ -17,6 +17,8 @@ type serverShortcutLinks struct {
 	DevURL   string
 	LiveURL  string
 	AdminURL string
+	// Active is set when the key listener runs; the hint is shown only then.
+	Active bool
 }
 
 func serverShortcutLinksFromSummary(summary serverSummary) serverShortcutLinks {
@@ -34,8 +36,13 @@ func serverShortcutLinksFromSummary(summary serverSummary) serverShortcutLinks {
 	}
 }
 
+// Hint is the one-line key summary printed under the startup summary. When
+// the listener runs, Enter, help and quit are always available.
 func (l serverShortcutLinks) Hint() string {
-	parts := make([]string, 0, 3)
+	if !l.Active {
+		return ""
+	}
+	parts := make([]string, 0, 6)
 	if l.DevURL != "" {
 		parts = append(parts, "[o] open dev")
 	}
@@ -45,7 +52,27 @@ func (l serverShortcutLinks) Hint() string {
 	if l.AdminURL != "" {
 		parts = append(parts, "[b] open admin")
 	}
+	parts = append(parts, "[enter] mark", "[?] help", "[q] quit")
 	return strings.Join(parts, "  ")
+}
+
+// HelpRows lists every shortcut with a full description, for the '?' help.
+func (l serverShortcutLinks) HelpRows() [][2]string {
+	rows := make([][2]string, 0, 6)
+	if l.DevURL != "" {
+		rows = append(rows, [2]string{"o", "open the dev server  " + l.DevURL})
+	}
+	if l.LiveURL != "" {
+		rows = append(rows, [2]string{"l", "open the live site   " + l.LiveURL})
+	}
+	if l.AdminURL != "" {
+		rows = append(rows, [2]string{"b", "open the site admin  " + l.AdminURL})
+	}
+	return append(rows,
+		[2]string{"enter", "print a blank line to mark a spot in the log"},
+		[2]string{"? h", "show this help"},
+		[2]string{"q", "quit (Ctrl-C works too; press it twice to force)"},
+	)
 }
 
 func (l serverShortcutLinks) target(action serverShortcutAction) (label string, target string, ok bool) {
@@ -78,6 +105,8 @@ const (
 	serverShortcutOpenDev
 	serverShortcutOpenLive
 	serverShortcutOpenAdmin
+	serverShortcutHelp
+	serverShortcutQuit
 )
 
 type serverShortcutDecision struct {
@@ -94,6 +123,10 @@ func decideServerShortcut(b byte, ready bool, links serverShortcutLinks) serverS
 	switch b {
 	case '\n', '\r':
 		action = serverShortcutLogMarker
+	case '?', 'h':
+		action = serverShortcutHelp
+	case 'q':
+		action = serverShortcutQuit
 	case 'o':
 		if links.DevURL != "" {
 			action = serverShortcutOpenDev
@@ -111,13 +144,21 @@ func decideServerShortcut(b byte, ready bool, links serverShortcutLinks) serverS
 	if action == serverShortcutNone {
 		return serverShortcutDecision{}
 	}
-	if action == serverShortcutLogMarker {
+	switch action {
+	case serverShortcutLogMarker, serverShortcutHelp, serverShortcutQuit:
+		// Local actions work before the child is ready.
 		return serverShortcutDecision{Action: action}
 	}
 	if !ready {
 		return serverShortcutDecision{Action: action, Pending: true}
 	}
 	return serverShortcutDecision{Action: action}
+}
+
+// serverTermMode re-applies and restores the shortcut input mode.
+type serverTermMode struct {
+	apply   func() error
+	restore func() error
 }
 
 type serverShortcutListener struct {
@@ -127,7 +168,11 @@ type serverShortcutListener struct {
 	input     *os.File
 	ownsInput bool
 	reader    cancelreader.CancelReader
-	restore   func() error
+
+	// modeMu guards the terminal mode against Suspend/Resume racing Close.
+	modeMu sync.Mutex
+	mode   serverTermMode
+	closed bool
 }
 
 func newServerShortcutListener() (*serverShortcutListener, error) {
@@ -136,7 +181,7 @@ func newServerShortcutListener() (*serverShortcutListener, error) {
 		return nil, fmt.Errorf("open shortcut input: %w", err)
 	}
 
-	restore, err := prepareServerShortcutInput(input)
+	mode, err := prepareServerShortcutInput(input)
 	if err != nil {
 		if ownsInput {
 			_ = input.Close()
@@ -146,8 +191,8 @@ func newServerShortcutListener() (*serverShortcutListener, error) {
 
 	reader, err := cancelreader.NewReader(input)
 	if err != nil {
-		if restore != nil {
-			_ = restore()
+		if mode.restore != nil {
+			_ = mode.restore()
 		}
 		if ownsInput {
 			_ = input.Close()
@@ -161,13 +206,14 @@ func newServerShortcutListener() (*serverShortcutListener, error) {
 		input:     input,
 		ownsInput: ownsInput,
 		reader:    reader,
-		restore:   restore,
+		mode:      mode,
 	}
 	go listener.readLoop()
 	return listener, nil
 }
 
 func (l *serverShortcutListener) readLoop() {
+	defer l.RestoreOnPanic()
 	defer close(l.events)
 	defer close(l.errCh)
 
@@ -217,11 +263,14 @@ func (l *serverShortcutListener) Close() error {
 				closeErr = err
 			}
 		}
-		if l.restore != nil {
-			if err := l.restore(); err != nil && closeErr == nil {
+		l.modeMu.Lock()
+		l.closed = true
+		if l.mode.restore != nil {
+			if err := l.mode.restore(); err != nil && closeErr == nil {
 				closeErr = err
 			}
 		}
+		l.modeMu.Unlock()
 		if l.ownsInput && l.input != nil {
 			if err := l.input.Close(); err != nil && closeErr == nil {
 				closeErr = err
@@ -229,6 +278,43 @@ func (l *serverShortcutListener) Close() error {
 		}
 	})
 	return closeErr
+}
+
+// Suspend hands the terminal back in its original mode (Ctrl-Z) without
+// stopping the listener.
+func (l *serverShortcutListener) Suspend() error {
+	if l == nil {
+		return nil
+	}
+	l.modeMu.Lock()
+	defer l.modeMu.Unlock()
+	if l.closed || l.mode.restore == nil {
+		return nil
+	}
+	return l.mode.restore()
+}
+
+// Resume re-applies shortcut mode after the job is continued (fg).
+func (l *serverShortcutListener) Resume() error {
+	if l == nil {
+		return nil
+	}
+	l.modeMu.Lock()
+	defer l.modeMu.Unlock()
+	if l.closed || l.mode.apply == nil {
+		return nil
+	}
+	return l.mode.apply()
+}
+
+// RestoreOnPanic is deferred by every goroutine nimbu server starts. A panic
+// there would otherwise kill the process before Run's deferred Close, leaving
+// the user's shell without echo. It restores the terminal and re-panics.
+func (l *serverShortcutListener) RestoreOnPanic() {
+	if r := recover(); r != nil {
+		_ = l.Close()
+		panic(r)
+	}
 }
 
 func serverBrowserCommand(goos string, target string) (string, []string, error) {

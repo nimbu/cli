@@ -34,11 +34,12 @@ var serverGoodbyeMessages = []string{
 }
 
 type serverPresenter struct {
-	enabled  bool
-	useColor bool
-	out      io.Writer
-	termOut  *termenv.Output
-	palette  []string
+	enabled    bool
+	showBanner bool
+	useColor   bool
+	out        io.Writer
+	termOut    *termenv.Output
+	palette    []string
 }
 
 type serverSummary struct {
@@ -65,16 +66,11 @@ func newServerPresenter(ctx context.Context, eventsJSON bool) *serverPresenter {
 	}
 
 	enabled := output.IsHuman(ctx) && !eventsJSON
-	useColor := enabled && writer.UseColor()
-
+	// All presenter chrome goes to stderr, so the stderr decision applies.
+	useColor := enabled && writer.ErrUseColor()
 	profile := termenv.Ascii
 	if useColor {
-		switch writer.Color {
-		case "always":
-			profile = termenv.TrueColor
-		default:
-			profile = termenv.EnvColorProfile()
-		}
+		profile = writer.ErrColorProfile()
 	}
 
 	palette := DefaultBannerPalette()
@@ -85,24 +81,53 @@ func newServerPresenter(ctx context.Context, eventsJSON bool) *serverPresenter {
 	}
 
 	return &serverPresenter{
-		enabled:  enabled,
-		useColor: useColor,
-		out:      out,
-		termOut:  termenv.NewOutput(out, termenv.WithProfile(profile)),
-		palette:  palette,
+		enabled:    enabled,
+		showBanner: enabled,
+		useColor:   useColor,
+		out:        out,
+		termOut:    termenv.NewOutput(out, termenv.WithProfile(profile)),
+		palette:    palette,
 	}
+}
+
+// serverBannerAllowed reports whether the block-letter banner fits: it is
+// decoration for an interactive terminal, so it is skipped when stderr is
+// piped or captured, and in CI logs.
+func serverBannerAllowed(stderrTTY bool, getenv func(string) string) bool {
+	if !stderrTTY {
+		return false
+	}
+	ci := strings.ToLower(strings.TrimSpace(getenv("CI")))
+	return ci == "" || ci == "0" || ci == "false"
+}
+
+// LimitBannerToTerminal hides the banner when stderr is not a terminal or CI
+// is set. nimbu server opts in; nimbu init shares the presenter and keeps its
+// own behavior.
+func (p *serverPresenter) LimitBannerToTerminal(stderrTTY bool) {
+	if p == nil {
+		return
+	}
+	p.showBanner = p.showBanner && serverBannerAllowed(stderrTTY, os.Getenv)
+}
+
+// SetOutput redirects presenter lines, e.g. through the server console so
+// they never land in the middle of a child output line. Colors stay as decided
+// for stderr, so out must end up on stderr.
+func (p *serverPresenter) SetOutput(out io.Writer) {
+	if p == nil || out == nil {
+		return
+	}
+	p.out = out
+	p.termOut = termenv.NewOutput(out, termenv.WithProfile(p.termOut.Profile))
 }
 
 func (p *serverPresenter) Enabled() bool {
 	return p != nil && p.enabled
 }
 
-func (p *serverPresenter) UseColor() bool {
-	return p != nil && p.useColor
-}
-
 func (p *serverPresenter) PrintBanner() {
-	if !p.Enabled() {
+	if !p.Enabled() || !p.showBanner {
 		return
 	}
 
@@ -177,11 +202,54 @@ func (p *serverPresenter) PrintSummary(summary serverSummary) {
 	_, _ = fmt.Fprintln(p.out)
 }
 
-func (p *serverPresenter) PrintShutdownNotice() {
+// PrintStopping acknowledges the first stop request. In machine modes it
+// keeps the plain "received signal" line for signal-driven stops.
+func (p *serverPresenter) PrintStopping(signalName string) {
+	if p == nil {
+		return
+	}
+	if !p.Enabled() {
+		if signalName != "" {
+			_, _ = fmt.Fprintf(p.out, "received signal: %s; stopping (Ctrl-C again to force)\n", signalName)
+		}
+		return
+	}
+	_, _ = fmt.Fprintln(p.out, p.dim("Stopping… (Ctrl-C again to force)"))
+}
+
+// PrintForceStop acknowledges the second stop request.
+func (p *serverPresenter) PrintForceStop() {
+	if p == nil {
+		return
+	}
+	if !p.Enabled() {
+		_, _ = fmt.Fprintln(p.out, "forcing stop")
+		return
+	}
+	_, _ = fmt.Fprintln(p.out, p.dim("Forcing stop."))
+}
+
+// PrintReady marks the moment both the proxy and the child answer.
+func (p *serverPresenter) PrintReady(target string) {
+	if !p.Enabled() || strings.TrimSpace(target) == "" {
+		return
+	}
+	_, _ = fmt.Fprintf(p.out, "  %s %s\n", p.accent("✓ ready"), p.value(target))
+}
+
+// PrintShortcutHelp prints the full key list ('?' / 'h').
+func (p *serverPresenter) PrintShortcutHelp(links serverShortcutLinks) {
 	if !p.Enabled() {
 		return
 	}
-	_, _ = fmt.Fprintln(p.out, p.dim("Shutting down..."))
+	_, _ = fmt.Fprintln(p.out, p.shortcutHint("Shortcuts"))
+	for _, row := range links.HelpRows() {
+		key := fmt.Sprintf("%-6s", row[0])
+		if p.useColor {
+			key = p.termOut.String(key).Bold().String()
+		}
+		_, _ = fmt.Fprintf(p.out, "    %s %s\n", key, p.dim(row[1]))
+	}
 }
 
 func (p *serverPresenter) PrintGoodbye() {

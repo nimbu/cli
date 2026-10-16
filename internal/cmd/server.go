@@ -13,6 +13,7 @@ import (
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/devproxy"
 	"github.com/nimbu/cli/internal/devserver"
+	"github.com/nimbu/cli/internal/output"
 )
 
 // ServerCmd starts the local simulator proxy and child dev server.
@@ -41,7 +42,13 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 	for _, warning := range warnings {
 		_, _ = fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
 	}
+	writer := output.WriterFromContext(ctx)
 	presenter := newServerPresenter(ctx, c.EventsJSON)
+	presenter.LimitBannerToTerminal(writer.ErrIsTTY())
+	streams := newServerStreams(writer, presenter.Enabled())
+	// Deferred first so it runs last: flush child lines after the child exited.
+	defer streams.Close()
+	presenter.SetOutput(streams.err)
 
 	site, err := RequireSite(ctx, "")
 	if err != nil {
@@ -63,6 +70,7 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		APIURL:            client.BaseURL,
 		Debug:             flags.Debug,
 		DevToken:          runtimeCfg.DevToken,
+		Diagnostics:       streams.err,
 		EventsJSON:        c.EventsJSON,
 		ExcludeRules:      runtimeCfg.RouteExclude,
 		Host:              runtimeCfg.ProxyHost,
@@ -70,9 +78,10 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		MaxBodyBytes:      int64(runtimeCfg.MaxBodyMB) << 20,
 		Port:              runtimeCfg.ProxyPort,
 		QuietRequests:     runtimeCfg.QuietRequests,
+		RequestLog:        streams.out,
 		Site:              site,
 		TemplateRoot:      runtimeCfg.TemplateRoot,
-		UseColor:          presenter.UseColor(),
+		UseColor:          streams.requestLogColor,
 		UserAgent:         "nimbu-go-cli",
 		Watch:             runtimeCfg.Watch,
 		WatchScanInterval: runtimeCfg.WatchScanInterval,
@@ -87,7 +96,12 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err := proxy.Start(); err != nil {
 		return err
 	}
-	defer stopDevProxy(proxy)
+	forced := false
+	defer func() {
+		if !forced {
+			stopDevProxy(proxy)
+		}
+	}()
 
 	proxyURL, err := url.Parse(proxy.URL())
 	if err != nil {
@@ -95,6 +109,7 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	childEnv := buildServerChildEnv(runtimeCfg, proxyURL, proxy.URL(), site)
+	applyServerChildColorEnv(childEnv, streams.childForceColor, os.Getenv)
 
 	summary := serverSummary{
 		APIHost:      serverAPIHost(client.BaseURL),
@@ -111,17 +126,21 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 	interactiveShortcuts := presenter.Enabled() && term.IsTerminal(int(os.Stdin.Fd()))
 	shortcutLinks := serverShortcutLinksFromSummary(summary)
 	var shortcutListener *serverShortcutListener
-	if interactiveShortcuts && shortcutLinks.Hint() != "" {
+	if interactiveShortcuts {
 		shortcutListener, err = newServerShortcutListener()
 		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "warning: shortcut input unavailable: %s\n", err)
+			_, _ = fmt.Fprintf(streams.err, "warning: shortcut input unavailable: %s\n", err)
 		} else {
 			defer func() {
 				if closeErr := shortcutListener.Close(); closeErr != nil {
-					_, _ = fmt.Fprintf(os.Stderr, "warning: restore shortcut input: %s\n", closeErr)
+					_, _ = fmt.Fprintf(streams.err, "warning: restore shortcut input: %s\n", closeErr)
 				}
 			}()
+			// Panics on this goroutine unwind through the Close above; panics
+			// on goroutines nimbu starts are covered by RestoreOnPanic.
+			defer watchServerSuspend(shortcutListener)()
 			summary.Shortcuts = shortcutLinks
+			summary.Shortcuts.Active = true
 		}
 	}
 
@@ -135,9 +154,11 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		CWD:      runtimeCfg.ChildCWD,
 		Env:      childEnv,
 		ReadyURL: runtimeCfg.ReadyURL,
+		Stdout:   streams.childOut,
+		Stderr:   streams.childErr,
 	})
 
-	sigCh := make(chan os.Signal, 1)
+	sigCh := make(chan os.Signal, 2)
 	signal.Notify(sigCh, serverShutdownSignals()...)
 	defer signal.Stop(sigCh)
 
@@ -148,11 +169,14 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		_ = child.Stop(5 * time.Second)
 	}()
 
+	// The goroutine owns its channel value: the loop below sets readyCh to nil
+	// once consumed, which must not race with the send.
 	readyCh := make(chan error, 1)
-	go func() {
-		readyCh <- child.WaitReady(ctx, runtimeCfg.ReadyTimeout)
-		close(readyCh)
-	}()
+	go func(ready chan<- error) {
+		defer shortcutListener.RestoreOnPanic()
+		ready <- child.WaitReady(ctx, runtimeCfg.ReadyTimeout)
+		close(ready)
+	}(readyCh)
 
 	shortcutReady := false
 	var childExitCh <-chan error
@@ -162,36 +186,52 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		shortcutEvents = shortcutListener.Events()
 		shortcutErrors = shortcutListener.Errors()
 	}
+	proxyErrors := proxy.Errors()
 
-	shutdown := func(signalName string) error {
-		if presenter.Enabled() {
-			presenter.PrintShutdownNotice()
-		} else if signalName != "" {
-			_, _ = fmt.Fprintf(os.Stderr, "received signal: %s\n", signalName)
-		}
+	stop := &serverStop{graceful: func() {
 		_ = child.Stop(5 * time.Second)
 		stopDevProxy(proxy)
-		presenter.PrintGoodbye()
-		return nil
+	}}
+	// requestStop handles Ctrl-C, SIGTERM/SIGHUP and 'q'. The first request
+	// stops gracefully in the background; a second one forces the stop.
+	requestStop := func(signalName string) error {
+		if stop.Begin(shortcutListener) {
+			presenter.PrintStopping(signalName)
+			return nil
+		}
+		forced = true
+		presenter.PrintForceStop()
+		_ = child.Kill(2 * time.Second)
+		_ = proxy.Close()
+		if closeErr := shortcutListener.Close(); closeErr != nil {
+			_, _ = fmt.Fprintf(streams.err, "warning: restore shortcut input: %s\n", closeErr)
+		}
+		return errServerForceStopped
 	}
 
 	for {
 		select {
 		case sig := <-sigCh:
-			return shutdown(sig.String())
+			if err := requestStop(sig.String()); err != nil {
+				return err
+			}
+		case <-stop.Done():
+			presenter.PrintGoodbye()
+			return nil
 		case err, ok := <-readyCh:
-			if !ok {
-				readyCh = nil
+			readyCh = nil
+			if !ok || stop.Stopping() {
 				continue
 			}
-			readyCh = nil
 			if err != nil {
 				_ = child.Stop(5 * time.Second)
 				return err
 			}
 			shortcutReady = true
 			childExitCh = child.ExitCh()
-			if !presenter.Enabled() {
+			if presenter.Enabled() {
+				presenter.PrintReady(serverReadyTarget(summary))
+			} else {
 				_, _ = fmt.Fprintf(os.Stderr, "proxy ready: %s\n", proxy.URL())
 				if runtimeCfg.ReadyURL != "" {
 					_, _ = fmt.Fprintf(os.Stderr, "dev server ready: %s\n", runtimeCfg.ReadyURL)
@@ -203,26 +243,16 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 				continue
 			}
 			decision := decideServerShortcut(key, shortcutReady, shortcutLinks)
-			if decision.Action == serverShortcutNone {
-				continue
-			}
-			if decision.Action == serverShortcutLogMarker {
-				if err := writeServerShortcutLogMarker(os.Stdout); err != nil {
-					presenter.PrintShortcutError(fmt.Sprintf("write log marker: %v", err))
+			if decision.Action == serverShortcutQuit {
+				if err := requestStop(""); err != nil {
+					return err
 				}
 				continue
 			}
-			if decision.Pending {
-				presenter.PrintShortcutPending()
+			if stop.Stopping() {
 				continue
 			}
-			label, target, ok := shortcutLinks.target(decision.Action)
-			if !ok {
-				continue
-			}
-			if err := openServerBrowserURL(target, nil); err != nil {
-				presenter.PrintShortcutError(fmt.Sprintf("open %s: %v", label, err))
-			}
+			c.handleShortcut(decision, shortcutLinks, presenter, streams)
 		case err, ok := <-shortcutErrors:
 			if !ok {
 				shortcutErrors = nil
@@ -231,24 +261,63 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 			if err != nil {
 				presenter.PrintShortcutError(fmt.Sprintf("shortcut input disabled: %v", err))
 			}
-		case err, ok := <-proxy.Errors():
-			if !ok || err == nil {
+		case err, ok := <-proxyErrors:
+			if !ok {
+				proxyErrors = nil
+				continue
+			}
+			if err == nil || stop.Stopping() {
 				continue
 			}
 			_ = child.Stop(5 * time.Second)
 			return fmt.Errorf("proxy server crashed: %w", err)
 		case err, ok := <-childExitCh:
-			if !ok {
-				stopDevProxy(proxy)
-				return fmt.Errorf("child dev server exited")
+			childExitCh = nil
+			if stop.Stopping() {
+				continue
 			}
 			stopDevProxy(proxy)
-			if err != nil {
+			if ok && err != nil {
 				return fmt.Errorf("child dev server exited: %w", err)
 			}
 			return fmt.Errorf("child dev server exited")
 		}
 	}
+}
+
+func (c *ServerCmd) handleShortcut(decision serverShortcutDecision, links serverShortcutLinks, presenter *serverPresenter, streams *serverStreams) {
+	switch decision.Action {
+	case serverShortcutNone, serverShortcutQuit:
+		return
+	case serverShortcutLogMarker:
+		if err := writeServerShortcutLogMarker(streams.out); err != nil {
+			presenter.PrintShortcutError(fmt.Sprintf("write log marker: %v", err))
+		}
+		return
+	case serverShortcutHelp:
+		presenter.PrintShortcutHelp(links)
+		return
+	}
+	if decision.Pending {
+		presenter.PrintShortcutPending()
+		return
+	}
+	label, target, ok := links.target(decision.Action)
+	if !ok {
+		return
+	}
+	if err := openServerBrowserURL(target, nil); err != nil {
+		presenter.PrintShortcutError(fmt.Sprintf("open %s: %v", label, err))
+	}
+}
+
+// serverReadyTarget is the URL to browse once everything answers: the child
+// dev server when it has a readiness URL, otherwise the proxy.
+func serverReadyTarget(summary serverSummary) string {
+	if target := displayServerURL(summary.ReadyURL); target != "" {
+		return target
+	}
+	return displayServerURL(summary.ProxyURL)
 }
 
 func stopDevProxy(proxy *devproxy.Server) {

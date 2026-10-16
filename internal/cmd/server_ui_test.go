@@ -151,6 +151,7 @@ func TestServerPresenterPrintSummaryShowsShortcutHint(t *testing.T) {
 		SiteLabel: "demo",
 	}
 	summary.Shortcuts = serverShortcutLinksFromSummary(summary)
+	summary.Shortcuts.Active = true
 	presenter.PrintSummary(summary)
 
 	got := buf.String()
@@ -160,7 +161,7 @@ func TestServerPresenterPrintSummaryShowsShortcutHint(t *testing.T) {
 	if strings.Contains(got, "live site:") {
 		t.Fatalf("did not expect separate live site line, got: %s", got)
 	}
-	if !strings.Contains(got, "[o] open dev  [l] open live  [b] open admin") {
+	if !strings.Contains(got, "[o] open dev  [l] open live  [b] open admin  [enter] mark  [?] help  [q] quit") {
 		t.Fatalf("expected shortcut hint in output, got: %s", got)
 	}
 }
@@ -177,6 +178,7 @@ func TestServerPresenterPrintSummaryKeepsLiveSiteForCustomHost(t *testing.T) {
 		SiteHost: "preview.custom.example.com",
 	}
 	summary.Shortcuts = serverShortcutLinksFromSummary(summary)
+	summary.Shortcuts.Active = true
 	presenter.PrintSummary(summary)
 
 	got := buf.String()
@@ -202,13 +204,14 @@ func TestServerPresenterPrintSummaryHidesDevShortcutWithoutReadyURL(t *testing.T
 		SiteHost: "demo.nimbu.io",
 	}
 	summary.Shortcuts = serverShortcutLinksFromSummary(summary)
+	summary.Shortcuts.Active = true
 	presenter.PrintSummary(summary)
 
 	got := buf.String()
 	if strings.Contains(got, "[o] open dev") {
 		t.Fatalf("did not expect dev shortcut in output, got: %s", got)
 	}
-	if !strings.Contains(got, "[l] open live  [b] open admin") {
+	if !strings.Contains(got, "[l] open live  [b] open admin  [enter] mark") {
 		t.Fatalf("expected live/admin shortcuts in output, got: %s", got)
 	}
 }
@@ -233,7 +236,7 @@ func TestServerPresenterDisabledForMachineModes(t *testing.T) {
 			presenter := newServerPresenter(ctx, tc.events)
 			presenter.PrintBanner()
 			presenter.PrintSummary(serverSummary{SiteHost: "acme.nimbu.io", ProxyURL: "http://127.0.0.1:4568"})
-			presenter.PrintShutdownNotice()
+			presenter.PrintStopping("")
 			presenter.PrintGoodbye()
 
 			if buf.Len() != 0 {

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -158,5 +159,135 @@ func TestServerBrowserCommand(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDecideServerShortcutKeyTable(t *testing.T) {
+	links := serverShortcutLinks{
+		DevURL:   "http://localhost:3456",
+		LiveURL:  "https://demo.nimbu.io",
+		AdminURL: "https://demo.nimbu.io/admin",
+	}
+	tests := []struct {
+		key         byte
+		ready       bool
+		wantAction  serverShortcutAction
+		wantPending bool
+	}{
+		{key: '?', ready: false, wantAction: serverShortcutHelp},
+		{key: 'h', ready: false, wantAction: serverShortcutHelp},
+		{key: 'H', ready: true, wantAction: serverShortcutHelp},
+		{key: 'q', ready: false, wantAction: serverShortcutQuit},
+		{key: 'Q', ready: true, wantAction: serverShortcutQuit},
+		{key: '\r', ready: false, wantAction: serverShortcutLogMarker},
+		{key: 'o', ready: false, wantAction: serverShortcutOpenDev, wantPending: true},
+		{key: 'o', ready: true, wantAction: serverShortcutOpenDev},
+		{key: 'l', ready: true, wantAction: serverShortcutOpenLive},
+		{key: 'b', ready: true, wantAction: serverShortcutOpenAdmin},
+		{key: 'x', ready: true, wantAction: serverShortcutNone},
+		{key: ' ', ready: true, wantAction: serverShortcutNone},
+	}
+	for _, tc := range tests {
+		got := decideServerShortcut(tc.key, tc.ready, links)
+		if got.Action != tc.wantAction || got.Pending != tc.wantPending {
+			t.Errorf("key %q ready=%v: got %+v, want action %v pending %v", tc.key, tc.ready, got, tc.wantAction, tc.wantPending)
+		}
+	}
+}
+
+func TestServerShortcutHint(t *testing.T) {
+	if got := (serverShortcutLinks{DevURL: "http://localhost:3456"}).Hint(); got != "" {
+		t.Fatalf("inactive listener hint = %q, want empty", got)
+	}
+	if got, want := (serverShortcutLinks{Active: true}).Hint(), "[enter] mark  [?] help  [q] quit"; got != want {
+		t.Fatalf("hint without links = %q, want %q", got, want)
+	}
+	links := serverShortcutLinks{Active: true, DevURL: "http://localhost:3456", LiveURL: "https://demo.nimbu.io", AdminURL: "https://demo.nimbu.io/admin"}
+	want := "[o] open dev  [l] open live  [b] open admin  [enter] mark  [?] help  [q] quit"
+	if got := links.Hint(); got != want {
+		t.Fatalf("hint = %q, want %q", got, want)
+	}
+}
+
+func TestServerShortcutHelpRowsDocumentEveryKey(t *testing.T) {
+	rows := (serverShortcutLinks{LiveURL: "https://demo.nimbu.io", AdminURL: "https://demo.nimbu.io/admin"}).HelpRows()
+	keys := make([]string, 0, len(rows))
+	for _, row := range rows {
+		keys = append(keys, row[0])
+	}
+	if got, want := strings.Join(keys, ","), "l,b,enter,? h,q"; got != want {
+		t.Fatalf("help keys = %q, want %q", got, want)
+	}
+	if !strings.Contains(rows[0][1], "https://demo.nimbu.io") {
+		t.Fatalf("live row should name its URL: %q", rows[0][1])
+	}
+}
+
+func newFakeModeListener(applied, restored *int) *serverShortcutListener {
+	return &serverShortcutListener{mode: serverTermMode{
+		apply:   func() error { *applied++; return nil },
+		restore: func() error { *restored++; return nil },
+	}}
+}
+
+func TestServerShortcutListenerSuspendResume(t *testing.T) {
+	var applied, restored int
+	l := newFakeModeListener(&applied, &restored)
+
+	if err := l.Suspend(); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+	if err := l.Resume(); err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if applied != 1 || restored != 1 {
+		t.Fatalf("applied=%d restored=%d, want 1/1", applied, restored)
+	}
+
+	if err := l.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if restored != 2 {
+		t.Fatalf("close should restore, restored=%d", restored)
+	}
+	// After Close the terminal belongs to the shell again: never re-apply.
+	_ = l.Resume()
+	_ = l.Suspend()
+	if applied != 1 || restored != 2 {
+		t.Fatalf("mode touched after close: applied=%d restored=%d", applied, restored)
+	}
+}
+
+func TestServerShortcutListenerRestoresTerminalOnPanic(t *testing.T) {
+	var applied, restored int
+	l := newFakeModeListener(&applied, &restored)
+
+	recovered := func() (r any) {
+		defer func() { r = recover() }()
+		func() {
+			defer l.RestoreOnPanic()
+			panic("boom")
+		}()
+		return nil
+	}()
+
+	if recovered != "boom" {
+		t.Fatalf("panic should propagate after restore, got %v", recovered)
+	}
+	if restored != 1 {
+		t.Fatalf("terminal not restored on panic, restored=%d", restored)
+	}
+}
+
+func TestServerShortcutListenerRestoreOnPanicNilSafe(t *testing.T) {
+	var l *serverShortcutListener
+	func() {
+		defer l.RestoreOnPanic()
+	}()
+	if err := l.Suspend(); err != nil {
+		t.Fatalf("nil suspend: %v", err)
+	}
+	if err := l.Resume(); err != nil {
+		t.Fatalf("nil resume: %v", err)
 	}
 }

@@ -15,20 +15,22 @@ func serverShortcutConsoleMode(mode uint32) uint32 {
 	return next
 }
 
-func prepareServerShortcutInput(file *os.File) (func() error, error) {
+func prepareServerShortcutInput(file *os.File) (serverTermMode, error) {
 	handle := windows.Handle(file.Fd())
-
 	var oldMode uint32
 	if err := windows.GetConsoleMode(handle, &oldMode); err != nil {
-		return nil, err
+		return serverTermMode{}, err
 	}
-
 	nextMode := serverShortcutConsoleMode(oldMode)
 	if err := windows.SetConsoleMode(handle, nextMode); err != nil {
-		return nil, err
+		return serverTermMode{}, err
 	}
-
-	return func() error {
-		return windows.SetConsoleMode(handle, oldMode)
+	return serverTermMode{
+		apply: func() error {
+			return windows.SetConsoleMode(handle, nextMode)
+		},
+		restore: func() error {
+			return windows.SetConsoleMode(handle, oldMode)
+		},
 	}, nil
 }
