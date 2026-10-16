@@ -75,7 +75,12 @@ var bannerThemeSpecs = []bannerThemeSpec{
 	{"sakura", "Sakura", []string{"#fdf2f8", "#fce7f3", "#fbcfe8", "#f9a8d4", "#f472b6", "#ec4899"}},
 }
 
-var bannerThemes = buildBannerThemes(bannerThemeSpecs)
+// bannerThemes derives the palettes on first use rather than at package init:
+// the contrast fitting takes a couple of milliseconds, which every command
+// (including shell completion) would otherwise pay at startup.
+var bannerThemes = sync.OnceValue(func() []BannerTheme {
+	return buildBannerThemes(bannerThemeSpecs)
+})
 
 func buildBannerThemes(specs []bannerThemeSpec) []BannerTheme {
 	themes := make([]BannerTheme, len(specs))
@@ -92,13 +97,13 @@ func buildBannerThemes(specs []bannerThemeSpec) []BannerTheme {
 
 // BannerThemes returns the ordered list of available themes.
 func BannerThemes() []BannerTheme {
-	return bannerThemes
+	return bannerThemes()
 }
 
 // BannerThemeByName looks up a theme by name (case-insensitive).
 func BannerThemeByName(name string) (BannerTheme, bool) {
 	lower := strings.ToLower(strings.TrimSpace(name))
-	for _, t := range bannerThemes {
+	for _, t := range bannerThemes() {
 		if t.Name == lower {
 			return t, true
 		}
@@ -108,9 +113,9 @@ func BannerThemeByName(name string) (BannerTheme, bool) {
 
 // BannerThemeNames returns the names of all available themes.
 func BannerThemeNames() []string {
-	names := make([]string, len(bannerThemes))
-	for i, t := range bannerThemes {
-		names[i] = t.Name
+	names := make([]string, len(bannerThemeSpecs))
+	for i, spec := range bannerThemeSpecs {
+		names[i] = spec.name
 	}
 	return names
 }
@@ -119,7 +124,7 @@ func BannerThemeNames() []string {
 // terminal's own text color, so it is readable on dark and light backgrounds
 // alike without detecting which one is in use.
 func DefaultBannerPalette() []string {
-	return bannerThemes[0].Palette
+	return bannerThemes()[0].Palette
 }
 
 // ShouldShowBanner reports whether decorative banner art belongs on stderr:
@@ -146,7 +151,7 @@ func shouldShowBanner(stderrTTY bool, ci string) bool {
 func ResolveBannerPalette(w *output.Writer, name string) []string {
 	theme, ok := BannerThemeByName(name)
 	if !ok {
-		theme = bannerThemes[0]
+		theme = bannerThemes()[0]
 	}
 	return theme.PaletteFor(bannerBackgroundIsDark(w))
 }

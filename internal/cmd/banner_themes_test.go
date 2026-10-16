@@ -76,6 +76,21 @@ func TestBannerThemePaletteFor(t *testing.T) {
 	}
 }
 
+// BannerThemeNames reads the specs directly so listing names (config set
+// validation, error hints) never pays for building the palettes.
+func TestBannerThemeNamesMatchThemes(t *testing.T) {
+	themes := BannerThemes()
+	names := BannerThemeNames()
+	if len(names) != len(themes) {
+		t.Fatalf("%d names for %d themes", len(names), len(themes))
+	}
+	for i, theme := range themes {
+		if names[i] != theme.Name {
+			t.Fatalf("name %d = %q, want %q", i, names[i], theme.Name)
+		}
+	}
+}
+
 func TestBannerThemeByNameIsCaseInsensitive(t *testing.T) {
 	if theme, ok := BannerThemeByName("  Ocean "); !ok || theme.Name != "ocean" {
 		t.Fatalf("lookup = %+v, %v", theme, ok)
