@@ -44,10 +44,12 @@ For CI, set the `NIMBU_TOKEN` env var to an API token to skip the keychain.
 
 Commands that require a site resolve it in this order:
 
-1. `--site` flag
-2. `NIMBU_SITE` env var
-3. `default_site` in `~/.config/nimbu/config.json`
-4. `site` in `nimbu.yml`, found by walking up from `NIMBU_PROJECT_DIR` (if set), else the current working directory, stopping at the git top-level
+1. `--env <name>` (a named environment in `nimbu.yml`; sets site and API host together)
+2. `--site` flag, or `NIMBU_SITE` env var
+3. `site` in `nimbu.yml`, found by walking up from `NIMBU_PROJECT_DIR` (if set), else the current working directory, stopping at the git top-level
+4. `default_site` in `~/.config/nimbu/config.json`
+
+With no site, commands fail with `cli.usage.site_required` (exit 2).
 
 Each walk stops at the first directory holding `.git` (that directory is still checked) or at the filesystem root. If nothing is found the error names that boundary: `nimbu.yml not found (searched up to /path/to/repo)`. A scratchpad CWD sits outside the repo, so the walk-up finds nothing — always pass `--site` (or set `NIMBU_SITE`) in subagent briefs.
 
@@ -83,8 +85,9 @@ Progress UI, applied-count lines, warnings, and the structured error envelope al
 | `--filters key=val` | Filter criteria (repeatable) |
 | `--include <rels>` | Include related resources |
 | `--force` | Skip confirmations for destructive ops |
+| `--yes`, `-y` | Same as `--force`; also confirms protected environments |
 | `--readonly` | Disable all write operations |
-| `--no-input` | Never prompt; fail instead (CI mode) |
+| `--no-input` | Never prompt; fail instead (CI mode, also implied by `CI` or a non-terminal stdin) |
 | `--no-progress` | Disable live progress UI |
 | `--verbose` | Verbose logging |
 | `--debug` | HTTP request/response traces |
@@ -507,12 +510,18 @@ A 422 `invalid editable` / `invalid slug` on `pages update`/`create` carries a h
 | 6 | Validation error |
 | 7 | Rate limit exceeded (retryable) |
 | 8 | Network error (retryable) |
+| 130 | Interrupted (Ctrl-C / SIGTERM) |
 
 ### Canonical Error Codes
 
 `auth.not_logged_in`, `auth.unauthorized`, `auth.forbidden`, `auth.scope_missing`,
 `resource.not_found`, `resource.conflict`, `request.invalid`, `request.validation`,
-`rate_limit.exceeded`, `network.timeout`, `network.failure`, `server.error`.
+`rate_limit.exceeded`, `network.timeout`, `network.failure`, `server.error`,
+`cli.usage.invalid_args`, `cli.usage.site_required`, `cli.confirmation_required`
+(pass the flag the hint names, usually `--force`), `cli.readonly`, `cli.interrupted`.
+
+Usage errors (bad flags, `--json` with `--plain`) use the same envelope when
+`--json` or `NIMBU_JSON` is set.
 
 Check `retryable: true` before retrying failed requests.
 
