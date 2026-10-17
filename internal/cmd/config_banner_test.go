@@ -10,7 +10,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 
 	"github.com/nimbu/cli/internal/output"
 )
@@ -249,29 +248,15 @@ func TestBannerPickerListKeepsCursorVisible(t *testing.T) {
 
 func TestBannerPickerUsable(t *testing.T) {
 	w := &output.Writer{Err: &bytes.Buffer{}}
-	err := bannerPickerUsable(w, true, "")
+	err := bannerPickerUsable(w, true, false)
 	if err == nil || !strings.Contains(err.Error(), "nimbu config set banner_theme") || !strings.Contains(err.Error(), "rainbow") {
 		t.Fatalf("stderr not a terminal: err = %v", err)
 	}
-	if err := bannerPickerUsable(w, false, ""); err == nil {
+	if err := bannerPickerUsable(w, false, false); err == nil {
 		t.Fatal("stdin not a terminal must refuse")
 	}
-	if err := bannerPickerUsable(w, true, "true"); err == nil {
+	if err := bannerPickerUsable(w, true, true); err == nil {
 		t.Fatal("CI must refuse")
-	}
-}
-
-func TestColorprofileFromTermenv(t *testing.T) {
-	cases := map[termenv.Profile]colorprofile.Profile{
-		termenv.TrueColor: colorprofile.TrueColor,
-		termenv.ANSI256:   colorprofile.ANSI256,
-		termenv.ANSI:      colorprofile.ANSI,
-		termenv.Ascii:     colorprofile.ASCII,
-	}
-	for in, want := range cases {
-		if got := colorprofileFromTermenv(in); got != want {
-			t.Errorf("%v -> %v, want %v", in, got, want)
-		}
 	}
 }
 

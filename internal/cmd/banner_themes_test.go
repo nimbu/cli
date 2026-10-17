@@ -97,26 +97,51 @@ func TestBannerThemeByNameIsCaseInsensitive(t *testing.T) {
 	}
 }
 
+// ShouldShowBanner is the one banner rule for server and init: human output,
+// stderr a terminal, and not in CI (CI=0/false count as unset).
 func TestShouldShowBanner(t *testing.T) {
-	cases := []struct {
-		tty  bool
-		ci   string
-		want bool
-	}{
-		{true, "", true},
-		{false, "", false},
-		{true, "true", false},
-		{true, "1", false},
-	}
-	for _, c := range cases {
-		if got := shouldShowBanner(c.tty, c.ci); got != c.want {
-			t.Errorf("shouldShowBanner(%v, %q) = %v, want %v", c.tty, c.ci, got, c.want)
-		}
-	}
-	// A piped stderr never shows the banner.
+	// A piped stderr never shows the banner, whatever else holds.
+	t.Setenv("CI", "")
 	if ShouldShowBanner(&output.Writer{Err: &bytes.Buffer{}}) {
 		t.Fatal("banner shown on a non-terminal stderr")
 	}
+
+	forceBannerTerminal(t, true)
+	cases := []struct {
+		name string
+		ci   string
+		mode output.Mode
+		want bool
+	}{
+		{name: "interactive", want: true},
+		{name: "CI=true", ci: "true", want: false},
+		{name: "CI=1", ci: "1", want: false},
+		{name: "CI=false", ci: "false", want: true},
+		{name: "CI=0", ci: "0", want: true},
+		{name: "json", mode: output.Mode{JSON: true}, want: false},
+		{name: "plain", mode: output.Mode{Plain: true}, want: false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("CI", c.ci)
+			if got := ShouldShowBanner(&output.Writer{Err: &bytes.Buffer{}, Mode: c.mode}); got != c.want {
+				t.Fatalf("ShouldShowBanner(CI=%q, mode=%+v) = %v, want %v", c.ci, c.mode, got, c.want)
+			}
+		})
+	}
+	if ShouldShowBanner(nil) {
+		t.Fatal("nil writer must not show the banner")
+	}
+}
+
+// forceBannerTerminal makes ShouldShowBanner treat stderr as a terminal (or
+// not) for tests that write to buffers, outside CI.
+func forceBannerTerminal(t *testing.T, tty bool) {
+	t.Helper()
+	orig := bannerStderrIsTerminal
+	bannerStderrIsTerminal = func(*output.Writer) bool { return tty }
+	t.Cleanup(func() { bannerStderrIsTerminal = orig })
+	t.Setenv("CI", "")
 }
 
 // The background query must never run when color is off or stderr is not a

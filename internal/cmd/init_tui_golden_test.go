@@ -224,8 +224,11 @@ func TestInitTeaTruncatesByDisplayWidth(t *testing.T) {
 func TestInitTeaLightBackgroundSwitchesPalette(t *testing.T) {
 	dark := newInitTheme(true, true)
 	light := newInitTheme(true, false)
-	if fmt.Sprint(dark.Text) == fmt.Sprint(light.Text) {
-		t.Fatal("expected value text to differ between dark and light backgrounds")
+	if fmt.Sprint(dark.Muted) == fmt.Sprint(light.Muted) || fmt.Sprint(dark.Active) == fmt.Sprint(light.Active) {
+		t.Fatal("expected chrome colors to differ between dark and light backgrounds")
+	}
+	if dark.Text != nil || light.Text != nil {
+		t.Fatal("value text must keep the terminal's own foreground on both backgrounds")
 	}
 
 	model := initGoldenModel(true, "site", 80, 24)
@@ -235,8 +238,8 @@ func TestInitTeaLightBackgroundSwitchesPalette(t *testing.T) {
 	if before == after {
 		t.Fatal("expected a light background reply to restyle the frame")
 	}
-	if !strings.Contains(after, light.value("Let's set up a new project.")) {
-		t.Fatalf("expected light value color after background reply, got:\n%q", after)
+	if !strings.Contains(after, light.muted("┌")) {
+		t.Fatalf("expected light muted color after background reply, got:\n%q", after)
 	}
 	if ansi.Strip(before) != ansi.Strip(after) {
 		t.Fatal("expected the background reply to change colors only, not text")
@@ -245,8 +248,8 @@ func TestInitTeaLightBackgroundSwitchesPalette(t *testing.T) {
 
 func TestInitTeaDefaultBannerUsesThemeTextColor(t *testing.T) {
 	theme := newInitTheme(true, false)
-	if got := theme.bannerLineColor(DefaultBannerPalette(), 0); fmt.Sprint(got) != fmt.Sprint(theme.Text) {
-		t.Fatalf("expected default white banner to follow the Text token on light terminals, got %v", got)
+	if got := theme.bannerLineColor(DefaultBannerPalette(), 0); got != nil {
+		t.Fatalf("expected the default banner to keep the terminal's own text color, got %v", got)
 	}
 	rainbow, _ := BannerThemeByName("rainbow")
 	if got := theme.bannerLineColor(rainbow.Palette, 0); fmt.Sprint(got) == fmt.Sprint(theme.Text) {

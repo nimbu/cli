@@ -13,11 +13,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
-	"github.com/muesli/termenv"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/bootstrap"
-	"github.com/nimbu/cli/internal/config"
 	"github.com/nimbu/cli/internal/output"
 )
 
@@ -107,10 +105,13 @@ type initTeaModel struct {
 	work    *initWork
 	presets initPresets
 
-	palette  []string
-	useColor bool
-	isDark   bool
-	theme    initTheme
+	// banner is the configured banner theme; rows use its palette for the
+	// current background. showBanner applies ShouldShowBanner.
+	banner     BannerTheme
+	showBanner bool
+	useColor   bool
+	isDark     bool
+	theme      initTheme
 
 	width  int
 	height int
@@ -258,22 +259,7 @@ func initColorProfile(writer *output.Writer) colorprofile.Profile {
 	if writer == nil {
 		return colorprofile.ASCII
 	}
-	return teaColorProfile(writer.ErrColorProfile())
-}
-
-// teaColorProfile maps a termenv profile (the output package's color
-// decision) to the colorprofile the Charm v2 stack renders with.
-func teaColorProfile(profile termenv.Profile) colorprofile.Profile {
-	switch profile {
-	case termenv.TrueColor:
-		return colorprofile.TrueColor
-	case termenv.ANSI256:
-		return colorprofile.ANSI256
-	case termenv.ANSI:
-		return colorprofile.ANSI
-	default:
-		return colorprofile.ASCII
-	}
+	return output.CharmProfile(writer.ErrColorProfile())
 }
 
 func newInitTeaModel(ctx context.Context, cmd *InitCmd, flags *RootFlags) *initTeaModel {
@@ -284,11 +270,8 @@ func newInitTeaModel(ctx context.Context, cmd *InitCmd, flags *RootFlags) *initT
 	model.flags = flags
 	model.writer = writer
 	model.presets = cmd.presets(flags)
-	if cfg, ok := ctx.Value(configKey{}).(*config.Config); ok && cfg != nil && cfg.BannerTheme != "" {
-		if theme, found := BannerThemeByName(cfg.BannerTheme); found {
-			model.palette = theme.Palette
-		}
-	}
+	model.banner = bannerThemeOrDefault(configuredBannerTheme(ctx))
+	model.showBanner = ShouldShowBanner(writer)
 	fixedTarget, fixed, ferr := cmd.resolveFixedTarget()
 	switch {
 	case ferr != nil:
@@ -341,7 +324,8 @@ func newInitTeaBaseModel(ctx context.Context, useColor bool) *initTeaModel {
 		ctx:            ctx,
 		work:           newInitWork(ctx),
 		presets:        initPresets{OnConflict: initConflictAsk},
-		palette:        DefaultBannerPalette(),
+		banner:         bannerThemeOrDefault(""),
+		showBanner:     true,
 		useColor:       useColor,
 		isDark:         true, // most terminals; upgraded once the background reply arrives
 		width:          80,

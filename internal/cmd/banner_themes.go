@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"math"
 	"os"
 	"slices"
@@ -11,6 +12,7 @@ import (
 	"github.com/lucasb-eyer/go-colorful"
 	"golang.org/x/term"
 
+	"github.com/nimbu/cli/internal/config"
 	"github.com/nimbu/cli/internal/output"
 )
 
@@ -127,16 +129,40 @@ func DefaultBannerPalette() []string {
 	return bannerThemes()[0].Palette
 }
 
-// ShouldShowBanner reports whether decorative banner art belongs on stderr:
-// only when stderr is a terminal and the process is not running in CI (CI set
-// to any non-empty value). Banner call sites outside this file (server_ui.go,
-// init_tui.go) should gate on it.
+// ShouldShowBanner is the one rule for decorative banner art (nimbu server,
+// nimbu init, both the line path and the wizard): output is for humans (no
+// --json/--plain), stderr is a terminal, and the process is not in CI (CI set
+// to anything but 0/false). The banner always draws on stderr.
 func ShouldShowBanner(w *output.Writer) bool {
-	return shouldShowBanner(w.ErrIsTTY(), os.Getenv("CI"))
+	if w == nil || w.Mode.JSON || w.Mode.Plain {
+		return false
+	}
+	return shouldShowBanner(bannerStderrIsTerminal(w), ciEnvironment())
 }
 
-func shouldShowBanner(stderrTTY bool, ci string) bool {
-	return stderrTTY && ci == ""
+// bannerStderrIsTerminal reports whether stderr is a terminal; swapped in
+// tests, which write to buffers.
+var bannerStderrIsTerminal = func(w *output.Writer) bool { return w.ErrIsTTY() }
+
+func shouldShowBanner(stderrTTY, ci bool) bool {
+	return stderrTTY && !ci
+}
+
+// configuredBannerTheme returns the banner theme named in the user config,
+// or "" for the default.
+func configuredBannerTheme(ctx context.Context) string {
+	if cfg, ok := ctx.Value(configKey{}).(*config.Config); ok && cfg != nil {
+		return cfg.BannerTheme
+	}
+	return ""
+}
+
+// bannerThemeOrDefault looks a theme up by name, falling back to the default.
+func bannerThemeOrDefault(name string) BannerTheme {
+	if theme, ok := BannerThemeByName(name); ok {
+		return theme
+	}
+	return bannerThemes()[0]
 }
 
 // ResolveBannerPalette returns the palette for the named theme (the default
@@ -149,12 +175,12 @@ func shouldShowBanner(stderrTTY bool, ci string) bool {
 // would compete with it for input): resolve before starting the program, or
 // inside one use tea.RequestBackgroundColor and BannerTheme.PaletteFor.
 func ResolveBannerPalette(w *output.Writer, name string) []string {
-	theme, ok := BannerThemeByName(name)
-	if !ok {
-		theme = bannerThemes()[0]
-	}
-	return theme.PaletteFor(bannerBackgroundIsDark(w))
+	return bannerThemeOrDefault(name).PaletteFor(lookupBannerBackground(w))
 }
+
+// lookupBannerBackground is the background lookup line paths use; swapped in
+// tests, which have no terminal to ask.
+var lookupBannerBackground = bannerBackgroundIsDark
 
 var (
 	bannerBackgroundOnce sync.Once
@@ -163,8 +189,12 @@ var (
 	queryDarkBackground = func(in, out *os.File) bool { return lipgloss.HasDarkBackground(in, out) }
 )
 
+// bannerBackgroundIsDark reports whether stderr's terminal has a dark
+// background, querying it at most once per process and only where the answer
+// matters and can arrive (see ResolveBannerPalette). Line output that draws
+// next to the banner uses it to pick the matching chrome palette.
 func bannerBackgroundIsDark(w *output.Writer) bool {
-	if !w.ErrUseColor() || !w.ErrIsTTY() || !term.IsTerminal(int(os.Stdin.Fd())) {
+	if w == nil || !w.ErrUseColor() || !w.ErrIsTTY() || !term.IsTerminal(int(os.Stdin.Fd())) {
 		return true
 	}
 	errFile, ok := w.Err.(*os.File)

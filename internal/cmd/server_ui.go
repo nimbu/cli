@@ -11,7 +11,6 @@ import (
 
 	"github.com/muesli/termenv"
 
-	"github.com/nimbu/cli/internal/config"
 	"github.com/nimbu/cli/internal/output"
 )
 
@@ -36,10 +35,16 @@ var serverGoodbyeMessages = []string{
 type serverPresenter struct {
 	enabled    bool
 	showBanner bool
-	useColor   bool
 	out        io.Writer
-	termOut    *termenv.Output
-	palette    []string
+	// theme styles every presenter line for stderr's color profile, with the
+	// palette variant for stderr's background once PrintBanner resolved it.
+	theme   output.Theme
+	profile termenv.Profile
+	palette []string
+
+	// writer and bannerTheme feed the background lookup PrintBanner runs.
+	writer      *output.Writer
+	bannerTheme string
 }
 
 type serverSummary struct {
@@ -58,6 +63,12 @@ type serverSummarySegment struct {
 	text string
 }
 
+// newServerPresenter builds the human chrome for nimbu server and the line
+// path of nimbu init. All of it goes to stderr, so stderr decides color and
+// ShouldShowBanner decides the banner. Building it never touches the terminal:
+// the background is queried in PrintBanner, only when the banner shows on a
+// color terminal (see ResolveBannerPalette), so a command that fails before its
+// banner (no site, not logged in) never waits on that query.
 func newServerPresenter(ctx context.Context, eventsJSON bool) *serverPresenter {
 	writer := output.WriterFromContext(ctx)
 	out := writer.Err
@@ -66,49 +77,30 @@ func newServerPresenter(ctx context.Context, eventsJSON bool) *serverPresenter {
 	}
 
 	enabled := output.IsHuman(ctx) && !eventsJSON
-	// All presenter chrome goes to stderr, so the stderr decision applies.
-	useColor := enabled && writer.ErrUseColor()
 	profile := termenv.Ascii
-	if useColor {
+	if enabled {
 		profile = writer.ErrColorProfile()
 	}
 
-	palette := DefaultBannerPalette()
-	if cfg, ok := ctx.Value(configKey{}).(*config.Config); ok && cfg != nil && cfg.BannerTheme != "" {
-		if theme, found := BannerThemeByName(cfg.BannerTheme); found {
-			palette = theme.Palette
-		}
-	}
-
+	// Until the banner resolves the background, chrome uses the dark palette,
+	// the default for an unknown background.
 	return &serverPresenter{
-		enabled:    enabled,
-		showBanner: enabled,
-		useColor:   useColor,
-		out:        out,
-		termOut:    termenv.NewOutput(out, termenv.WithProfile(profile)),
-		palette:    palette,
+		enabled:     enabled,
+		showBanner:  enabled && ShouldShowBanner(writer),
+		out:         out,
+		theme:       output.NewThemeFor(profile, true),
+		profile:     profile,
+		writer:      writer,
+		bannerTheme: configuredBannerTheme(ctx),
 	}
 }
 
-// serverBannerAllowed reports whether the block-letter banner fits: it is
-// decoration for an interactive terminal, so it is skipped when stderr is
-// piped or captured, and in CI logs.
-func serverBannerAllowed(stderrTTY bool, getenv func(string) string) bool {
-	if !stderrTTY {
-		return false
-	}
-	ci := strings.ToLower(strings.TrimSpace(getenv("CI")))
-	return ci == "" || ci == "0" || ci == "false"
-}
-
-// LimitBannerToTerminal hides the banner when stderr is not a terminal or CI
-// is set. nimbu server opts in; nimbu init shares the presenter and keeps its
-// own behavior.
-func (p *serverPresenter) LimitBannerToTerminal(stderrTTY bool) {
-	if p == nil {
-		return
-	}
-	p.showBanner = p.showBanner && serverBannerAllowed(stderrTTY, os.Getenv)
+// resolveBackground picks the banner palette and the chrome palette for
+// stderr's background. Only PrintBanner calls it, before any program reads
+// stdin; the lookup itself is cached for the process.
+func (p *serverPresenter) resolveBackground() {
+	p.palette = ResolveBannerPalette(p.writer, p.bannerTheme)
+	p.theme = output.NewThemeFor(p.profile, lookupBannerBackground(p.writer))
 }
 
 // SetOutput redirects presenter lines, e.g. through the server console so
@@ -119,7 +111,6 @@ func (p *serverPresenter) SetOutput(out io.Writer) {
 		return
 	}
 	p.out = out
-	p.termOut = termenv.NewOutput(out, termenv.WithProfile(p.termOut.Profile))
 }
 
 func (p *serverPresenter) Enabled() bool {
@@ -130,6 +121,7 @@ func (p *serverPresenter) PrintBanner() {
 	if !p.Enabled() || !p.showBanner {
 		return
 	}
+	p.resolveBackground()
 
 	lines := strings.Split(strings.Trim(serverBanner, "\n"), "\n")
 	label := fmt.Sprintf(" nimbu %s ", serverCLIVersion())
@@ -151,17 +143,13 @@ func (p *serverPresenter) PrintBanner() {
 	emptyRow := "|" + strings.Repeat(" ", innerWidth) + "|"
 
 	_, _ = fmt.Fprintln(p.out)
-	_, _ = fmt.Fprintln(p.out, p.borderLine(framedBannerEdge(innerWidth-2, label)))
-	_, _ = fmt.Fprintln(p.out, p.borderLine(emptyRow))
+	_, _ = fmt.Fprintln(p.out, p.border(framedBannerEdge(innerWidth-2, label)))
+	_, _ = fmt.Fprintln(p.out, p.border(emptyRow))
 	for i, line := range lines {
 		padded := line + strings.Repeat(" ", contentWidth-utf8.RuneCountInString(line))
-		if p.useColor {
-			_, _ = fmt.Fprintf(p.out, "%s%s%s\n", p.border("|"+padStr), p.bannerLine(padded, i), p.border(padStr+"|"))
-			continue
-		}
-		_, _ = fmt.Fprintf(p.out, "|%s%s%s|\n", padStr, padded, padStr)
+		_, _ = fmt.Fprintf(p.out, "%s%s%s\n", p.border("|"+padStr), p.bannerLine(padded, i), p.border(padStr+"|"))
 	}
-	_, _ = fmt.Fprintln(p.out, p.borderLine("+"+strings.Repeat("-", innerWidth)+"+"))
+	_, _ = fmt.Fprintln(p.out, p.border("+"+strings.Repeat("-", innerWidth)+"+"))
 }
 
 func (p *serverPresenter) PrintSummary(summary serverSummary) {
@@ -239,7 +227,7 @@ func (p *serverPresenter) PrintReady(target string) {
 	if !p.Enabled() || strings.TrimSpace(target) == "" {
 		return
 	}
-	_, _ = fmt.Fprintf(p.out, "  %s %s\n", p.accent("✓ ready"), p.value(target))
+	_, _ = fmt.Fprintf(p.out, "  %s %s\n", p.accent(output.GlyphSet(output.ASCIIOnly()).OK+" ready"), p.value(target))
 }
 
 // PrintShortcutHelp prints the full key list ('?' / 'h').
@@ -249,10 +237,7 @@ func (p *serverPresenter) PrintShortcutHelp(links serverShortcutLinks) {
 	}
 	_, _ = fmt.Fprintln(p.out, p.shortcutHint("Shortcuts"))
 	for _, row := range links.HelpRows() {
-		key := fmt.Sprintf("%-6s", row[0])
-		if p.useColor {
-			key = p.termOut.String(key).Bold().String()
-		}
+		key := p.theme.Strong(fmt.Sprintf("%-6s", row[0]))
 		_, _ = fmt.Fprintf(p.out, "    %s %s\n", key, p.dim(row[1]))
 	}
 }
@@ -282,40 +267,25 @@ func (p *serverPresenter) PrintShortcutError(message string) {
 	_, _ = fmt.Fprintln(p.out, message)
 }
 
+// bannerLine colors banner row idx; an empty palette entry keeps the
+// terminal's own text color.
 func (p *serverPresenter) bannerLine(line string, idx int) string {
-	if !p.useColor || line == "" || len(p.palette) == 0 {
+	if line == "" || len(p.palette) == 0 {
 		return line
 	}
-	color := p.palette[idx%len(p.palette)]
-	return p.termOut.String(line).Foreground(p.termOut.Color(color)).Bold().String()
+	return p.theme.Paint(line, p.palette[idx%len(p.palette)], true)
 }
 
-func (p *serverPresenter) accent(value string) string {
-	if !p.useColor {
-		return value
-	}
-	return p.termOut.String(value).Foreground(p.termOut.Color("#22c55e")).Bold().String()
-}
+func (p *serverPresenter) accent(value string) string { return p.theme.Success(value) }
 
-func (p *serverPresenter) dim(value string) string {
-	if !p.useColor {
-		return value
-	}
-	return p.termOut.String(value).Foreground(p.termOut.Color("#94a3b8")).String()
-}
+func (p *serverPresenter) dim(value string) string { return p.theme.Muted(value) }
 
-func (p *serverPresenter) value(value string) string {
-	if !p.useColor {
-		return value
-	}
-	return p.termOut.String(value).Foreground(p.termOut.Color("#e2e8f0")).String()
-}
+// value keeps the terminal's own foreground: a fixed near-white disappears on
+// light backgrounds.
+func (p *serverPresenter) value(value string) string { return value }
 
 func (p *serverPresenter) summaryRow(label string, value string) string {
-	padded := fmt.Sprintf("%-9s", label)
-	if p.useColor {
-		padded = p.termOut.String(padded).Foreground(p.termOut.Color("#94a3b8")).Bold().String()
-	}
+	padded := p.theme.Paint(fmt.Sprintf("%-9s", label), p.theme.Palette().Muted, true)
 	return fmt.Sprintf("  %s %s", padded, p.value(value))
 }
 
@@ -325,39 +295,20 @@ func (p *serverPresenter) summaryInline(segments []serverSummarySegment, index i
 		b.WriteString(" ")
 	}
 	for _, segment := range segments {
-		if p.useColor {
-			if segment.dim {
-				b.WriteString(p.dim(segment.text))
-				continue
-			}
-			b.WriteString(p.value(segment.text))
+		if segment.dim {
+			b.WriteString(p.dim(segment.text))
 			continue
 		}
-		b.WriteString(segment.text)
+		b.WriteString(p.value(segment.text))
 	}
 	return b.String()
 }
 
 func (p *serverPresenter) shortcutHint(value string) string {
-	if p.useColor {
-		value = p.termOut.String(value).Foreground(p.termOut.Color("#94a3b8")).String()
-	}
-	return "  " + value
+	return "  " + p.dim(value)
 }
 
-func (p *serverPresenter) border(value string) string {
-	if !p.useColor {
-		return value
-	}
-	return p.termOut.String(value).Foreground(p.termOut.Color("#64748b")).String()
-}
-
-func (p *serverPresenter) borderLine(value string) string {
-	if !p.useColor {
-		return value
-	}
-	return p.termOut.String(value).Foreground(p.termOut.Color("#64748b")).String()
-}
+func (p *serverPresenter) border(value string) string { return p.theme.Border(value) }
 
 func randomServerGoodbye() string {
 	return serverGoodbyeMessages[rand.IntN(len(serverGoodbyeMessages))]

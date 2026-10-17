@@ -13,56 +13,31 @@ import (
 	"github.com/nimbu/cli/internal/output"
 )
 
-func TestServerBannerAllowed(t *testing.T) {
-	tests := []struct {
-		name string
-		tty  bool
-		ci   string
-		want bool
-	}{
-		{name: "interactive", tty: true, want: true},
-		{name: "piped stderr", tty: false, want: false},
-		{name: "ci true", tty: true, ci: "true", want: false},
-		{name: "ci 1", tty: true, ci: "1", want: false},
-		{name: "ci false", tty: true, ci: "false", want: true},
-		{name: "ci 0", tty: true, ci: "0", want: true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			getenv := func(key string) string {
-				if key == "CI" {
-					return tc.ci
-				}
-				return ""
-			}
-			if got := serverBannerAllowed(tc.tty, getenv); got != tc.want {
-				t.Fatalf("serverBannerAllowed(%v, CI=%q) = %v, want %v", tc.tty, tc.ci, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestServerPresenterSkipsBannerWhenStderrIsNotTerminal(t *testing.T) {
 	var buf bytes.Buffer
 	ctx := output.WithMode(context.Background(), output.Mode{})
 	ctx = output.WithWriter(ctx, &output.Writer{Out: &buf, Err: &buf, Color: "always"})
 
-	presenter := newServerPresenter(ctx, false)
-	presenter.LimitBannerToTerminal(false)
-	presenter.PrintBanner()
-
+	forceBannerTerminal(t, false)
+	newServerPresenter(ctx, false).PrintBanner()
 	if buf.Len() != 0 {
 		t.Fatalf("expected no banner on a non-terminal stderr, got %q", buf.String())
 	}
 
 	// A terminal outside CI keeps the banner.
-	t.Setenv("CI", "")
+	forceBannerTerminal(t, true)
 	buf.Reset()
-	presenter = newServerPresenter(ctx, false)
-	presenter.LimitBannerToTerminal(true)
-	presenter.PrintBanner()
+	newServerPresenter(ctx, false).PrintBanner()
 	if !strings.Contains(buf.String(), "██╗") {
 		t.Fatalf("expected banner on a terminal, got %q", buf.String())
+	}
+
+	// CI hides it, like every other banner.
+	t.Setenv("CI", "true")
+	buf.Reset()
+	newServerPresenter(ctx, false).PrintBanner()
+	if buf.Len() != 0 {
+		t.Fatalf("expected no banner in CI, got %q", buf.String())
 	}
 }
 

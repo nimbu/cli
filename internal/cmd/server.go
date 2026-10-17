@@ -43,7 +43,6 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	writer := output.WriterFromContext(ctx)
 	presenter := newServerPresenter(ctx, c.EventsJSON)
-	presenter.LimitBannerToTerminal(writer.ErrIsTTY())
 	streams := newServerStreams(writer, presenter.Enabled())
 	// Deferred first so it runs last: flush child lines after the child exited.
 	defer streams.Close()

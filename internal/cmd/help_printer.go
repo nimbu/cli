@@ -20,15 +20,6 @@ func helpOptions() kong.HelpOptions {
 	}
 }
 
-// Color palette (matches gogcli/frontappcli). Descriptions keep the
-// terminal's default foreground so help stays readable on light themes.
-const (
-	colorUsage   = "#60a5fa" // blue - Usage heading
-	colorSection = "#a78bfa" // purple - section titles
-	colorCommand = "#38bdf8" // cyan - command names
-	colorDim     = "#9ca3af" // gray - flags, placeholders, example comments
-)
-
 // Help width bounds: prose wider than maxHelpWidth is hard to read.
 const (
 	defaultHelpWidth = 80
@@ -67,9 +58,25 @@ func helpAllRequested(args []string) bool {
 
 // helpColorMode returns the --color mode for help output. Help is printed
 // before flags are applied, so --color is read from the raw args, then
-// NIMBU_COLOR. --json/--plain ask for machine output, so they turn color off
-// unless --color says otherwise.
+// NIMBU_COLOR. Machine output (--json/--plain or NIMBU_JSON/NIMBU_PLAIN) turns
+// "auto" into "never": only an explicit always/never overrides it. --no-input
+// is not a color signal (see newRootWriter); color stays per stream.
 func helpColorMode(args []string) string {
+	mode := helpColorArg(args)
+	if mode == "" {
+		mode = strings.ToLower(strings.TrimSpace(os.Getenv("NIMBU_COLOR")))
+	}
+	if mode == "" {
+		mode = "auto"
+	}
+	if mode == "auto" && helpMachineOutput(args) {
+		return "never"
+	}
+	return mode
+}
+
+// helpColorArg returns the --color value from the raw args, or "".
+func helpColorArg(args []string) string {
 	for i, arg := range args {
 		if arg == "--" {
 			break
@@ -81,18 +88,40 @@ func helpColorMode(args []string) string {
 			return strings.ToLower(strings.TrimSpace(value))
 		}
 	}
-	if v := strings.TrimSpace(os.Getenv("NIMBU_COLOR")); v != "" {
-		return strings.ToLower(v)
+	return ""
+}
+
+// helpMachineOutput reports whether --json/--plain (or their env vars) ask
+// for machine output. As in the parser, a flag in the args beats its env var
+// (--json=false turns NIMBU_JSON=1 off) and the last occurrence wins.
+func helpMachineOutput(args []string) bool {
+	json, jsonSet := helpBoolFlag(args, "--json")
+	if !jsonSet {
+		json = envTruthy(os.Getenv("NIMBU_JSON"))
 	}
+	plain, plainSet := helpBoolFlag(args, "--plain")
+	if !plainSet {
+		plain = envTruthy(os.Getenv("NIMBU_PLAIN"))
+	}
+	return json || plain
+}
+
+// helpBoolFlag returns the value of a boolean flag in the raw args (bare or
+// --flag=value, last one wins) and whether it was given at all.
+func helpBoolFlag(args []string, flag string) (value, set bool) {
 	for _, arg := range args {
 		if arg == "--" {
 			break
 		}
-		if arg == "--json" || arg == "--plain" {
-			return "never"
+		if arg == flag {
+			value, set = true, true
+			continue
+		}
+		if v, ok := strings.CutPrefix(arg, flag+"="); ok {
+			value, set = envTruthy(v), true
 		}
 	}
-	return "auto"
+	return value, set
 }
 
 // helpColorProfile decides color for help through the shared output color
@@ -137,27 +166,23 @@ func plainHelpStyle() helpStyle {
 	return helpStyle{usage: same, section: same, command: same, flag: same, comment: same}
 }
 
+// newHelpStyle colors help with the shared semantic theme: headings in the
+// accent color, command names like paths, flags and comments muted.
+// Descriptions keep the terminal's own foreground.
 func newHelpStyle(profile termenv.Profile) helpStyle {
-	if profile == termenv.Ascii {
+	theme := output.NewTheme(profile)
+	if !theme.Enabled() {
 		return plainHelpStyle()
 	}
+	palette := theme.Palette()
 	color := func(hex string, bold bool) func(string) string {
-		return func(s string) string {
-			if s == "" {
-				return s
-			}
-			styled := profile.String(s).Foreground(profile.Color(hex))
-			if bold {
-				styled = styled.Bold()
-			}
-			return styled.String()
-		}
+		return func(s string) string { return theme.Paint(s, hex, bold) }
 	}
 	return helpStyle{
-		usage:   color(colorUsage, true),
-		section: color(colorSection, true),
-		command: color(colorCommand, true),
-		flag:    color(colorDim, false),
-		comment: color(colorDim, false),
+		usage:   color(palette.Accent, true),
+		section: color(palette.Accent, true),
+		command: color(palette.Path, true),
+		flag:    color(palette.Muted, false),
+		comment: color(palette.Muted, false),
 	}
 }

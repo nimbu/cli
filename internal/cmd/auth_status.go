@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/term"
 
@@ -97,7 +95,7 @@ func (c *AuthStatusCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if verified {
-		symbol := st.symbol("✓", "#22c55e")
+		symbol := st.ok()
 		if name != "" {
 			if _, err := output.Fprintf(ctx, "%s Logged in to %s as %s (%s)\n", symbol, st.bold(host), st.bold(name), email); err != nil {
 				return err
@@ -108,7 +106,7 @@ func (c *AuthStatusCmd) Run(ctx context.Context, flags *RootFlags) error {
 			}
 		}
 	} else {
-		symbol := st.symbol("!", "#f59e0b")
+		symbol := st.warn()
 		if email != "" {
 			if _, err := output.Fprintf(ctx, "%s Logged in to %s as %s (unverified)\n", symbol, st.bold(host), st.bold(email)); err != nil {
 				return err
@@ -143,7 +141,7 @@ func (c *AuthStatusCmd) renderNotLoggedIn(ctx context.Context, mode output.Mode,
 		return output.Plain(ctx, "logged_out", "", host)
 	}
 
-	symbol := st.symbol("✗", "#ef4444")
+	symbol := st.fail()
 	if expired {
 		_, err := output.Fprintf(ctx, "%s Not logged in to %s: the login session expired or was revoked. Run `nimbu auth login`.\n", symbol, st.bold(host))
 		return err
@@ -152,35 +150,23 @@ func (c *AuthStatusCmd) renderNotLoggedIn(ctx context.Context, mode output.Mode,
 	return err
 }
 
-// statusStyler styles auth status lines for stdout. Lipgloss v2 styles are
-// pure and always render truecolor, so colors are converted to the profile
-// decided for stdout before rendering.
+// statusStyler styles auth status lines for stdout through the shared
+// semantic theme, downsampled to stdout's color profile. Each status keeps a
+// glyph (with ASCII fallback) and a sentence, so it reads the same uncolored.
 type statusStyler struct {
-	on      bool
-	profile colorprofile.Profile
+	theme  output.Theme
+	glyphs output.Glyphs
 }
 
 func newStatusStyler(w *output.Writer) statusStyler {
-	return statusStyler{on: w.UseColor(), profile: colorprofileFromTermenv(w.OutColorProfile())}
+	return statusStyler{theme: w.OutTheme(), glyphs: w.Glyphs()}
 }
 
-func (s statusStyler) symbol(symbol, hex string) string {
-	if !s.on {
-		return symbol
-	}
-	style := lipgloss.NewStyle().Bold(true)
-	if c := s.profile.Convert(lipgloss.Color(hex)); c != nil {
-		style = style.Foreground(c)
-	}
-	return style.Render(symbol)
-}
+func (s statusStyler) ok() string   { return s.theme.Success(s.glyphs.OK) }
+func (s statusStyler) warn() string { return s.theme.Warning(s.glyphs.Warn) }
+func (s statusStyler) fail() string { return s.theme.Error(s.glyphs.Fail) }
 
-func (s statusStyler) bold(text string) string {
-	if !s.on {
-		return text
-	}
-	return lipgloss.NewStyle().Bold(true).Render(text)
-}
+func (s statusStyler) bold(text string) string { return s.theme.Strong(text) }
 
 // sessionInfo describes how the CLI is authenticated.
 type sessionInfo struct {

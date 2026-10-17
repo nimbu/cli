@@ -44,9 +44,20 @@ func colorEnabled(mode string, isTTY bool, getenv func(string) string) bool {
 	return isTTY
 }
 
-// UseColor reports whether stdout should be colored.
+// UseColor reports whether stdout should be colored. Machine output (--json,
+// --plain) is data for parsers, so it stays uncolored on a terminal too; only
+// an explicit --color=always (or NIMBU_COLOR=always) colors it, the same rule
+// help follows.
 func (w *Writer) UseColor() bool {
-	return ColorEnabled(w.Color, w.IsTTY())
+	return ColorEnabled(stdoutColorMode(w.Mode, w.Color), w.IsTTY())
+}
+
+// stdoutColorMode turns "auto" into "never" for machine output.
+func stdoutColorMode(mode Mode, color string) string {
+	if (mode.JSON || mode.Plain) && !strings.EqualFold(strings.TrimSpace(color), "always") {
+		return "never"
+	}
+	return color
 }
 
 // ErrUseColor reports whether stderr should be colored. Use this for chrome

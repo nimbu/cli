@@ -129,8 +129,14 @@ func TestStdoutColorFollowsTerminalProfile(t *testing.T) {
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("COLORTERM", "")
 
-	if got := stdoutColor(&output.Writer{Color: "never"}, "#ef4444"); got != nil {
-		t.Fatalf("expected no color with --color never, got %v", got)
+	if got := colorAppLogLevel("ERROR", "ERROR", &output.Writer{Color: "never"}); got != "ERROR" {
+		t.Fatalf("expected no color with --color never, got %q", got)
+	}
+	watch := &watchPrinter{theme: (&output.Writer{Color: "always"}).OutTheme()}
+	for _, event := range []string{"added", "changed", "removed"} {
+		if got := watch.colorEvent(event, event); strings.Contains(got, "38;2;") || !strings.Contains(got, "38;5;") {
+			t.Fatalf("watch %s on a 256-color terminal = %q, want an indexed color", event, got)
+		}
 	}
 	got := colorAppLogLevel("ERROR", "ERROR", &output.Writer{Color: "always"})
 	if strings.Contains(got, "38;2;") {
