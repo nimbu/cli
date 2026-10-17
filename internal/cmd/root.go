@@ -61,6 +61,7 @@ type RootFlags struct {
 	// Output (suppressed in default help)
 	Color      string `help:"Color output: auto|always|never" default:"${color}" enum:"auto,always,never" env:"NIMBU_COLOR" group:"Output"`
 	NoProgress bool   `help:"Disable live progress UI" env:"NIMBU_NO_PROGRESS" group:"Output"`
+	Wide       bool   `help:"Never truncate table columns to fit" env:"NIMBU_WIDE" group:"Output"`
 
 	// Agent/CI (suppressed in default help)
 	Force          bool   `help:"Skip confirmations for destructive operations" group:"Agent/CI"`
@@ -274,6 +275,7 @@ func newRootWriter(flags RootFlags, mode output.Mode) *output.Writer {
 	writer.Mode = mode
 	writer.Color = flags.Color
 	writer.NoSpin = flags.NoProgress
+	writer.Wide = flags.Wide
 	return writer
 }
 

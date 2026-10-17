@@ -6,6 +6,7 @@ import (
 	"io"
 	"reflect"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -21,9 +22,9 @@ const minTruncatedWidth = 6
 //
 // Widths are measured in terminal cells (East Asian wide characters and emoji
 // count as two, ANSI escapes as zero), so mixed-script rows stay aligned. With
-// a max width set (stdout is a terminal), rows wider than the terminal are
-// fitted by truncating the widest non-ID columns with an ellipsis; piped
-// output is never truncated.
+// a max width set (stdout is a terminal and --wide is off), rows wider than
+// the terminal are fitted by truncating free-text columns with an ellipsis
+// (see fitColumns); piped output is never truncated.
 type Table struct {
 	out      io.Writer
 	headers  []string
@@ -106,13 +107,51 @@ func truncateCell(cell string, width int, ellipsis string) string {
 }
 
 // sanitizeCells flattens embedded newlines and tabs so one record stays on one
-// line and cannot break column alignment.
+// line and cannot break column alignment, and neutralizes the remaining
+// control characters so API data cannot drive the terminal.
 func sanitizeCells(cells []string) []string {
 	out := make([]string, len(cells))
 	for i, cell := range cells {
-		out[i] = cellReplacer.Replace(cell)
+		out[i] = sanitizeTerminal(cellReplacer.Replace(cell))
 	}
 	return out
+}
+
+// sanitizeTerminal replaces C0 controls (except line feed and tab), DEL, C1
+// controls and invalid UTF-8 with U+FFFD. ESC is among them, so CSI, OSC
+// (window title, clipboard, hyperlinks) and DCS sequences in API data become
+// inert text instead of reaching the terminal. Use it on untrusted values in
+// human output only; --json and --plain keep the raw bytes.
+func sanitizeTerminal(s string) string {
+	clean := true
+	for _, r := range s {
+		if isUnsafeTerminalRune(r) {
+			clean = false
+			break
+		}
+	}
+	if clean {
+		return s
+	}
+	return strings.Map(func(r rune) rune {
+		if isUnsafeTerminalRune(r) {
+			return utf8.RuneError
+		}
+		return r
+	}, s)
+}
+
+func isUnsafeTerminalRune(r rune) bool {
+	switch {
+	case r == '\n' || r == '\t':
+		return false
+	case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f:
+		return true
+	default:
+		// Ranging over a string yields RuneError for invalid bytes such as a
+		// lone 0x9b (8-bit CSI).
+		return r == utf8.RuneError
+	}
 }
 
 var cellReplacer = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ")
@@ -133,10 +172,12 @@ func columnWidths(rows [][]string) []int {
 }
 
 // fitColumns narrows columns until the row fits maxWidth, one cell at a time
-// from the currently widest truncatable column, so the long free-text column
-// (NAME, TITLE, ...) gives way first and short columns are left intact. ID
-// columns are never truncated: a cut identifier is useless. When nothing more
-// can give, the row is left to wrap.
+// from the currently widest truncatable column. Columns give way in tiers:
+// free text (NAME, TITLE, VALUE, ...) first, then long but predictable
+// columns (URLs, timestamps), each first down to a readable floor and only
+// then down to minTruncatedWidth. Identifier columns (ID, KEY, SLUG,
+// FULLPATH, EMAIL, ...) are never truncated: a cut identifier cannot be
+// passed to the next command. When nothing more can give, the row wraps.
 func fitColumns(widths []int, headers []string, maxWidth int) []int {
 	fitted := append([]int(nil), widths...)
 	total := columnGap * (len(fitted) - 1)
@@ -144,31 +185,77 @@ func fitColumns(widths []int, headers []string, maxWidth int) []int {
 		total += w
 	}
 	over := total - maxWidth
-	for over > 0 {
-		widest := -1
-		for i, w := range fitted {
-			if isIDColumn(headers, i) || w <= minTruncatedWidth {
-				continue
+	passes := []struct {
+		kind  columnKind
+		floor int
+	}{
+		{columnFree, readableColumnWidth},
+		{columnSoft, readableColumnWidth},
+		{columnFree, minTruncatedWidth},
+		{columnSoft, minTruncatedWidth},
+	}
+	for _, pass := range passes {
+		for over > 0 {
+			widest := -1
+			for i, w := range fitted {
+				if columnKindOf(headers, i) != pass.kind || w <= pass.floor {
+					continue
+				}
+				if widest < 0 || w > fitted[widest] {
+					widest = i
+				}
 			}
-			if widest < 0 || w > fitted[widest] {
-				widest = i
+			if widest < 0 {
+				break
 			}
+			fitted[widest]--
+			over--
 		}
-		if widest < 0 {
-			break
-		}
-		fitted[widest]--
-		over--
 	}
 	return fitted
 }
 
-func isIDColumn(headers []string, index int) bool {
+// readableColumnWidth is the width a column keeps while other columns can
+// still give way.
+const readableColumnWidth = 20
+
+type columnKind int
+
+const (
+	columnFree  columnKind = iota // free text: truncated first
+	columnSoft                    // URLs and timestamps: truncated after free text
+	columnFixed                   // identifiers: never truncated
+)
+
+var fixedColumns = map[string]bool{
+	"ID": true, "KEY": true, "SLUG": true, "HANDLE": true, "FULLPATH": true,
+	"PATH": true, "EMAIL": true, "SKU": true, "SUBDOMAIN": true, "DOMAIN": true,
+	"HOST": true, "FILENAME": true, "NUMBER": true,
+}
+
+var softColumns = map[string]bool{
+	"URL": true, "PUBLICURL": true, "PERMALINK": true,
+	"CREATED": true, "UPDATED": true, "CREATEDAT": true, "UPDATEDAT": true,
+}
+
+func columnKindOf(headers []string, index int) columnKind {
 	if index >= len(headers) {
-		return false
+		return columnFree
 	}
 	h := strings.ToUpper(strings.TrimSpace(headers[index]))
-	return h == "ID" || strings.HasSuffix(h, " ID") || strings.HasSuffix(h, "_ID")
+	switch {
+	case fixedColumns[h], hasWordSuffix(h, "ID"), hasWordSuffix(h, "KEY"), hasWordSuffix(h, "PATH"):
+		return columnFixed
+	case softColumns[h], hasWordSuffix(h, "URL"), hasWordSuffix(h, "AT"):
+		return columnSoft
+	default:
+		return columnFree
+	}
+}
+
+// hasWordSuffix reports whether header ends in " word" or "_word".
+func hasWordSuffix(header, word string) bool {
+	return strings.HasSuffix(header, " "+word) || strings.HasSuffix(header, "_"+word)
 }
 
 // WriteTable writes a slice of structs as a table.
@@ -190,7 +277,7 @@ func WriteTable(ctx context.Context, slice any, fields []string, headers []strin
 
 	t := NewTable(w.Out, headers...)
 	t.SetEllipsis(w.Glyphs().Ellipsis)
-	if w.IsTTY() {
+	if w.IsTTY() && !w.Wide {
 		t.SetMaxWidth(terminalWidth(w.Out))
 	}
 

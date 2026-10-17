@@ -73,6 +73,7 @@ type Writer struct {
 	NoTTY  bool
 	Color  string // "auto", "always", "never"
 	NoSpin bool   // Disable spinner
+	Wide   bool   // Never fit tables to the terminal width
 }
 
 // DefaultWriter returns a writer with default settings.

@@ -63,9 +63,9 @@ func WriteDetail(w io.Writer, fields []Field) error {
 
 	indent := strings.Repeat(" ", labelWidth+1)
 	for _, f := range visible {
-		label := f.Label + ":"
+		label := sanitizeTerminal(f.Label) + ":"
 		pad := strings.Repeat(" ", labelWidth-ansi.StringWidth(label)+1)
-		value := detailNewlines.Replace(fmt.Sprint(f.Value))
+		value := sanitizeTerminal(detailNewlines.Replace(fmt.Sprint(f.Value)))
 		value = strings.ReplaceAll(value, "\n", "\n"+indent)
 		if _, err := fmt.Fprintln(w, strings.TrimRight(label+pad+value, " ")); err != nil {
 			return err

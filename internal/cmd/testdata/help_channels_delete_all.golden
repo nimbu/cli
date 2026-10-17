@@ -24,6 +24,8 @@ Global Flags:
 Output:
       --color="auto"              Color output: auto|always|never ($NIMBU_COLOR)
       --no-progress               Disable live progress UI ($NIMBU_NO_PROGRESS)
+      --wide                      Never truncate table columns to fit
+                                  ($NIMBU_WIDE)
 
 Agent/CI:
       --no-input                  Never prompt; fail instead (for CI)

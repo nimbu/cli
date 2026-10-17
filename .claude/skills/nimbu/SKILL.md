@@ -97,6 +97,7 @@ Color: `--color always|never` (or `NIMBU_COLOR`) wins, then `NO_COLOR`, `TERM=du
 | `--readonly` | Disable all write operations |
 | `--no-input` | Never prompt; fail instead (CI mode). Prompts also refuse when `CI` is set or stdin is not a terminal |
 | `--no-progress` | Disable live progress UI |
+| `--wide` | Never truncate human table columns to the terminal width (`NIMBU_WIDE`) |
 | `--verbose` | Verbose logging |
 | `--debug` | HTTP request/response traces |
 | `--color auto\|always\|never` | Color policy (`NIMBU_COLOR`) |

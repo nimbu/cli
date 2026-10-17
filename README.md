@@ -426,6 +426,13 @@ sequences left to right. `themes diff --content --plain` adds the unified
 diff as an escaped third field. `functions run --plain` is the exception: it
 prints the function result as one compact JSON object per line.
 
+Human tables on a terminal are fitted to its width: free-text columns such as
+NAME or TITLE give way first, then URLs and timestamps, and identifier columns
+(ID, KEY, SLUG, FULLPATH, EMAIL, ...) are never cut. Pass `--wide` (or set
+`NIMBU_WIDE=1`) to print every value in full. Piped, `--plain` and `--json`
+output is never truncated. Control characters in API data (ESC, BEL, ...)
+show as `�` in human output so they cannot drive the terminal.
+
 Colors follow, highest first: `--color always|never` (or `NIMBU_COLOR`),
 `NO_COLOR`, `TERM=dumb`, `FORCE_COLOR=0`, then whether the stream is a
 terminal. `FORCE_COLOR=1` and `CLICOLOR_FORCE` are ignored on purpose: Node
