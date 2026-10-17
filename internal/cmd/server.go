@@ -210,13 +210,8 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		failErr = err
 		stop.Begin(shortcutListener)
 	}
-	// requestStop handles Ctrl-C, SIGTERM/SIGHUP and 'q'. The first request
-	// stops gracefully in the background; a second one forces the stop.
-	requestStop := func(sig os.Signal) error {
-		if stop.Begin(shortcutListener) {
-			presenter.PrintStopping(serverSignalName(sig), serverForceHint(sig, stdinTTY))
-			return nil
-		}
+	// forceStop kills the child and the proxy and gives the terminal back.
+	forceStop := func(stopErr error) error {
 		forced = true
 		presenter.PrintForceStop()
 		_ = child.Kill(2 * time.Second)
@@ -228,14 +223,39 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 			// Forced while cleaning up after a failure: the cause matters more.
 			return failErr
 		}
-		return errServerForceStopped
+		return stopErr
 	}
+	// requestStop handles Ctrl-C, SIGTERM/SIGHUP and 'q'. The first request
+	// stops gracefully in the background; a second one forces the stop.
+	requestStop := func(sig os.Signal) error {
+		if stop.Begin(shortcutListener) {
+			presenter.PrintStopping(serverSignalName(sig), serverForceHint(sig, stdinTTY))
+			return nil
+		}
+		return forceStop(errServerForceStopped)
+	}
+	stdoutClosed := streams.stdoutClosed
 
 	for {
 		select {
 		case sig := <-sigCh:
+			switch {
+			case isServerPipeSignal(sig):
+				// The failed write reports EPIPE; stdoutClosed acts on it.
+				continue
+			case isServerQuitSignal(sig):
+				return forceStop(errServerQuit)
+			}
 			if err := requestStop(sig); err != nil {
 				return err
+			}
+		case <-stdoutClosed:
+			// Whoever read the output is gone (`nimbu server | head`). Stop
+			// gracefully; later failed writes are no second stop request.
+			stdoutClosed = nil
+			if !stop.Stopping() {
+				stop.Begin(shortcutListener)
+				presenter.PrintStopping("stdout closed", serverForceHint(nil, stdinTTY))
 			}
 		case <-stop.Done():
 			if failErr != nil {

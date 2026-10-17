@@ -38,7 +38,9 @@ type serverStreams struct {
 	// childForceColor is the FORCE_COLOR level handed to a piped child so it
 	// keeps its colors; empty when the child inherits the terminal.
 	childForceColor string
-	closers         []io.Closer
+	// stdoutClosed is closed once a write to stdout failed with EPIPE.
+	stdoutClosed <-chan struct{}
+	closers      []io.Closer
 }
 
 func newServerStreams(writer *output.Writer, human bool) *serverStreams {
@@ -49,10 +51,13 @@ func newServerStreams(writer *output.Writer, human bool) *serverStreams {
 	if stderr == nil {
 		stderr = os.Stderr
 	}
+	pipeWatch := newServerPipeWatch(stdout)
+	stdout = pipeWatch
 	streams := &serverStreams{
 		out:             stdout,
 		err:             stderr,
 		requestLogColor: human && writer.UseColor(),
+		stdoutClosed:    pipeWatch.Closed(),
 	}
 	if !human || !writer.IsTTY() || !writer.ErrIsTTY() {
 		return streams

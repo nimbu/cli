@@ -484,3 +484,152 @@ func TestServerRunInterruptForcesStopAfterReadinessFailure(t *testing.T) {
 		t.Fatal("SIGINT during failure cleanup did not force the stop")
 	}
 }
+
+// serverSignalRun starts nimbu server against a fake API with the signal test
+// helper as child, and waits until the child is ready.
+type serverSignalRun struct {
+	errCh       chan error
+	pidPath     string
+	stoppedPath string
+	proxyURL    string
+}
+
+func startServerSignalRun(t *testing.T, ignoreInt bool, ctxFor func(*RootFlags) context.Context) *serverSignalRun {
+	t.Helper()
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/user":
+			_, _ = w.Write([]byte(`{"id":"user-1"}`))
+		case "/sites/demo":
+			_, _ = w.Write([]byte(`{"id":"site-1","subdomain":"demo"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(apiServer.Close)
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "templates"), 0o755); err != nil {
+		t.Fatalf("mkdir templates: %v", err)
+	}
+	readyAddr := reserveTCPAddr(t)
+	readyURL := "http://" + readyAddr + "/ready"
+	proxyPort := reserveTCPPort(t)
+	run := &serverSignalRun{
+		errCh:       make(chan error, 1),
+		pidPath:     filepath.Join(root, "child-pid"),
+		stoppedPath: filepath.Join(root, "child-stopped"),
+		proxyURL:    "http://127.0.0.1:" + strconv.Itoa(proxyPort),
+	}
+
+	t.Setenv("NIMBU_TOKEN", "test-token")
+	t.Setenv("NIMBU_SERVER_SIGNAL_HELPER", "1")
+	t.Setenv("NIMBU_SERVER_SIGNAL_READY_ADDR", readyAddr)
+	t.Setenv("NIMBU_SERVER_SIGNAL_STOPPED_PATH", run.stoppedPath)
+	t.Setenv("NIMBU_SERVER_SIGNAL_PID_PATH", run.pidPath)
+	if ignoreInt {
+		t.Setenv("NIMBU_SERVER_SIGNAL_IGNORE_INT", "1")
+	}
+
+	flags := &RootFlags{APIURL: apiServer.URL, Site: "demo", Timeout: 2 * time.Second}
+	cmd := &ServerCmd{
+		Arg:          []string{"-test.run=^TestServerSignalChildHelperProcess$"},
+		CMD:          os.Args[0],
+		NoWatch:      true,
+		ProxyHost:    "127.0.0.1",
+		ProxyPort:    proxyPort,
+		ReadyTimeout: 5 * time.Second,
+		ReadyURL:     readyURL,
+		TemplateRoot: root,
+	}
+	ctx := ctxFor(flags)
+	go func() { run.errCh <- cmd.Run(ctx, flags) }()
+	t.Cleanup(func() { cleanupServerSignalChild(run.pidPath) })
+	waitForServerSignalReady(t, readyURL, run.errCh)
+	return run
+}
+
+type brokenPipeWriter struct{}
+
+func (brokenPipeWriter) Write([]byte) (int, error) {
+	return 0, &os.PathError{Op: "write", Path: "/dev/stdout", Err: syscall.EPIPE}
+}
+
+// `nimbu server | head -1`: once the reader is gone, a write to stdout fails
+// with EPIPE. The server must stop gracefully (child stopped, terminal
+// restored) instead of dying on SIGPIPE and orphaning the child.
+func TestServerRunStopsGracefullyWhenStdoutCloses(t *testing.T) {
+	run := startServerSignalRun(t, false, func(flags *RootFlags) context.Context {
+		mode := output.Mode{}
+		ctx := output.WithMode(context.Background(), mode)
+		ctx = output.WithWriter(ctx, &output.Writer{Out: brokenPipeWriter{}, Err: &bytes.Buffer{}, Mode: mode, Color: "never", NoTTY: true})
+		ctx = context.WithValue(ctx, rootFlagsKey{}, flags)
+		return context.WithValue(ctx, configKey{}, &config.Config{})
+	})
+
+	// The request log line is the first stdout write.
+	resp, err := http.Get(run.proxyURL + "/some/page")
+	if err == nil {
+		_ = resp.Body.Close()
+	}
+
+	select {
+	case err := <-run.errCh:
+		if err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("server kept running after stdout closed")
+	}
+	if !waitForServerSignalFile(run.stoppedPath, 5*time.Second) {
+		t.Fatal("child was not stopped gracefully")
+	}
+}
+
+func TestServerShutdownSignalsOwnPipeAndQuit(t *testing.T) {
+	want := map[os.Signal]bool{syscall.SIGPIPE: false, syscall.SIGQUIT: false}
+	for _, sig := range serverShutdownSignals() {
+		if _, ok := want[sig]; ok {
+			want[sig] = true
+		}
+	}
+	for sig, seen := range want {
+		if !seen {
+			t.Errorf("server shutdown signals miss %v", sig)
+		}
+	}
+}
+
+// Ctrl-\ (SIGQUIT) would otherwise dump goroutines and exit 2 with the
+// terminal in no-echo mode and the child orphaned. It force-stops instead.
+func TestServerRunSIGQUITForcesStop(t *testing.T) {
+	guard := make(chan os.Signal, 1)
+	signal.Notify(guard, syscall.SIGQUIT)
+	defer signal.Stop(guard)
+
+	run := startServerSignalRun(t, true, func(flags *RootFlags) context.Context {
+		return newServerSignalTestContext(flags)
+	})
+	if err := syscall.Kill(os.Getpid(), syscall.SIGQUIT); err != nil {
+		t.Fatalf("send SIGQUIT: %v", err)
+	}
+	select {
+	case err := <-run.errCh:
+		var exitErr *ExitError
+		if !errors.As(err, &exitErr) || exitErr.Code != 131 {
+			t.Fatalf("run error = %v, want exit 131", err)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("SIGQUIT did not force the stop")
+	}
+	pid := readServerSignalPID(t, run.pidPath)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("child %d survived SIGQUIT", pid)
+}

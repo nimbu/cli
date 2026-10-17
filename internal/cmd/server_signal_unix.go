@@ -8,8 +8,13 @@ import (
 	"syscall"
 )
 
+// serverShutdownSignals are the signals nimbu server owns while it runs.
+// SIGPIPE is caught so a write to a closed stdout (`nimbu server | head`)
+// fails with EPIPE instead of killing nimbu with the child orphaned and the
+// terminal in no-echo mode; the stdout watch then stops the server. SIGQUIT
+// (Ctrl-\) force-stops instead of dumping goroutines.
 func serverShutdownSignals() []os.Signal {
-	return []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
+	return []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGPIPE, syscall.SIGQUIT}
 }
 
 // watchServerSuspend keeps the shortcut input mode correct across job
