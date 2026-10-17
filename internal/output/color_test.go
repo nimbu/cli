@@ -51,3 +51,33 @@ func TestWriterColorProfileFollowsStream(t *testing.T) {
 		t.Fatalf("always: expected both streams colored")
 	}
 }
+
+// --json/--plain stdout is data: "auto" never colors it, even on a terminal,
+// while stderr chrome keeps its own decision. Only an explicit always wins.
+func TestStdoutColorModeKeepsMachineOutputPlain(t *testing.T) {
+	cases := []struct {
+		name  string
+		mode  Mode
+		color string
+		want  string
+	}{
+		{"human auto", Mode{}, "auto", "auto"},
+		{"json auto", Mode{JSON: true}, "auto", "never"},
+		{"plain auto", Mode{Plain: true}, "auto", "never"},
+		{"plain empty", Mode{Plain: true}, "", "never"},
+		{"json always", Mode{JSON: true}, "always", "always"},
+		{"plain ALWAYS", Mode{Plain: true}, " ALWAYS ", " ALWAYS "},
+		{"json never", Mode{JSON: true}, "never", "never"},
+	}
+	for _, tc := range cases {
+		if got := stdoutColorMode(tc.mode, tc.color); got != tc.want {
+			t.Errorf("%s: stdoutColorMode = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+
+	t.Setenv("NO_COLOR", "")
+	w := &Writer{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, Color: "always", Mode: Mode{Plain: true}}
+	if !w.UseColor() || !w.ErrUseColor() {
+		t.Fatal("--color=always must still color --plain output")
+	}
+}

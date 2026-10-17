@@ -37,9 +37,14 @@ type serverPresenter struct {
 	showBanner bool
 	out        io.Writer
 	// theme styles every presenter line for stderr's color profile, with the
-	// palette variant for stderr's background when it is known.
+	// palette variant for stderr's background once PrintBanner resolved it.
 	theme   output.Theme
+	profile termenv.Profile
 	palette []string
+
+	// writer and bannerTheme feed the background lookup PrintBanner runs.
+	writer      *output.Writer
+	bannerTheme string
 }
 
 type serverSummary struct {
@@ -60,9 +65,10 @@ type serverSummarySegment struct {
 
 // newServerPresenter builds the human chrome for nimbu server and the line
 // path of nimbu init. All of it goes to stderr, so stderr decides color and
-// ShouldShowBanner decides the banner. When the banner shows on a color
-// terminal, the background is queried once (before any program reads stdin)
-// and both the banner and the chrome use the matching light or dark palette.
+// ShouldShowBanner decides the banner. Building it never touches the terminal:
+// the background is queried in PrintBanner, only when the banner shows on a
+// color terminal (see ResolveBannerPalette), so a command that fails before its
+// banner (no site, not logged in) never waits on that query.
 func newServerPresenter(ctx context.Context, eventsJSON bool) *serverPresenter {
 	writer := output.WriterFromContext(ctx)
 	out := writer.Err
@@ -71,28 +77,30 @@ func newServerPresenter(ctx context.Context, eventsJSON bool) *serverPresenter {
 	}
 
 	enabled := output.IsHuman(ctx) && !eventsJSON
-	showBanner := enabled && ShouldShowBanner(writer)
 	profile := termenv.Ascii
 	if enabled {
 		profile = writer.ErrColorProfile()
 	}
 
-	// Without a banner nothing queries the terminal; the dark palette is the
-	// default for an unknown background.
-	dark := true
-	var palette []string
-	if showBanner {
-		palette = ResolveBannerPalette(writer, configuredBannerTheme(ctx))
-		dark = lookupBannerBackground(writer)
-	}
-
+	// Until the banner resolves the background, chrome uses the dark palette,
+	// the default for an unknown background.
 	return &serverPresenter{
-		enabled:    enabled,
-		showBanner: showBanner,
-		out:        out,
-		theme:      output.NewThemeFor(profile, dark),
-		palette:    palette,
+		enabled:     enabled,
+		showBanner:  enabled && ShouldShowBanner(writer),
+		out:         out,
+		theme:       output.NewThemeFor(profile, true),
+		profile:     profile,
+		writer:      writer,
+		bannerTheme: configuredBannerTheme(ctx),
 	}
+}
+
+// resolveBackground picks the banner palette and the chrome palette for
+// stderr's background. Only PrintBanner calls it, before any program reads
+// stdin; the lookup itself is cached for the process.
+func (p *serverPresenter) resolveBackground() {
+	p.palette = ResolveBannerPalette(p.writer, p.bannerTheme)
+	p.theme = output.NewThemeFor(p.profile, lookupBannerBackground(p.writer))
 }
 
 // SetOutput redirects presenter lines, e.g. through the server console so
@@ -113,6 +121,7 @@ func (p *serverPresenter) PrintBanner() {
 	if !p.Enabled() || !p.showBanner {
 		return
 	}
+	p.resolveBackground()
 
 	lines := strings.Split(strings.Trim(serverBanner, "\n"), "\n")
 	label := fmt.Sprintf(" nimbu %s ", serverCLIVersion())

@@ -374,11 +374,38 @@ func TestServerPresenterBannerUsesLightPaletteOnLightBackground(t *testing.T) {
 		t.Fatal("banner still uses the dark palette on a light background")
 	}
 
-	buf.Reset()
 	presenter := newServerPresenter(ctx, false)
+	presenter.PrintBanner()
+	buf.Reset()
 	presenter.PrintStopping("")
 	if !strings.Contains(buf.String(), rgbSGR(output.PaletteFor(false).Muted)) {
 		t.Fatalf("chrome does not use the light muted color: %q", buf.String())
+	}
+}
+
+// Building the presenter never asks the terminal anything: nimbu server
+// builds it before checking the site and login, and a terminal that never
+// answers would stall even a command that is about to fail. The query waits
+// for PrintBanner.
+func TestServerPresenterDefersBackgroundQueryToBanner(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := serverColorContext(t, &buf, "sakura")
+	forceBannerTerminal(t, true)
+	queried := 0
+	orig := lookupBannerBackground
+	lookupBannerBackground = func(*output.Writer) bool {
+		queried++
+		return false
+	}
+	t.Cleanup(func() { lookupBannerBackground = orig })
+
+	presenter := newServerPresenter(ctx, false)
+	if queried != 0 {
+		t.Fatalf("background queried %d times while building the presenter", queried)
+	}
+	presenter.PrintBanner()
+	if queried == 0 {
+		t.Fatal("PrintBanner did not resolve the background")
 	}
 }
 

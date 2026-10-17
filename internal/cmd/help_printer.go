@@ -92,22 +92,36 @@ func helpColorArg(args []string) string {
 }
 
 // helpMachineOutput reports whether --json/--plain (or their env vars) ask
-// for machine output.
+// for machine output. As in the parser, a flag in the args beats its env var
+// (--json=false turns NIMBU_JSON=1 off) and the last occurrence wins.
 func helpMachineOutput(args []string) bool {
+	json, jsonSet := helpBoolFlag(args, "--json")
+	if !jsonSet {
+		json = envTruthy(os.Getenv("NIMBU_JSON"))
+	}
+	plain, plainSet := helpBoolFlag(args, "--plain")
+	if !plainSet {
+		plain = envTruthy(os.Getenv("NIMBU_PLAIN"))
+	}
+	return json || plain
+}
+
+// helpBoolFlag returns the value of a boolean flag in the raw args (bare or
+// --flag=value, last one wins) and whether it was given at all.
+func helpBoolFlag(args []string, flag string) (value, set bool) {
 	for _, arg := range args {
 		if arg == "--" {
 			break
 		}
-		for _, flag := range []string{"--json", "--plain"} {
-			if arg == flag {
-				return true
-			}
-			if value, ok := strings.CutPrefix(arg, flag+"="); ok && envTruthy(value) {
-				return true
-			}
+		if arg == flag {
+			value, set = true, true
+			continue
+		}
+		if v, ok := strings.CutPrefix(arg, flag+"="); ok {
+			value, set = envTruthy(v), true
 		}
 	}
-	return envTruthy(os.Getenv("NIMBU_JSON")) || envTruthy(os.Getenv("NIMBU_PLAIN"))
+	return value, set
 }
 
 // helpColorProfile decides color for help through the shared output color
