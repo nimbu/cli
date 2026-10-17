@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
@@ -153,6 +154,9 @@ type initTeaModel struct {
 	quitting   bool       // the wizard itself asked to quit
 	signal     initSignal // external SIGINT/SIGTERM seen by the program
 	cancelHeld bool       // a cancel arrived while files were being written
+	// abandonedApply is set by a second cancel while files were being
+	// written: the wizard stops anyway and may leave a partial project.
+	abandonedApply bool
 }
 
 func (c *InitCmd) runInteractiveTTY(ctx context.Context, flags *RootFlags) error {
@@ -179,15 +183,21 @@ func (c *InitCmd) runInteractiveTTY(ctx context.Context, flags *RootFlags) error
 	defer stopSignals()
 
 	finalModel, runErr := program.Run()
-	// Stop clones and wait for running jobs before any cleanup or exit.
-	// Signals stay caught until then so nothing is left half-written.
-	model.work.shutdown()
-	stopSignals()
-
 	final, ok := finalModel.(*initTeaModel)
 	if !ok || final == nil {
 		final = model
 	}
+	// Stop clones and wait for running jobs before any cleanup or exit.
+	// Signals stay caught until then so nothing is left half-written. A
+	// write the user stopped anyway is waited for only briefly: it may be
+	// what hangs.
+	if final.abandonedApply {
+		model.work.shutdownWithin(initAbandonWait)
+	} else {
+		model.work.shutdown()
+	}
+	stopSignals()
+
 	return initTeaOutcome(final, runErr)
 }
 
@@ -196,6 +206,12 @@ func (c *InitCmd) runInteractiveTTY(ctx context.Context, flags *RootFlags) error
 // cancellation with a non-zero exit.
 func initTeaOutcome(m *initTeaModel, runErr error) error {
 	switch {
+	case m != nil && m.abandonedApply:
+		code := initExitInterrupted
+		if m.signal == initSignalTerminate {
+			code = initExitTerminated
+		}
+		return &ExitError{Code: code, Err: fmt.Errorf("init stopped while writing files; the project may be partially written to %s", m.destinationPath())}
 	case errors.Is(runErr, tea.ErrInterrupted):
 		return &ExitError{Code: initExitInterrupted, Err: initStoppedError(m)}
 	case errors.Is(runErr, tea.ErrProgramKilled):
@@ -224,8 +240,9 @@ func initStoppedError(m *initTeaModel) error {
 // initTeaFilter sees Bubble Tea's QuitMsg/InterruptMsg before the program
 // acts on them. SIGTERM arrives as a QuitMsg and SIGINT as an InterruptMsg;
 // both are recorded so the command exits non-zero, and while files are being
-// written they are held until the write finishes so the project is never left
-// half-copied.
+// written the first one is held until the write finishes so the project is
+// never left half-copied. A second one stops anyway: a write that hangs (a
+// stuck git step) must not leave only SIGKILL, with the terminal still raw.
 func initTeaFilter(model tea.Model, msg tea.Msg) tea.Msg {
 	m, ok := model.(*initTeaModel)
 	if !ok || m.quitting {
@@ -244,7 +261,11 @@ func initTeaFilter(model tea.Model, msg tea.Msg) tea.Msg {
 		m.signal = sig
 	}
 	if m.phase == initTeaPhaseApply {
-		return initTeaHoldMsg{}
+		if !m.cancelHeld {
+			return initTeaHoldMsg{}
+		}
+		m.abandonApply()
+		return msg
 	}
 	// A quit ends the program gracefully and Bubble Tea renders the model
 	// once more: mark it quitting so that last frame says "Cancelled." instead
@@ -389,6 +410,16 @@ func (m *initTeaModel) Init() tea.Cmd {
 func (m *initTeaModel) quit() tea.Cmd {
 	m.quitting = true
 	return tea.Quit
+}
+
+// initAbandonWait is how long a stopped-anyway write gets to wind down once
+// its context is canceled (which kills a running git step).
+const initAbandonWait = 2 * time.Second
+
+// abandonApply stops the wizard while files are still being written.
+func (m *initTeaModel) abandonApply() {
+	m.abandonedApply = true
+	m.quitting = true
 }
 
 func (m *initTeaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

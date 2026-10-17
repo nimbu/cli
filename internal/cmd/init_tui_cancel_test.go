@@ -250,3 +250,100 @@ func TestInitTeaLoadingShowsEscHint(t *testing.T) {
 		t.Fatal("expected esc to cancel while loading")
 	}
 }
+
+// The first cancel during apply is held; a second one stops anyway, so a hung
+// write can always be left from the terminal. The error says the project may
+// be partially written.
+func TestInitTeaSecondSignalDuringApplyStopsAnyway(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		msg    tea.Msg
+		runErr error
+		code   int
+	}{
+		{"SIGINT", tea.InterruptMsg{}, tea.ErrInterrupted, initExitInterrupted},
+		{"SIGTERM", tea.QuitMsg{}, nil, initExitTerminated},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			model := initApplyModel(t)
+			model.fixedTarget = "/tmp/theme-demo"
+			held := initTeaFilter(model, tc.msg)
+			if _, ok := held.(initTeaHoldMsg); !ok {
+				t.Fatalf("first signal should be held, got %#v", held)
+			}
+			updated, _ := model.Update(held)
+			model = updated.(*initTeaModel)
+			if view := initView(model); !strings.Contains(view, "again to stop anyway") {
+				t.Fatalf("held notice should say how to stop anyway, got:\n%s", view)
+			}
+
+			passed := initTeaFilter(model, tc.msg)
+			if _, ok := passed.(initTeaHoldMsg); ok {
+				t.Fatal("second signal during apply must not be held")
+			}
+			if !model.quitting || !model.abandonedApply {
+				t.Fatal("second signal should abandon the write")
+			}
+			err := initTeaOutcome(model, tc.runErr)
+			if code := exitCode(t, err); code != tc.code {
+				t.Fatalf("exit = %d, want %d", code, tc.code)
+			}
+			if !strings.Contains(err.Error(), "partially written") || !strings.Contains(err.Error(), "/tmp/theme-demo") {
+				t.Fatalf("error should name the partial project, got %v", err)
+			}
+		})
+	}
+}
+
+func TestInitTeaSecondCancelKeyDuringApplyStopsAnyway(t *testing.T) {
+	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEscape}, {Code: 'c', Mod: tea.ModCtrl}} {
+		model := initApplyModel(t)
+		updated, cmd := model.Update(key)
+		model = updated.(*initTeaModel)
+		if cmd != nil {
+			t.Fatalf("%s: first press must be held", key.String())
+		}
+		updated, cmd = model.Update(key)
+		model = updated.(*initTeaModel)
+		if cmd == nil || !model.quitting || !model.abandonedApply {
+			t.Fatalf("%s: second press should stop anyway", key.String())
+		}
+		if code := exitCode(t, initTeaOutcome(model, nil)); code != initExitInterrupted {
+			t.Fatalf("%s: exit = %d, want %d", key.String(), code, initExitInterrupted)
+		}
+	}
+}
+
+// A forced stop must not wait forever for a job that does not return: the
+// wait is bounded, and a later shutdown does not block either.
+func TestInitWorkShutdownWithinGivesUpOnStuckJob(t *testing.T) {
+	work := newInitWork(context.Background())
+	if !work.begin() {
+		t.Fatal("expected begin before shutdown")
+	}
+	var cleaned atomic.Bool
+	work.onShutdown(func() { cleaned.Store(true) })
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	go func() {
+		<-release
+		work.end()
+	}()
+
+	if work.shutdownWithin(20 * time.Millisecond) {
+		t.Fatal("shutdownWithin should report the stuck job")
+	}
+	finished := make(chan struct{})
+	go func() {
+		work.shutdown()
+		close(finished)
+	}()
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown blocked after the work was abandoned")
+	}
+	if cleaned.Load() {
+		t.Fatal("cleanups must not run while a job may still use the files")
+	}
+}

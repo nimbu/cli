@@ -8,13 +8,18 @@ import (
 )
 
 // handleKey routes a key press by phase. ctrl+c interrupts (exit 130) and esc
-// cancels, except while files are being written: then both are held and the
-// wizard says it is finishing, so the target is never left half-written. A
-// held ctrl+c still exits 130 once the write is done, like a SIGINT would.
+// cancels, except while files are being written: then the first press is
+// held and the wizard says it is finishing, so the target is never left
+// half-written. A held ctrl+c still exits 130 once the write is done, like a
+// SIGINT would. A second press stops anyway (exit 130).
 func (m *initTeaModel) handleKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch m.phase {
 	case initTeaPhaseApply:
 		if isInitCancelKey(key) {
+			if m.cancelHeld {
+				m.abandonApply()
+				return m, tea.Quit
+			}
 			m.cancelHeld = true
 			if key.String() == "ctrl+c" && m.signal == initSignalNone {
 				m.signal = initSignalInterrupt

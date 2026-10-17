@@ -199,6 +199,8 @@ func (m *initTeaModel) bootstrapCmd() tea.Cmd {
 	opts := m.bootstrapOptions()
 	sourceLabel := m.sourceLabel
 	work := m.work
+	// Shutting the work down (a forced stop) kills a git step still running.
+	opts.Context = work.ctx
 	return func() tea.Msg {
 		if !work.begin() {
 			return initTeaErrMsg{err: errInitCancelled}

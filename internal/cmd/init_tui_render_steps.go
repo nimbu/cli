@@ -18,7 +18,9 @@ func activeTimelineLines(m *initTeaModel, width, listRows int) []string {
 		case m.phase == initTeaPhaseLoading:
 			lines = append(lines, initHint(m, width))
 		case m.cancelHeld:
-			lines = append(lines, m.theme.warn(truncateInit("Finishing: stopping now would leave a half-written project.", width)))
+			lines = append(lines,
+				m.theme.warn(truncateInit("Finishing: stopping now would leave a half-written project.", width)),
+				m.theme.muted(truncateInit("Ctrl-C again to stop anyway", width)))
 		}
 		return lines
 	case initTeaPhasePrompt:
