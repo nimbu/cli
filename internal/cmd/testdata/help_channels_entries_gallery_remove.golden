@@ -11,8 +11,7 @@ Flags:
 
 Safety:
       --force                    Skip confirmations for destructive operations
-  -y, --yes                      Same as --force; also confirms protected
-                                 environments
+  -y, --yes                      Confirm prompts and protected environments
       --dry-run                  Print the payload without updating the entry
 
 Global Flags:

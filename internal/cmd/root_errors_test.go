@@ -52,6 +52,14 @@ func TestRequestedJSON(t *testing.T) {
 		"-- --json":      false,
 		"themes --json":  true,
 		"themes --jsonx": false,
+		// Same values and last-wins rule as the parser.
+		"--json=yes":              true,
+		"--json=NO":               false,
+		"--json --json=false":     false,
+		"--json=false --json":     true,
+		"--json=t":                false, // kong rejects "t": fall back to NIMBU_JSON
+		"--json=no --json=bogus":  false,
+		"--json=yes --json=bogus": true,
 	}
 	for args, want := range cases {
 		if got := requestedJSON(strings.Fields(args)); got != want {

@@ -67,13 +67,14 @@ func (c *EnvAddCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	if flags.Site == "" {
-		return fmt.Errorf("env add requires --site")
+		return newHintedError(errors.New("env add requires --site"), errorSiteRequired, ExitUsage,
+			"pass --site <site>, e.g. `nimbu env add "+c.Name+" --host "+c.Host+" --site <site>`")
 	}
 	env := config.EnvironmentConfig{Host: c.Host, Site: flags.Site, Protected: c.Protected}
 	if _, err := migrate.ParseSiteRef(env.Site, env.Host, "", ""); err != nil {
-		return err
+		return newHintedError(err, errorUsageInvalid, ExitUsage, "check --host and --site")
 	}
-	path, err := config.FindProjectFile()
+	path, err := environmentProjectFile("env add")
 	if err != nil {
 		return err
 	}
@@ -91,7 +92,7 @@ func (c *EnvRemoveCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err := requireWrite(flags, "remove an environment"); err != nil {
 		return err
 	}
-	path, err := config.FindProjectFile()
+	path, err := environmentProjectFile("env remove")
 	if err != nil {
 		return err
 	}
@@ -105,7 +106,7 @@ func applyEnvironment(flags *RootFlags) error {
 	if flags.Environment == "" {
 		return nil
 	}
-	path, err := config.FindProjectFile()
+	path, err := environmentProjectFile("--env " + flags.Environment)
 	if err != nil {
 		return err
 	}
@@ -115,14 +116,17 @@ func applyEnvironment(flags *RootFlags) error {
 	}
 	env, ok := project.Environments[flags.Environment]
 	if !ok {
-		return fmt.Errorf("unknown environment %q; run 'nimbu env list'", flags.Environment)
+		return newHintedError(fmt.Errorf("unknown environment %q", flags.Environment), errorUsageInvalid, ExitUsage,
+			"run `nimbu env list` to see the configured environments")
 	}
 	if err := env.Validate(); err != nil {
-		return fmt.Errorf("environment %q: %w", flags.Environment, err)
+		return newHintedError(fmt.Errorf("environment %q: %w", flags.Environment, err), errorUsageInvalid, ExitUsage,
+			"fix the environment in "+config.ProjectFileName+", or re-add it with `nimbu env add`")
 	}
 	ref, err := migrate.ParseSiteRef(env.Site, env.Host, "", "")
 	if err != nil {
-		return err
+		return newHintedError(fmt.Errorf("environment %q: %w", flags.Environment, err), errorUsageInvalid, ExitUsage,
+			"fix the environment in "+config.ProjectFileName+", or re-add it with `nimbu env add`")
 	}
 	flags.APIURL, flags.Site = ref.BaseURL, ref.Site
 	flags.SelectedEnvironmentProtected = env.Protected
@@ -132,6 +136,20 @@ func applyEnvironment(flags *RootFlags) error {
 		}
 	}
 	return nil
+}
+
+// environmentProjectFile finds nimbu.yml for an environment command. A missing
+// project is a usage error: environments live in nimbu.yml.
+func environmentProjectFile(action string) (string, error) {
+	path, err := config.FindProjectFile()
+	if errors.Is(err, config.ErrNotFound) {
+		hint := "run it from a project directory (`nimbu init` creates one)"
+		if strings.HasPrefix(action, "--env") {
+			hint += ", or pass --site instead of --env"
+		}
+		return "", newHintedError(fmt.Errorf("%s needs a project: %w", action, err), errorUsageInvalid, ExitUsage, hint)
+	}
+	return path, err
 }
 
 // IsProtectedEnvironment reports protection for the selected project environment.

@@ -77,10 +77,16 @@ func resolveSite(flags *RootFlags, cfg *config.Config) siteResolution {
 
 var errProjectHasNoSite = errors.New("nimbu.yml has no site")
 
+// unreadableProject reports a nimbu.yml that exists but cannot be read, as
+// opposed to a missing project or one without a site.
+func unreadableProject(projErr error) bool {
+	return projErr != nil && !errors.Is(projErr, config.ErrNotFound) && !errors.Is(projErr, errProjectHasNoSite)
+}
+
 // siteRequiredError is the usage error for a command that needs a site and
 // found none in any source.
 func siteRequiredError(projErr error) error {
-	if projErr != nil && !errors.Is(projErr, config.ErrNotFound) && !errors.Is(projErr, errProjectHasNoSite) {
+	if unreadableProject(projErr) {
 		return newHintedError(
 			fmt.Errorf("cannot read the site from %s: %w", config.ProjectFileName, projErr),
 			errorSiteRequired, ExitUsage,

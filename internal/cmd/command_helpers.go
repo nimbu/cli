@@ -43,9 +43,18 @@ func requireForceAction(flags *RootFlags, action string) error {
 	return nil
 }
 
-// confirmedByFlag reports whether --force or its alias --yes was passed.
+// confirmedByFlag reports whether --force or --yes answered a confirmation.
+// Server-side force overwrites (theme conflicts, existing files, site copy
+// conflicts) read flags.Force alone: --yes must never clobber remote edits.
 func confirmedByFlag(flags *RootFlags) bool {
 	return flags != nil && (flags.Force || flags.Yes)
+}
+
+// forceRequiredError is the cli.confirmation_required failure for an
+// overwrite only an explicit --force allows.
+func forceRequiredError(message string) error {
+	return newHintedError(errors.New(message), errorConfirmationRequired, ExitUsage,
+		"re-run with --force to overwrite; --yes does not force overwrites")
 }
 
 // confirmationRequiredError is the typed cli.confirmation_required failure

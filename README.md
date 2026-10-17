@@ -123,7 +123,10 @@ Behavior changes that can affect scripts:
 - Prompts never block a pipe: without a terminal on stdin, with `CI` set, or
   with `--no-input`, a confirmation fails with `cli.confirmation_required`
   (exit 2) instead of waiting. Pass `--force` or `--yes`.
-- Ctrl-C and SIGTERM exit 130.
+- Ctrl-C and SIGTERM exit 130 (the `nimbu init` wizard exits 143 on SIGTERM).
+  Long-running commands that stop gracefully on the first signal (`nimbu
+  server`, `apps logs --tail`, `channels entries watch`) exit 0; a second
+  Ctrl-C force-stops them with 130.
 - In the `nimbu init` wizard, `NIMBU_SITE` preselects the site but no longer
   skips the question; `--site` or `--env` on the command line still does.
   With `--no-input`, `NIMBU_SITE` answers it.
@@ -440,7 +443,7 @@ into pipes and agent logs. Use `--color always` to force color.
 | 6 | Validation error |
 | 7 | Rate limited (retryable) |
 | 8 | Network error (retryable) |
-| 130 | Interrupted (Ctrl-C or SIGTERM); a second Ctrl-C exits at once |
+| 130 | Interrupted (Ctrl-C or SIGTERM); a second Ctrl-C exits at once. `server`, `apps logs --tail` and `channels entries watch` exit 0 when the first signal stops them gracefully |
 | 143 | The `nimbu init` wizard was stopped with SIGTERM |
 
 With `--json`, errors (usage errors too) are a JSON envelope on stderr with
@@ -492,7 +495,10 @@ uncommitted deployment.
 
 Protected environments require confirmation. In CI, pass `--no-input --yes` to
 `schema apply` or `release`; `--force` does not bypass protection. Elsewhere
-`--yes` (`-y`) and `--force` are interchangeable. Without a terminal on stdin,
+`--yes` (`-y`) answers the same confirmations as `--force`, but it never forces
+an overwrite: theme conflicts with remote edits, existing output files and
+`sites copy` conflicts still need `--force`, so `release --yes` stops on a
+remote theme edit. Without a terminal on stdin,
 or with `CI` set, nimbu never prompts: it fails with
 `cli.confirmation_required` (exit 2) and names the flag to pass. Review `plan`
 before adding `--prune`, which removes omitted fields and options. Creating
@@ -780,8 +786,8 @@ Runtime notes:
 - Child stdout/stderr is passed through unchanged.
 - In a terminal, keys act on the running server: `o`/`l`/`b` open the dev
   server, live site or admin, `Enter` prints a blank line to mark a spot in
-  the log, `?` or `h` shows the keys, `q` quits. Ctrl-C stops gracefully; a
-  second Ctrl-C force-stops the child and exits 130. Ctrl-\ force-stops at
+  the log, `?` or `h` shows the keys, `q` quits. Ctrl-C, SIGTERM or `q` stops
+  gracefully and exits 0; a second Ctrl-C force-stops the child and exits 130. Ctrl-\ force-stops at
   once and exits 131. Ctrl-Z suspends nimbu; after `bg` the proxy keeps
   serving and `fg` brings the keys back.
 - When stdout is piped and the reader goes away (`nimbu server | head`),
@@ -945,7 +951,7 @@ does not delete local-only files.
 
 `nimbu apps logs --app <app>` reads cloud code logs for a local app name or app key.
 Use `--tail` to print the last `--limit` entries oldest-first and keep polling
-for new log entries.
+for new log entries until Ctrl-C or SIGTERM, which ends the tail with exit 0.
 
 `nimbu sites copy` copies cloud code by default after content, theme,
 notifications, redirects, and translations. Pass `--skip-cloud-code` to leave

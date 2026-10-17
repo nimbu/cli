@@ -107,7 +107,8 @@ func helpMachineOutput(args []string) bool {
 }
 
 // helpBoolFlag returns the value of a boolean flag in the raw args (bare or
-// --flag=value, last one wins) and whether it was given at all.
+// --flag=value, last one wins) and whether it was given at all. A value kong
+// would reject is ignored.
 func helpBoolFlag(args []string, flag string) (value, set bool) {
 	for _, arg := range args {
 		if arg == "--" {
@@ -118,7 +119,9 @@ func helpBoolFlag(args []string, flag string) (value, set bool) {
 			continue
 		}
 		if v, ok := strings.CutPrefix(arg, flag+"="); ok {
-			value, set = envTruthy(v), true
+			if on, valid := kongBool(v); valid {
+				value, set = on, true
+			}
 		}
 	}
 	return value, set

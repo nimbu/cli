@@ -18,9 +18,11 @@ func syncWithTimeline(ctx context.Context, mode, theme string, dryRun bool) (con
 	return ctx, tl
 }
 
-// finishSyncTimelineError wraps an error that was already rendered by the timeline.
-func finishSyncTimelineError(tl *output.SyncTimeline, err error) error {
-	if tl == nil {
+// finishSyncTimelineError marks an error the timeline already rendered, so
+// emitCommandError skips the duplicate print. An error from before the
+// timeline drew anything (build, selectors, planning) is returned as is.
+func finishSyncTimelineError(tl *output.SyncTimeline, rendered bool, err error) error {
+	if tl == nil || !rendered {
 		return err
 	}
 	return &displayedError{err: err}

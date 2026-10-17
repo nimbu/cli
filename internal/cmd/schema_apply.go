@@ -46,7 +46,7 @@ func (c *SchemaApplyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return nil
 	}
 	if !IsProtectedEnvironment(flags) {
-		// --yes and its alias --force both confirm an unprotected apply.
+		// --yes and --force both confirm an unprotected apply.
 		ok, e := confirmPromptFlag(flags, "apply the planned schema changes", "--yes")
 		if e != nil {
 			return e

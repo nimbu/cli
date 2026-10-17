@@ -51,7 +51,7 @@ func (c *ThemePullCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	result, err := themes.RunPull(ctx, client, resolved, themes.Options{LiquidOnly: c.LiquidOnly})
 	if err != nil {
-		return finishSyncTimelineError(tl, err)
+		return finishSyncTimelineError(tl, result.TimelineRendered, err)
 	}
 
 	if result.TimelineRendered {

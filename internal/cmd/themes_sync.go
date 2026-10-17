@@ -150,7 +150,7 @@ func runThemeTransfer(ctx context.Context, flags *RootFlags, themeOverride strin
 		result, err = themes.RunPush(ctx, client, resolved, opts)
 	}
 	if err != nil {
-		return finishSyncTimelineError(tl, err)
+		return finishSyncTimelineError(tl, result.TimelineRendered, themeTransferUsageError(err))
 	}
 	return writeThemeTransferResult(ctx, result)
 }
@@ -159,9 +159,8 @@ func confirmThemeOverwrite(flags *RootFlags) func(context.Context, themes.Resour
 	reader := bufio.NewReader(os.Stdin)
 	return func(ctx context.Context, resource themes.Resource, err error) (bool, error) {
 		if reason := promptBlocker(flags); reason != "" {
-			return false, confirmationRequiredError(
-				fmt.Sprintf("refusing to overwrite %s without --force (cannot prompt: %s)", resource.DisplayPath, reason),
-				"--force")
+			return false, forceRequiredError(
+				fmt.Sprintf("refusing to overwrite %s without --force (cannot prompt: %s)", resource.DisplayPath, reason))
 		}
 		w := output.WriterFromContext(ctx)
 		if detail := themeConflictDetail(err); detail != "" {
@@ -341,4 +340,16 @@ func dependencySuffix(action themes.Action) string {
 		return " (dependency)"
 	}
 	return ""
+}
+
+// themeTransferUsageError types local push/sync setup mistakes as usage
+// errors (exit 2) instead of internal.unknown.
+func themeTransferUsageError(err error) error {
+	switch {
+	case errors.Is(err, themes.ErrSelectorNoMatch):
+		return newHintedError(err, errorUsageInvalid, ExitUsage, "check the --only paths against the theme directories in nimbu.yml")
+	case errors.Is(err, themes.ErrBuildNotConfigured):
+		return newHintedError(err, errorUsageInvalid, ExitUsage, "add sync.build.command to nimbu.yml, or drop --build")
+	}
+	return err
 }

@@ -19,6 +19,10 @@ func (c *SitesCurrentCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	resolved := resolveSite(flags, cfg)
 	site, source := resolved.Site, resolved.Source
+	if site == "" && unreadableProject(resolved.ProjectErr) {
+		// Every site-scoped command fails on this nimbu.yml; say why here too.
+		return siteRequiredError(resolved.ProjectErr)
+	}
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {

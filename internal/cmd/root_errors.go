@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/alecthomas/kong"
@@ -16,22 +15,25 @@ import (
 )
 
 // requestedJSON reports whether the invocation asked for JSON, read from the
-// raw args and NIMBU_JSON so it also works when flag parsing failed.
+// raw args and NIMBU_JSON so it also works when flag parsing failed. It reads
+// --json the way the parser does: last occurrence wins, kong's bool values.
 func requestedJSON(args []string) bool {
-	for _, arg := range args {
-		if arg == "--" {
-			break
-		}
-		if arg == "--json" {
-			return true
-		}
-		if value, ok := strings.CutPrefix(arg, "--json="); ok {
-			if on, err := strconv.ParseBool(value); err == nil {
-				return on
-			}
-		}
+	if on, set := helpBoolFlag(args, "--json"); set {
+		return on
 	}
 	return envTruthy(os.Getenv("NIMBU_JSON"))
+}
+
+// kongBool parses a --flag=value bool like kong does (true/1/yes,
+// false/0/no, any case); ok is false for a value kong rejects.
+func kongBool(value string) (on, ok bool) {
+	switch strings.ToLower(value) {
+	case "true", "1", "yes":
+		return true, true
+	case "false", "0", "no":
+		return false, true
+	}
+	return false, false
 }
 
 func envTruthy(value string) bool {
@@ -72,8 +74,30 @@ func parseUsageError(err error) error {
 		if node := parseErr.Context.Selected(); node != nil {
 			help = node.FullPath() + " --help"
 		}
+		// Default help hides the Output/Agent-CI/Connection flags.
+		if suppressedFlagError(parseErr.Context.Model, err) {
+			help = strings.TrimSuffix(help, " --help") + " --help-all"
+		}
 	}
 	return newHintedError(err, errorUsageInvalid, ExitUsage, fmt.Sprintf("run `%s` for usage", help))
+}
+
+// suppressedFlagError reports a parse error about a flag that only
+// --help-all lists, e.g. `--color must be one of ...`.
+func suppressedFlagError(app *kong.Application, err error) bool {
+	if app == nil {
+		return false
+	}
+	message := err.Error()
+	for _, flag := range app.Flags {
+		if flag.Group == nil || !suppressedFlagGroups[flag.Group.Key] {
+			continue
+		}
+		if name := "--" + flag.Name; message == name || strings.HasPrefix(message, name+" ") || strings.HasPrefix(message, name+":") {
+			return true
+		}
+	}
+	return false
 }
 
 // writeRootWarning prints a warning raised before the command runs. In JSON

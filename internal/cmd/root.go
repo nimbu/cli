@@ -64,7 +64,7 @@ type RootFlags struct {
 
 	// Agent/CI (suppressed in default help)
 	Force          bool   `help:"Skip confirmations for destructive operations" group:"Agent/CI"`
-	Yes            bool   `short:"y" help:"Same as --force; also confirms protected environments" group:"Agent/CI"`
+	Yes            bool   `short:"y" help:"Confirm prompts and protected environments" group:"Agent/CI"`
 	NoInput        bool   `help:"Never prompt; fail instead (for CI)" env:"NIMBU_NO_INPUT" group:"Agent/CI"`
 	Readonly       bool   `help:"Disable all write operations" env:"NIMBU_READONLY" group:"Agent/CI"`
 	EnableCommands string `help:"Comma-separated allowlist of commands" env:"NIMBU_ENABLE_COMMANDS" group:"Agent/CI"`
@@ -162,6 +162,12 @@ func execute(args []string) (err error) {
 		args = append(args, "--help")
 	}
 
+	// Before newParser: it reads NIMBU_COLOR for the --color default.
+	if warning := normalizeColorEnv(); warning != "" && !hasCLIFlag(args, "__complete") {
+		writeRootWarning(os.Stderr, requestedJSON(args), warning)
+	}
+	args = normalizeColorArgs(args)
+
 	parser, cli, err := newParser()
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
@@ -188,10 +194,6 @@ func execute(args []string) (err error) {
 	kctx, err := parser.Parse(args)
 	if err != nil {
 		return emitEarlyError(requestedJSON(args), cli.Color, parseUsageError(err))
-	}
-	if cli.Yes {
-		// --yes answers every confirmation --force does.
-		cli.Force = true
 	}
 	isInternalComplete := kctx.Command() == "__complete" || strings.HasPrefix(kctx.Command(), "__complete ")
 

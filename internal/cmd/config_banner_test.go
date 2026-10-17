@@ -248,15 +248,45 @@ func TestBannerPickerListKeepsCursorVisible(t *testing.T) {
 
 func TestBannerPickerUsable(t *testing.T) {
 	w := &output.Writer{Err: &bytes.Buffer{}}
-	err := bannerPickerUsable(w, true, false)
-	if err == nil || !strings.Contains(err.Error(), "nimbu config set banner_theme") || !strings.Contains(err.Error(), "rainbow") {
+	stubInteractivePrompt(t, true)
+	err := bannerPickerUsable(w, &RootFlags{})
+	if err == nil || !strings.Contains(err.Error(), "stderr is not a terminal") || !strings.Contains(err.Error(), "rainbow") {
 		t.Fatalf("stderr not a terminal: err = %v", err)
 	}
-	if err := bannerPickerUsable(w, false, false); err == nil {
-		t.Fatal("stdin not a terminal must refuse")
+	desc := classifyError(err)
+	if desc.Code != errorUsageInvalid || desc.ExitCode != ExitUsage {
+		t.Fatalf("refusal = %s/%d, want %s/%d", desc.Code, desc.ExitCode, errorUsageInvalid, ExitUsage)
 	}
-	if err := bannerPickerUsable(w, true, true); err == nil {
-		t.Fatal("CI must refuse")
+	// The hinted command must be one `config set` actually parses.
+	if !strings.Contains(desc.Hint, "nimbu config set --key banner_theme --value <name>") {
+		t.Fatalf("hint = %q", desc.Hint)
+	}
+	parser, _, perr := newParser()
+	if perr != nil {
+		t.Fatal(perr)
+	}
+	if _, perr := parser.Parse([]string{"config", "set", "--key", "banner_theme", "--value", "ocean"}); perr != nil {
+		t.Fatalf("hinted command does not parse: %v", perr)
+	}
+
+	for name, setup := range map[string]func(t *testing.T) *RootFlags{
+		"no-input": func(t *testing.T) *RootFlags { stubInteractivePrompt(t, true); return &RootFlags{NoInput: true} },
+		"CI": func(t *testing.T) *RootFlags {
+			stubInteractivePrompt(t, true)
+			t.Setenv("CI", "true")
+			return &RootFlags{}
+		},
+		"stdin": func(t *testing.T) *RootFlags { stubInteractivePrompt(t, false); return &RootFlags{} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := bannerPickerUsable(w, setup(t))
+			if err == nil {
+				t.Fatal("picker must refuse")
+			}
+			if desc := classifyError(err); desc.ExitCode != ExitUsage {
+				t.Fatalf("exit = %d, want %d", desc.ExitCode, ExitUsage)
+			}
+		})
 	}
 }
 

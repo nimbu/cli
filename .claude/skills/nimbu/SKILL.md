@@ -93,7 +93,7 @@ Color: `--color always|never` (or `NIMBU_COLOR`) wins, then `NO_COLOR`, `TERM=du
 | `--filters key=val` | Filter criteria (repeatable) |
 | `--include <rels>` | Include related resources |
 | `--force` | Skip confirmations for destructive ops |
-| `--yes`, `-y` | Same as `--force`; also confirms protected environments |
+| `--yes`, `-y` | Answers confirmations like `--force` and confirms protected environments; never forces overwrites |
 | `--readonly` | Disable all write operations |
 | `--no-input` | Never prompt; fail instead (CI mode). Prompts also refuse when `CI` is set or stdin is not a terminal |
 | `--no-progress` | Disable live progress UI |
@@ -151,7 +151,7 @@ Use these to constrain agent access:
 - `NIMBU_COMPLETION_DEBUG=1` — writes dynamic completion diagnostics to `completion-debug.log` in the Nimbu data directory
 - `--dry-run` — surgical page verbs, `pages update`, `pages batch`, and copy/sync/theme commands; resolve or print without writing
 - `--force` — required for delete commands (including `pages delete-block` and `pages draft discard`); also answers overwrite prompts (themes push/sync conflicts, apps push deletions, menus/customizations copy)
-- `--yes` / `-y` — same as `--force`, and the only flag that confirms a protected environment (`schema apply`, `release`)
+- `--yes` / `-y` — answers the same confirmations as `--force`, and is the only flag that confirms a protected environment (`schema apply`, `release`). It never forces an overwrite: theme push/sync conflicts with remote edits, existing download files and `sites copy` conflicts need `--force` (`release --yes --force` to deploy over remote theme edits)
 - Without a terminal on stdin, with `CI` set, or with `--no-input`, a confirmation never waits: it fails with `cli.confirmation_required` (exit 2) and the hint names the flag
 
 ## CLI Grammar
@@ -523,7 +523,7 @@ A 422 `invalid editable` / `invalid slug` on `pages update`/`create` carries a h
 | 6 | Validation error |
 | 7 | Rate limit exceeded (retryable) |
 | 8 | Network error (retryable) |
-| 130 | Interrupted (Ctrl-C / SIGTERM); a second Ctrl-C exits at once |
+| 130 | Interrupted (Ctrl-C / SIGTERM); a second Ctrl-C exits at once. `server`, `apps logs --tail` and `channels entries watch` exit 0 when the first signal stops them gracefully |
 | 143 | `nimbu init` wizard stopped by SIGTERM |
 
 ### Canonical Error Codes

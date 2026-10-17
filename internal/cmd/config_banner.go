@@ -10,7 +10,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"golang.org/x/term"
 
 	"github.com/nimbu/cli/internal/config"
 	"github.com/nimbu/cli/internal/output"
@@ -19,9 +18,9 @@ import (
 // ConfigBannerCmd lets users pick a banner theme interactively.
 type ConfigBannerCmd struct{}
 
-func (c *ConfigBannerCmd) Run(ctx context.Context) error {
+func (c *ConfigBannerCmd) Run(ctx context.Context, flags *RootFlags) error {
 	writer := output.WriterFromContext(ctx)
-	if err := bannerPickerUsable(writer, term.IsTerminal(int(os.Stdin.Fd())), ciEnvironment()); err != nil {
+	if err := bannerPickerUsable(writer, flags); err != nil {
 		return err
 	}
 
@@ -61,13 +60,19 @@ func (c *ConfigBannerCmd) Run(ctx context.Context) error {
 }
 
 // bannerPickerUsable refuses to start the picker where nobody can answer it:
-// stdin or stderr is not a terminal, or the process runs in CI.
-func bannerPickerUsable(w *output.Writer, stdinTTY, ci bool) error {
-	if stdinTTY && shouldShowBanner(w.ErrIsTTY(), ci) {
+// --no-input, CI, or stdin or stderr is not a terminal.
+func bannerPickerUsable(w *output.Writer, flags *RootFlags) error {
+	reason := promptBlocker(flags)
+	if reason == "" && !w.ErrIsTTY() {
+		reason = "stderr is not a terminal"
+	}
+	if reason == "" {
 		return nil
 	}
-	return fmt.Errorf("interactive banner picker needs a terminal; use 'nimbu config set banner_theme <name>' instead\navailable themes: %s",
-		strings.Join(BannerThemeNames(), ", "))
+	return newHintedError(
+		fmt.Errorf("interactive banner picker cannot run (%s); available themes: %s", reason, strings.Join(BannerThemeNames(), ", ")),
+		errorUsageInvalid, ExitUsage,
+		"set it directly with `nimbu config set --key banner_theme --value <name>`")
 }
 
 // runBannerPicker runs the picker program until the user selects or cancels.
