@@ -42,11 +42,11 @@ func (c *ChannelsDiffCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, result)
 	}
 
-	plainLines := append(renderDiffChanges("channel:add", result.ChannelDiff.Added), renderDiffChanges("channel:remove", result.ChannelDiff.Removed)...)
-	plainLines = append(plainLines, renderDiffChanges("channel:update", result.ChannelDiff.Updated)...)
-	plainLines = append(plainLines, renderDiffChanges("field:add", result.FieldsDiff.Added)...)
-	plainLines = append(plainLines, renderDiffChanges("field:remove", result.FieldsDiff.Removed)...)
-	plainLines = append(plainLines, renderDiffChanges("field:update", result.FieldsDiff.Updated)...)
+	plainLines := append(plainDiffChanges("channel:add", result.ChannelDiff.Added), plainDiffChanges("channel:remove", result.ChannelDiff.Removed)...)
+	plainLines = append(plainLines, plainDiffChanges("channel:update", result.ChannelDiff.Updated)...)
+	plainLines = append(plainLines, plainDiffChanges("field:add", result.FieldsDiff.Added)...)
+	plainLines = append(plainLines, plainDiffChanges("field:remove", result.FieldsDiff.Removed)...)
+	plainLines = append(plainLines, plainDiffChanges("field:update", result.FieldsDiff.Updated)...)
 
 	humanLines := []string{"Channel attributes"}
 	humanLines = append(humanLines, renderDiffChanges("  +", result.ChannelDiff.Added)...)

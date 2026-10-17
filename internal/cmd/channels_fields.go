@@ -235,8 +235,8 @@ func (c *ChannelsFieldsDiffCmd) Run(ctx context.Context, flags *RootFlags) error
 	if mode.JSON {
 		return output.JSON(ctx, diff)
 	}
-	plainLines := append(renderDiffChanges("add", diff.Added), renderDiffChanges("remove", diff.Removed)...)
-	plainLines = append(plainLines, renderDiffChanges("update", diff.Updated)...)
+	plainLines := append(plainDiffChanges("add", diff.Added), plainDiffChanges("remove", diff.Removed)...)
+	plainLines = append(plainLines, plainDiffChanges("update", diff.Updated)...)
 	humanLines := append([]string{}, renderDiffChanges("+", diff.Added)...)
 	humanLines = append(humanLines, renderDiffChanges("-", diff.Removed)...)
 	humanLines = append(humanLines, renderDiffChanges("~", diff.Updated)...)
