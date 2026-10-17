@@ -282,6 +282,8 @@ func (c *InitCmd) runLines(ctx context.Context, presets initPresets, noInput boo
 		BundleIDs:      bundleIDs,
 		RepeatableIDs:  repeatableIDs,
 		AllowExisting:  inPlace,
+		// Ctrl-C/SIGTERM cancel ctx, which kills a git step still running.
+		Context: ctx,
 	}
 	if inPlace {
 		conflicts, err := planConflicts(opts, finalPath)
@@ -305,6 +307,9 @@ func (c *InitCmd) runLines(ctx context.Context, presets initPresets, noInput boo
 	}
 
 	result, err := bootstrap.BootstrapProject(opts)
+	if interrupted(ctx) {
+		return &ExitError{Code: initExitInterrupted, Err: fmt.Errorf("init interrupted; the project may be partially written to %s", finalPath)}
+	}
 	if err != nil {
 		return err
 	}
