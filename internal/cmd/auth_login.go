@@ -96,7 +96,9 @@ func (c *AuthLoginCmd) readToken(ctx context.Context, flags *RootFlags) (string,
 		}
 		token = secret
 	} else {
-		data, err := io.ReadAll(io.LimitReader(os.Stdin, maxTokenInput+1))
+		data, err := readStdinAsPrompt(func(r io.Reader) ([]byte, error) {
+			return io.ReadAll(io.LimitReader(r, maxTokenInput+1))
+		})
 		if err != nil {
 			return "", fmt.Errorf("read token from stdin: %w", err)
 		}

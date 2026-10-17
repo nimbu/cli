@@ -297,6 +297,8 @@ func readCustomFieldsArray(file string) ([]map[string]any, error) {
 	case "":
 		return nil, fmt.Errorf("%w; use --file <path> or --file - with piped stdin", errNoJSONInput)
 	case "-":
+		// The read cannot see the context; one Ctrl-C must still end it.
+		defer beginPrompt()()
 		input = os.Stdin
 	default:
 		f, err := os.Open(file)

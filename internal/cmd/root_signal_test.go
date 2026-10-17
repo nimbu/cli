@@ -320,3 +320,112 @@ func TestInterruptDuringLatePromptEndsPromptLine(t *testing.T) {
 		t.Fatalf("stderr = %q, want the prompt line ended", out)
 	}
 }
+
+// Reading request data or JSON from stdin cannot see the context, so it is
+// marked as a prompt: the first Ctrl-C must end it, not be swallowed.
+func TestStdinReadsExitOnFirstInterrupt(t *testing.T) {
+	reads := map[string]func() error{
+		"api --data -": func() error {
+			_, err := rawAPIRequestBody(APIRequestFlags{Data: "-"})
+			return err
+		},
+		"--file -": func() error {
+			_, err := readJSONInputBytes("-")
+			return err
+		},
+		"custom fields --file -": func() error {
+			_, err := readCustomFieldsArray("-")
+			return err
+		},
+		"theme content": func() error {
+			_, err := readThemeContent("", "")
+			return err
+		},
+	}
+	for name, read := range reads {
+		t.Run(name, func(t *testing.T) {
+			codes := stubForceExit(t)
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			origStdin := os.Stdin
+			os.Stdin = r
+			finished := make(chan struct{})
+			t.Cleanup(func() {
+				_ = w.Close() // unblock the read
+				<-finished
+				os.Stdin = origStdin
+				_ = r.Close()
+			})
+			go func() {
+				defer close(finished)
+				_ = read()
+			}()
+
+			deadline := time.Now().Add(2 * time.Second)
+			for activePrompts.Load() == 0 && time.Now().Before(deadline) {
+				time.Sleep(5 * time.Millisecond)
+			}
+			sigCh, _ := startTestWatcher(t)
+			sigCh <- os.Interrupt
+			select {
+			case code := <-codes:
+				if code != ExitInterrupted {
+					t.Fatalf("exit = %d, want %d", code, ExitInterrupted)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("first Ctrl-C during a stdin read was swallowed")
+			}
+		})
+	}
+}
+
+// A first signal that a command does not act on promptly is not silent: nimbu
+// says how to force the exit.
+func TestSlowInterruptPrintsForceHint(t *testing.T) {
+	stubForceExit(t)
+	origDelay, origWrite := interruptHintDelay, writeInterruptHint
+	hints := make(chan string, 1)
+	interruptHintDelay = 10 * time.Millisecond
+	writeInterruptHint = func(msg string) { hints <- msg }
+	t.Cleanup(func() { interruptHintDelay, writeInterruptHint = origDelay, origWrite })
+
+	sigCh, _ := startTestWatcher(t)
+	sigCh <- syscall.SIGTERM
+	select {
+	case msg := <-hints:
+		if !strings.Contains(msg, "again to force") {
+			t.Fatalf("hint = %q", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no hint after a slow first signal")
+	}
+}
+
+func TestPromptInterruptFinishingInTimePrintsNoHint(t *testing.T) {
+	stubForceExit(t)
+	origDelay, origWrite := interruptHintDelay, writeInterruptHint
+	hints := make(chan string, 1)
+	interruptHintDelay = 50 * time.Millisecond
+	writeInterruptHint = func(msg string) { hints <- msg }
+	t.Cleanup(func() { interruptHintDelay, writeInterruptHint = origDelay, origWrite })
+
+	sigCh := make(chan os.Signal, 1)
+	done := make(chan struct{})
+	finished := make(chan struct{})
+	_, cancel := context.WithCancelCause(context.Background())
+	go func() {
+		defer close(finished)
+		watchInterrupts(sigCh, done, cancel)
+	}()
+	sigCh <- os.Interrupt
+	time.Sleep(5 * time.Millisecond)
+	close(done) // the command returned in time
+	<-finished
+	select {
+	case msg := <-hints:
+		t.Fatalf("unexpected hint %q", msg)
+	case <-time.After(100 * time.Millisecond):
+	}
+}

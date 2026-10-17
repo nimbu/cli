@@ -144,9 +144,9 @@ func readJSONInputBytes(file string) ([]byte, error) {
 		if stdinIsTerminal() {
 			return nil, fmt.Errorf("%w; use --file <path> or --file - with piped stdin", errNoJSONInput)
 		}
-		data, err = readLimitedBytes(os.Stdin)
+		data, err = readStdinAsPrompt(readLimitedBytes)
 	case "-":
-		data, err = readLimitedBytes(os.Stdin)
+		data, err = readStdinAsPrompt(readLimitedBytes)
 	default:
 		data, err = readLimitedFile(file)
 	}

@@ -163,7 +163,7 @@ func rawAPIRequestBody(request APIRequestFlags) (any, error) {
 	var err error
 	switch {
 	case source == "-":
-		data, err = io.ReadAll(os.Stdin)
+		data, err = readStdinAsPrompt(io.ReadAll)
 	case strings.HasPrefix(source, "@"):
 		data, err = os.ReadFile(strings.TrimPrefix(source, "@"))
 	default:

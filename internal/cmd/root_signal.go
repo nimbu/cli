@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/signal"
 	"sync"
@@ -29,6 +30,11 @@ var (
 	// terminalRestoreTimeout bounds the restores a forced exit runs, so a
 	// stuck restore never keeps a second Ctrl-C from ending the process.
 	terminalRestoreTimeout = time.Second
+	// interruptHintDelay is how long a command may take to end after the
+	// first signal before nimbu says how to force it, so a first Ctrl-C that
+	// a command cannot act on is never silent.
+	interruptHintDelay = time.Second
+	writeInterruptHint = func(msg string) { _, _ = os.Stderr.WriteString(msg) }
 )
 
 func init() {
@@ -94,6 +100,12 @@ func beginPrompt() func() {
 
 func watchInterrupts(sigCh <-chan os.Signal, done <-chan struct{}, cancel context.CancelCauseFunc) {
 	seen := 0
+	var hint *time.Timer
+	defer func() {
+		if hint != nil {
+			hint.Stop()
+		}
+	}()
 	for {
 		select {
 		case <-done:
@@ -109,6 +121,9 @@ func watchInterrupts(sigCh <-chan os.Signal, done <-chan struct{}, cancel contex
 			if seen == 1 {
 				cancel(errInterrupted)
 				if !prompting {
+					hint = time.AfterFunc(interruptHintDelay, func() {
+						writeInterruptHint(interruptForceHint(sig))
+					})
 					continue
 				}
 			}
@@ -121,6 +136,20 @@ func watchInterrupts(sigCh <-chan os.Signal, done <-chan struct{}, cancel contex
 			return
 		}
 	}
+}
+
+// interruptForceHint is the line printed when the first signal did not end
+// the command promptly.
+func interruptForceHint(sig os.Signal) string {
+	return "\nInterrupting… (" + serverForceHint(sig, term.IsTerminal(int(os.Stdin.Fd()))) + ")\n"
+}
+
+// readStdinAsPrompt runs read on stdin marked as a prompt (see beginPrompt):
+// a read cannot see the context, so the first Ctrl-C while it blocks exits
+// 130 at once instead of being swallowed.
+func readStdinAsPrompt(read func(io.Reader) ([]byte, error)) ([]byte, error) {
+	defer beginPrompt()()
+	return read(os.Stdin)
 }
 
 // exitInterrupted restores the terminal (bounded, best-effort) and exits 130.
