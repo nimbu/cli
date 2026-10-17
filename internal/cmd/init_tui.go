@@ -12,7 +12,6 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 
 	"github.com/nimbu/cli/internal/api"
@@ -112,6 +111,7 @@ type initTeaModel struct {
 	showBanner bool
 	useColor   bool
 	isDark     bool
+	ascii      bool // ASCII-only glyphs (output.ASCIIOnly)
 	theme      initTheme
 
 	width  int
@@ -292,7 +292,8 @@ func newInitTeaModel(ctx context.Context, cmd *InitCmd, flags *RootFlags) *initT
 	model.writer = writer
 	model.presets = cmd.presets(flags)
 	model.banner = bannerThemeOrDefault(configuredBannerTheme(ctx))
-	model.showBanner = ShouldShowBanner(writer)
+	// The block-art banner needs Unicode, like nimbu server's.
+	model.showBanner = ShouldShowBanner(writer) && !model.ascii
 	fixedTarget, fixed, ferr := cmd.resolveFixedTarget()
 	switch {
 	case ferr != nil:
@@ -317,6 +318,10 @@ func newInitTeaModel(ctx context.Context, cmd *InitCmd, flags *RootFlags) *initT
 
 func newInitTeaTestModel(prompt initPromptModel) *initTeaModel {
 	model := newInitTeaBaseModel(context.Background(), false)
+	// Tests pin Unicode glyphs whatever the locale they run under.
+	model.ascii = false
+	model.spinner.Spinner = initSpinner(false)
+	model.applyTheme()
 	model.cmd = &InitCmd{}
 	model.phase = initTeaPhasePrompt
 	model.prompt = prompt
@@ -341,6 +346,7 @@ func newInitTeaBaseModel(ctx context.Context, useColor bool) *initTeaModel {
 	directoryInput.Prompt = ""
 	directoryInput.Placeholder = "Directory name"
 
+	ascii := output.ASCIIOnly()
 	model := &initTeaModel{
 		ctx:            ctx,
 		work:           newInitWork(ctx),
@@ -349,10 +355,11 @@ func newInitTeaBaseModel(ctx context.Context, useColor bool) *initTeaModel {
 		showBanner:     true,
 		useColor:       useColor,
 		isDark:         true, // most terminals; upgraded once the background reply arrives
+		ascii:          ascii,
 		width:          80,
 		height:         24,
 		phase:          initTeaPhaseLoading,
-		spinner:        spinner.New(spinner.WithSpinner(initSpinner())),
+		spinner:        spinner.New(spinner.WithSpinner(initSpinner(ascii))),
 		filterInput:    filterInput,
 		directoryInput: directoryInput,
 		repeatables:    map[string]struct{}{},
@@ -361,34 +368,6 @@ func newInitTeaBaseModel(ctx context.Context, useColor bool) *initTeaModel {
 	}
 	model.applyTheme()
 	return model
-}
-
-// initSpinner is the Dot spinner without its trailing padding, so the
-// spinner takes exactly the marker's single cell on the timeline rail.
-func initSpinner() spinner.Spinner {
-	frames := make([]string, 0, len(spinner.Dot.Frames))
-	for _, frame := range spinner.Dot.Frames {
-		frames = append(frames, strings.TrimSpace(frame))
-	}
-	return spinner.Spinner{Frames: frames, FPS: spinner.Dot.FPS}
-}
-
-// applyTheme rebuilds every style from the current color decision and
-// background, including the embedded bubbles.
-func (m *initTeaModel) applyTheme() {
-	m.theme = newInitTheme(m.useColor, m.isDark)
-	m.spinner.Style = m.theme.style(m.theme.Active, true)
-
-	styles := textinput.DefaultStyles(m.isDark)
-	if !m.useColor {
-		plain := lipgloss.NewStyle()
-		styles.Focused = textinput.StyleState{Text: plain, Placeholder: plain, Suggestion: plain, Prompt: plain}
-		styles.Blurred = styles.Focused
-		styles.Cursor.Color = nil
-	}
-	styles.Cursor.Blink = false
-	m.filterInput.SetStyles(styles)
-	m.directoryInput.SetStyles(styles)
 }
 
 func (m *initTeaModel) Init() tea.Cmd {
@@ -463,6 +442,11 @@ func (m *initTeaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case initTeaErrMsg:
 		m.err = typed.err
 		return m, m.quit()
+	case tea.ResumeMsg:
+		// Back from Ctrl-Z: the window may have been resized meanwhile.
+		return m, tea.RequestWindowSize
+	case tea.PasteMsg:
+		return m.handlePaste(typed)
 	case tea.KeyPressMsg:
 		return m.handleKey(typed)
 	}

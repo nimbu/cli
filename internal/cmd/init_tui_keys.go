@@ -12,7 +12,14 @@ import (
 // held and the wizard says it is finishing, so the target is never left
 // half-written. A held ctrl+c still exits 130 once the write is done, like a
 // SIGINT would. A second press stops anyway (exit 130).
+//
+// Raw mode delivers Ctrl-Z as a key, so it suspends through Bubble Tea in
+// every phase: the terminal is restored, the whole process group (a running
+// git step too) stops, and the frame is redrawn on fg. A no-op on Windows.
 func (m *initTeaModel) handleKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if key.String() == "ctrl+z" {
+		return m, tea.Suspend
+	}
 	switch m.phase {
 	case initTeaPhaseApply:
 		if isInitCancelKey(key) {
@@ -88,6 +95,26 @@ func (m *initTeaModel) handleDirectoryKey(key tea.KeyPressMsg) (tea.Model, tea.C
 	return m, cmd
 }
 
+// handlePaste routes a bracketed paste to the active text field. Bubble Tea
+// v2 delivers a paste as its own message, not as key presses; the text input
+// sanitizes it (newlines and tabs become spaces).
+func (m *initTeaModel) handlePaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
+	if m.phase != initTeaPhasePrompt || m.tooSmall() {
+		return m, nil
+	}
+	var cmd tea.Cmd
+	switch {
+	case m.step == initTeaStepDirectory:
+		m.directoryInput, cmd = m.directoryInput.Update(msg)
+		m.answers.DirectoryName = m.directoryInput.Value()
+	case m.isFilterableStep():
+		m.filterInput, cmd = m.filterInput.Update(msg)
+		m.filterInput.CursorEnd()
+		m.clampCursor()
+	}
+	return m, cmd
+}
+
 func (m *initTeaModel) handleConfirmKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "ctrl+c", "esc":
@@ -148,10 +175,13 @@ func (m *initTeaModel) handleListKey(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.confirmCurrentSelection()
 	}
 
-	// Delegate remaining keys to filter input
+	// Delegate remaining keys to filter input. The search line draws no
+	// caret, so editing stays at the end: left/right, home/end and friends
+	// must not move an invisible insertion point.
 	if filterable {
 		var cmd tea.Cmd
 		m.filterInput, cmd = m.filterInput.Update(key)
+		m.filterInput.CursorEnd()
 		m.clampCursor()
 		return m, cmd
 	}

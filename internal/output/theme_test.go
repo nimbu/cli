@@ -55,6 +55,14 @@ func TestAnimationAllowed(t *testing.T) {
 	}
 }
 
+func TestDumbTerminal(t *testing.T) {
+	for term, want := range map[string]bool{"dumb": true, "DUMB": true, "xterm-256color": false, "": false} {
+		if got := dumbTerminal(envMap(map[string]string{"TERM": term})); got != want {
+			t.Fatalf("dumbTerminal(TERM=%q) = %v, want %v", term, got, want)
+		}
+	}
+}
+
 func TestThemeOffIsPassthrough(t *testing.T) {
 	for _, theme := range []Theme{{}, NewTheme(termenv.Ascii)} {
 		if theme.Enabled() {

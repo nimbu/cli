@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
@@ -103,7 +104,103 @@ func TestBannerPickerCancelKeys(t *testing.T) {
 			if v := m.View(); v.Content != "" {
 				t.Fatalf("final frame = %q, want it cleared", v.Content)
 			}
+			// ctrl+c is an interrupt (exit 130); the others cancel cleanly.
+			want := 0
+			if name == "ctrl+c" {
+				want = ExitInterrupted
+			}
+			if m.exitCode != want {
+				t.Fatalf("exitCode = %d, want %d", m.exitCode, want)
+			}
 		})
+	}
+}
+
+// Regression: a forwarded SIGINT/SIGTERM bypassed Update, so the full picker
+// frame stayed in the scrollback and the command exited 0.
+func TestBannerPickerFilterRoutesSignalsThroughUpdate(t *testing.T) {
+	live := newBannerPickerModel(BannerThemes(), "", false)
+	if got := bannerPickerFilter(live, tea.InterruptMsg{}); got != (bannerStopMsg{code: 130}) {
+		t.Fatalf("SIGINT -> %#v, want stop 130", got)
+	}
+	if got := bannerPickerFilter(live, tea.QuitMsg{}); got != (bannerStopMsg{code: 143}) {
+		t.Fatalf("SIGTERM -> %#v, want stop 143", got)
+	}
+	if got := bannerPickerFilter(live, tea.KeyPressMsg{Code: tea.KeyDown}); got != (tea.KeyPressMsg{Code: tea.KeyDown}) {
+		t.Fatalf("other messages must pass through, got %#v", got)
+	}
+	done := live
+	done.done = true
+	if _, ok := bannerPickerFilter(done, tea.QuitMsg{}).(tea.QuitMsg); !ok {
+		t.Fatal("the picker's own quit must pass through")
+	}
+
+	m, cmd := pickerUpdate(t, live, bannerStopMsg{code: 143})
+	if !m.done || m.chosen || m.exitCode != 143 || !isQuit(cmd) {
+		t.Fatalf("stop: done=%v chosen=%v exit=%d quit=%v", m.done, m.chosen, m.exitCode, isQuit(cmd))
+	}
+	if v := m.View(); v.Content != "" {
+		t.Fatalf("final frame = %q, want it cleared", v.Content)
+	}
+}
+
+func TestBannerPickerSignalsThroughProgram(t *testing.T) {
+	for name, tc := range map[string]struct {
+		msg  tea.Msg
+		want int
+	}{
+		"SIGINT":  {tea.InterruptMsg{}, 130},
+		"SIGTERM": {tea.QuitMsg{}, 143},
+	} {
+		t.Run(name, func(t *testing.T) {
+			in, inW := io.Pipe()
+			defer func() { _ = inW.Close() }()
+			program := tea.NewProgram(newBannerPickerModel(BannerThemes(), "", false),
+				tea.WithInput(in),
+				tea.WithOutput(io.Discard),
+				tea.WithWindowSize(80, 24),
+				tea.WithoutSignals(),
+				tea.WithFilter(bannerPickerFilter),
+			)
+			go program.Send(tc.msg)
+			result, err := program.Run()
+			if err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			final := result.(bannerPickerModel)
+			if !final.done || final.chosen || final.exitCode != tc.want {
+				t.Fatalf("done=%v chosen=%v exit=%d, want exit %d", final.done, final.chosen, final.exitCode, tc.want)
+			}
+		})
+	}
+}
+
+// Raw mode delivers Ctrl-Z as a key; the picker must ask Bubble Tea to
+// suspend instead of dropping it.
+func TestBannerPickerCtrlZSuspends(t *testing.T) {
+	m, cmd := pickerUpdate(t, newBannerPickerModel(BannerThemes(), "", false), tea.KeyPressMsg{Code: 'z', Mod: tea.ModCtrl})
+	if cmd == nil {
+		t.Fatal("ctrl+z must return a command")
+	}
+	if _, ok := cmd().(tea.SuspendMsg); !ok || m.done {
+		t.Fatalf("ctrl+z: done=%v, want a suspend", m.done)
+	}
+	if _, cmd := pickerUpdate(t, m, tea.ResumeMsg{}); cmd == nil {
+		t.Fatal("resume must re-read the window size")
+	}
+}
+
+func TestBannerPickerASCIIFrame(t *testing.T) {
+	m := newBannerPickerModel(BannerThemes(), "", true)
+	m.ascii = true
+	frame := ansi.Strip(m.render())
+	for _, r := range frame {
+		if r > 0x7f {
+			t.Fatalf("ASCII frame has %q:\n%s", r, frame)
+		}
+	}
+	if !strings.Contains(frame, "up/down move") || !strings.Contains(frame, "##") {
+		t.Fatalf("ASCII frame lacks hint or swatches:\n%s", frame)
 	}
 }
 
@@ -277,6 +374,11 @@ func TestBannerPickerUsable(t *testing.T) {
 			return &RootFlags{}
 		},
 		"stdin": func(t *testing.T) *RootFlags { stubInteractivePrompt(t, false); return &RootFlags{} },
+		"TERM=dumb": func(t *testing.T) *RootFlags {
+			stubInteractivePrompt(t, true)
+			t.Setenv("TERM", "dumb")
+			return &RootFlags{}
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := bannerPickerUsable(w, setup(t))
@@ -287,6 +389,17 @@ func TestBannerPickerUsable(t *testing.T) {
 				t.Fatalf("exit = %d, want %d", desc.ExitCode, ExitUsage)
 			}
 		})
+	}
+}
+
+// TERM=dumb has no cursor control for the redrawn frame: refuse before
+// starting Bubble Tea, even on a real terminal.
+func TestBannerPickerRefusesDumbTerminal(t *testing.T) {
+	stubInteractivePrompt(t, true)
+	t.Setenv("TERM", "dumb")
+	err := bannerPickerUsable(&output.Writer{Err: &bytes.Buffer{}}, &RootFlags{})
+	if err == nil || !strings.Contains(err.Error(), "TERM=dumb") {
+		t.Fatalf("err = %v, want a TERM=dumb refusal", err)
 	}
 }
 
@@ -317,7 +430,7 @@ func TestRunBannerPickerCtrlCCancelsThroughProgram(t *testing.T) {
 	final, _ := runPickerWithInput(t, "j\x03")
 	// done is only set by a key handler, so this proves ctrl+c reached the
 	// model rather than the program ending on EOF.
-	if !final.done || final.chosen {
-		t.Fatalf("done=%v chosen=%v, want ctrl+c to cancel", final.done, final.chosen)
+	if !final.done || final.chosen || final.exitCode != ExitInterrupted {
+		t.Fatalf("done=%v chosen=%v exit=%d, want ctrl+c to cancel with 130", final.done, final.chosen, final.exitCode)
 	}
 }

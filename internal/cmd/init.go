@@ -92,7 +92,7 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	noInput := flags != nil && flags.NoInput
 	writer := output.WriterFromContext(ctx)
-	if !noInput && output.IsHuman(ctx) && writer != nil && writer.ErrIsTTY() && stdinIsTerminal() {
+	if initWizardUsable(ctx, writer, noInput) {
 		return c.runInteractiveTTY(ctx, flags)
 	}
 	presets := c.presets(flags).nonInteractive()
@@ -102,6 +102,16 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 		}
 	}
 	return c.runLines(ctx, presets, noInput)
+}
+
+// initWizardUsable reports whether the full-screen wizard can run: a human
+// output mode, stdin and stderr terminals, and a terminal with cursor control
+// (TERM=dumb gets the line prompts instead). --no-input never prompts.
+func initWizardUsable(ctx context.Context, writer *output.Writer, noInput bool) bool {
+	if noInput || !output.IsHuman(ctx) || writer == nil || output.DumbTerminal() {
+		return false
+	}
+	return writer.ErrIsTTY() && stdinIsTerminal()
 }
 
 // runLines is the non-TTY path: flags answer what they can, the line prompter

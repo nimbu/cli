@@ -85,7 +85,7 @@ func (p *watchPrinter) humanEventLine(ev realtime.Event) string {
 	label := p.colorEvent(fmt.Sprintf("%-8s", ev.Event), ev.Event)
 
 	if ev.Event == "resync" {
-		return fmt.Sprintf("%s  %s  —  re-read the channel with: %s", stamp, label, p.resyncHint())
+		return fmt.Sprintf("%s  %s  %s  re-read the channel with: %s", stamp, label, p.writer.Glyphs().Dash, p.resyncHint())
 	}
 	if title := watchEventTitle(ev); title != "" {
 		return fmt.Sprintf("%s  %s  %s  %s", stamp, label, ev.ID, title)

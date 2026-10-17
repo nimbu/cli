@@ -123,7 +123,8 @@ Behavior changes that can affect scripts:
 - Prompts never block a pipe: without a terminal on stdin, with `CI` set, or
   with `--no-input`, a confirmation fails with `cli.confirmation_required`
   (exit 2) instead of waiting. Pass `--force` or `--yes`.
-- Ctrl-C and SIGTERM exit 130 (the `nimbu init` wizard exits 143 on SIGTERM).
+- Ctrl-C and SIGTERM exit 130 (the `nimbu init` wizard and the `nimbu config
+  banner` picker exit 143 on SIGTERM).
   Long-running commands that stop gracefully on the first signal (`nimbu
   server`, `apps logs --tail`, `channels entries watch`) exit 0; a second
   Ctrl-C force-stops them with 130.
@@ -439,7 +440,9 @@ terminal. `FORCE_COLOR=1` and `CLICOLOR_FORCE` are ignored on purpose: Node
 tooling exports them shell-wide, and honoring them would leak escape codes
 into pipes and agent logs. Use `--color always` to force color.
 `NIMBU_ASCII=1` (also `TERM=dumb` or a non-UTF-8 locale) swaps symbols such as
-`✓` and `…` for ASCII. Line output uses a palette tuned for dark backgrounds
+`✓` and `…` for ASCII. Under `TERM=dumb`, `nimbu init` asks with line prompts
+instead of its full-screen wizard, and `nimbu config banner` refuses to start.
+Line output uses a palette tuned for dark backgrounds
 unless `NIMBU_THEME=light` is set or `COLORFGBG` reports a light background;
 `NIMBU_THEME=dark` forces the dark palette.
 
@@ -455,7 +458,7 @@ unless `NIMBU_THEME=light` is set or `COLORFGBG` reports a light background;
 | 7 | Rate limited (retryable) |
 | 8 | Network error (retryable) |
 | 130 | Interrupted (Ctrl-C or SIGTERM); a second Ctrl-C exits at once. `server`, `apps logs --tail` and `channels entries watch` exit 0 when the first signal stops them gracefully |
-| 143 | The `nimbu init` wizard was stopped with SIGTERM |
+| 143 | The `nimbu init` wizard or `nimbu config banner` picker was stopped with SIGTERM |
 
 With `--json`, errors (usage errors too) are a JSON envelope on stderr with
 `code`, `hint`, `exit_code` and `retryable`.

@@ -35,7 +35,12 @@ func (m *initTeaModel) tooSmall() bool {
 
 func renderInitTea(m *initTeaModel) string {
 	if m.tooSmall() {
-		return clampInitLines(renderInitTooSmall(m), m.width)
+		if m.quitting || m.phase == initTeaPhaseDone {
+			// The closing frame stays in the scrollback: never let the resize
+			// notice be it, or the next-step command is lost.
+			return renderInitClosingSmall(m)
+		}
+		return clampInitLines(m, renderInitTooSmall(m))
 	}
 	candidates := []initLayout{{compact: false}, {compact: true}}
 	if m.showBanner && m.height >= initBannerMinHeight && m.width >= initBannerWidth() {
@@ -43,18 +48,18 @@ func renderInitTea(m *initTeaModel) string {
 	}
 	for _, layout := range candidates {
 		if frame, ok := fitInitLayout(m, layout); ok {
-			return clampInitLines(frame, m.width)
+			return clampInitLines(m, frame)
 		}
 	}
 	for hidden := 1; hidden <= len(m.transcript); hidden++ {
 		if frame, ok := fitInitLayout(m, initLayout{compact: true, hidden: hidden}); ok {
-			return clampInitLines(frame, m.width)
+			return clampInitLines(m, frame)
 		}
 	}
 	// Nothing fits even folded: show the tightest frame; the inline renderer
 	// keeps its bottom rows, which hold the active prompt.
 	layout := initLayout{compact: true, hidden: len(m.transcript), listRows: initMinListRows}
-	return clampInitLines(renderInitFrame(m, layout), m.width)
+	return clampInitLines(m, renderInitFrame(m, layout))
 }
 
 // fitInitLayout measures the frame without option rows, then gives the list
@@ -92,7 +97,7 @@ func renderInitFrame(m *initTeaModel, layout initLayout) string {
 	if layout.bigHeader {
 		lines = append(lines, "")
 	}
-	lines = append(lines, m.theme.muted("┌")+" "+m.theme.value("Let's set up a new project."))
+	lines = append(lines, m.theme.muted(m.theme.glyphs.Top)+" "+m.theme.value("Let's set up a new project."))
 	lines = append(lines, renderInitTimeline(m, layout)...)
 	return strings.Join(lines, "\n")
 }
@@ -108,9 +113,30 @@ func renderInitTooSmall(m *initTeaModel) string {
 		}
 	}
 	add(m.theme.value, "Nimbu init")
-	add(func(s string) string { return s }, fmt.Sprintf("Terminal too small: %d×%d, needs %d×%d.", m.width, m.height, initMinWidth, initMinHeight))
-	add(m.theme.muted, "Enlarge the window, or press esc to cancel.")
+	times := m.theme.glyphs.Times
+	add(func(s string) string { return s }, fmt.Sprintf("Terminal too small: %d%s%d, needs %d%s%d.", m.width, times, m.height, initMinWidth, times, initMinHeight))
+	if m.phase == initTeaPhaseApply {
+		// esc is held while files are written; do not offer it.
+		add(m.theme.muted, "Writing files"+m.theme.glyphs.Ellipsis+" enlarge the window to follow along.")
+	} else {
+		add(m.theme.muted, "Enlarge the window, or press esc to cancel.")
+	}
 	return strings.Join(lines, "\n")
+}
+
+// renderInitClosingSmall is the last frame below the minimum size: only the
+// closing line ("Done!" with the next-step command, or "Cancelled."), wrapped
+// to the width, plus the blank line Bubble Tea clears on exit.
+func renderInitClosingSmall(m *initTeaModel) string {
+	width := max(m.width, 1)
+	var lines []string
+	switch {
+	case m.phase == initTeaPhaseDone:
+		lines = renderInitTeaDoneFooter(m, width)
+	case m.err == nil || errors.Is(m.err, errInitCancelled):
+		lines = wrapInitLine(m.theme.muted(m.theme.glyphs.Bottom+" Cancelled."), width)
+	}
+	return strings.Join(append(lines, ""), "\n")
 }
 
 func initBannerLines() []string {
@@ -186,7 +212,7 @@ func renderInitTimeline(m *initTeaModel, layout initLayout) []string {
 		// The last frame stays in the scrollback: replace the live prompt with
 		// a closing line. Errors are printed by the command after exit.
 		if m.err == nil || errors.Is(m.err, errInitCancelled) {
-			lines = append(lines, rail, m.theme.muted("└ Cancelled."))
+			lines = append(lines, rail, m.theme.muted(m.theme.glyphs.Bottom+" Cancelled."))
 		}
 	default:
 		if active := activeTimelineLines(m, contentWidth, layout.listRows); len(active) > 0 {
@@ -206,9 +232,9 @@ func renderTimelineEntry(m *initTeaModel, state initTimelineState, lines []strin
 	if len(lines) == 0 {
 		return nil
 	}
-	marker := m.theme.done("◇")
+	marker := m.theme.done(m.theme.glyphs.Done)
 	if state == initTimelineActive {
-		marker = m.theme.active("●")
+		marker = m.theme.active(m.theme.glyphs.Active)
 		if m.phase == initTeaPhaseLoading || m.phase == initTeaPhaseApply {
 			marker = m.spinner.View()
 		}
@@ -229,15 +255,15 @@ func renderTimelineEntry(m *initTeaModel, state initTimelineState, lines []strin
 }
 
 func renderTimelineConnector(m *initTeaModel) string {
-	return m.theme.muted("│")
+	return m.theme.muted(m.theme.glyphs.Rail)
 }
 
 func transcriptEntryLines(m *initTeaModel, entry initTranscriptEntry, width int) []string {
 	if text := strings.TrimSpace(entry.Text); text != "" {
-		return []string{truncateInit(text, width)}
+		return []string{m.theme.truncate(text, width)}
 	}
 	if strings.TrimSpace(entry.Label) == "" {
-		return []string{truncateInit(entry.Value, width)}
+		return []string{m.theme.truncate(entry.Value, width)}
 	}
 	return []string{renderLabelValueLine(m, entry.Label, entry.Value, width)}
 }
@@ -247,7 +273,7 @@ func transcriptEntryLines(m *initTeaModel, entry initTranscriptEntry, width int)
 // label it moves to its own line(s), so it can always be read and copied.
 func renderInitTeaDoneFooter(m *initTeaModel, width int) []string {
 	command := initNextStepCommand(m.result.Path)
-	lead := m.theme.muted("└") + " " + m.theme.done("Done!")
+	lead := m.theme.muted(m.theme.glyphs.Bottom) + " " + m.theme.done("Done!")
 	if command == "" {
 		// In-place into the current directory — nothing to cd into.
 		return wrapInitLine(lead+" "+m.theme.muted("Your project is ready."), width)
@@ -274,7 +300,38 @@ func wrapInitLine(line string, width int) []string {
 // renderLabelValueLine renders "Label: value" with a muted label and a bright
 // value, truncated by display width. The value is plain text.
 func renderLabelValueLine(m *initTeaModel, label, value string, width int) string {
-	return renderLabelLine(m, label, m.theme.value(truncateInit(value, max(width-lipgloss.Width(label)-2, 1))), width)
+	return renderLabelLine(m, label, m.theme.value(m.theme.truncate(value, max(width-lipgloss.Width(label)-2, 1))), width)
+}
+
+// renderLabelPathLine is renderLabelValueLine for a filesystem path: the home
+// directory shows as ~ and a long path loses its start, never its end, so the
+// directory about to be written stays visible.
+func renderLabelPathLine(m *initTeaModel, label, path string, width int) string {
+	return renderLabelLine(m, label, m.theme.value(truncateInitPath(m, path, max(width-lipgloss.Width(label)-2, 1))), width)
+}
+
+// initHomeDir is swapped in tests.
+var initHomeDir = os.UserHomeDir
+
+// truncateInitPath shortens path to width cells, keeping its tail.
+func truncateInitPath(m *initTeaModel, path string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if home, err := initHomeDir(); err == nil && home != "" {
+		if rel, err := filepath.Rel(home, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			path = filepath.Join("~", rel)
+		}
+	}
+	cells := lipgloss.Width(path)
+	if cells <= width {
+		return path
+	}
+	tail := m.theme.glyphs.Ellipsis
+	if lipgloss.Width(tail) >= width {
+		return m.theme.truncate(path, width)
+	}
+	return ansi.TruncateLeft(path, cells-width+lipgloss.Width(tail), tail)
 }
 
 // renderLabelLine is renderLabelValueLine for an already-styled value (such as
@@ -282,29 +339,21 @@ func renderLabelValueLine(m *initTeaModel, label, value string, width int) strin
 func renderLabelLine(m *initTeaModel, label, styled string, width int) string {
 	prefix := label + ": "
 	if lipgloss.Width(prefix) >= width {
-		return m.theme.muted(truncateInit(prefix, width))
+		return m.theme.muted(m.theme.truncate(prefix, width))
 	}
-	return m.theme.muted(prefix) + truncateInit(styled, width-lipgloss.Width(prefix))
-}
-
-// truncateInit cuts s to width terminal cells, keeping ANSI sequences intact
-// and counting wide (CJK, emoji) graphemes correctly.
-func truncateInit(s string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	return ansi.Truncate(s, width, "…")
+	return m.theme.muted(prefix) + m.theme.truncate(styled, width-lipgloss.Width(prefix))
 }
 
 // clampInitLines guarantees no frame line is wider than the terminal.
-func clampInitLines(frame string, width int) string {
+func clampInitLines(m *initTeaModel, frame string) string {
+	width := m.width
 	if width <= 0 {
 		return frame
 	}
 	lines := strings.Split(frame, "\n")
 	for i, line := range lines {
 		if lipgloss.Width(line) > width {
-			lines[i] = truncateInit(line, width)
+			lines[i] = m.theme.truncate(line, width)
 		}
 	}
 	return strings.Join(lines, "\n")

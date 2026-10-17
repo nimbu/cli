@@ -36,6 +36,7 @@ func (c *ConfigBannerCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	// The picker is chrome: it draws on stderr, so stderr decides color.
 	model := newBannerPickerModel(BannerThemes(), cfg.BannerTheme, writer.ErrUseColor())
+	model.ascii = output.ASCIIOnly()
 	final, err := runBannerPicker(ctx, model,
 		tea.WithOutput(errOut),
 		tea.WithColorProfile(output.CharmProfile(writer.ErrColorProfile())),
@@ -45,6 +46,11 @@ func (c *ConfigBannerCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	if !final.chosen {
 		_, _ = fmt.Fprintln(errOut, "Cancelled.")
+		if final.exitCode != 0 {
+			// Ctrl-C or a signal: exit non-zero like the init wizard. The
+			// notice above already told the user, so the error stays silent.
+			return &ExitError{Code: final.exitCode, Err: &displayedError{err: errors.New("banner picker interrupted")}}
+		}
 		return nil
 	}
 
@@ -60,9 +66,13 @@ func (c *ConfigBannerCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 // bannerPickerUsable refuses to start the picker where nobody can answer it:
-// --no-input, CI, or stdin or stderr is not a terminal.
+// --no-input, CI, stdin or stderr is not a terminal, or TERM=dumb (no cursor
+// control for a redrawn frame).
 func bannerPickerUsable(w *output.Writer, flags *RootFlags) error {
 	reason := promptBlocker(flags)
+	if reason == "" && output.DumbTerminal() {
+		reason = "TERM=dumb"
+	}
 	if reason == "" && !w.ErrIsTTY() {
 		reason = "stderr is not a terminal"
 	}
@@ -76,27 +86,59 @@ func bannerPickerUsable(w *output.Writer, flags *RootFlags) error {
 }
 
 // runBannerPicker runs the picker program until the user selects or cancels.
-// Bubble Tea owns raw mode and terminal restore on every exit path; an
-// interrupt counts as a cancel. SIGINT/SIGTERM are claimed from the root
-// handler and forwarded to the program, so a signal cancels the picker once
-// instead of also canceling ctx (killing the program) or force-exiting.
+// Bubble Tea owns raw mode and terminal restore on every exit path.
+// SIGINT/SIGTERM are claimed from the root handler and forwarded to the
+// program, so a signal cancels the picker once instead of also canceling ctx
+// (killing the program) or force-exiting. bannerPickerFilter routes them
+// through Update, so the frame is cleared and the exit code recorded.
 func runBannerPicker(ctx context.Context, model bannerPickerModel, opts ...tea.ProgramOption) (bannerPickerModel, error) {
-	opts = append([]tea.ProgramOption{tea.WithContext(ctx), tea.WithoutSignalHandler()}, opts...)
+	opts = append([]tea.ProgramOption{tea.WithContext(ctx), tea.WithoutSignalHandler(), tea.WithFilter(bannerPickerFilter)}, opts...)
 	program := tea.NewProgram(model, opts...)
 	stopSignals := forwardProgramSignals(program)
 	defer stopSignals()
 	result, err := program.Run()
+	final, ok := result.(bannerPickerModel)
+	if !ok {
+		final = model
+	}
 	if errors.Is(err, tea.ErrInterrupted) {
-		return model, nil
+		if final.exitCode == 0 {
+			final.exitCode = ExitInterrupted
+		}
+		final.chosen = false
+		return final, nil
 	}
 	if err != nil {
 		return model, fmt.Errorf("banner picker: %w", err)
 	}
-	final, ok := result.(bannerPickerModel)
-	if !ok {
-		return model, nil
-	}
 	return final, nil
+}
+
+// bannerStopMsg ends the picker for a signal, with the exit code to report.
+type bannerStopMsg struct{ code int }
+
+// Exit codes for a picker stopped by Ctrl-C or a signal (128 + signal).
+const (
+	bannerExitInterrupted = ExitInterrupted // ctrl+c / SIGINT
+	bannerExitTerminated  = 143             // SIGTERM
+)
+
+// bannerPickerFilter turns a forwarded SIGINT (InterruptMsg) or SIGTERM
+// (QuitMsg) into a bannerStopMsg. Bubble Tea acts on those messages before
+// Update would see them, which left the full picker frame in the scrollback
+// and exited 0. The picker's own tea.Quit (done already set) passes through.
+func bannerPickerFilter(model tea.Model, msg tea.Msg) tea.Msg {
+	m, _ := model.(bannerPickerModel)
+	if m.done {
+		return msg
+	}
+	switch msg.(type) {
+	case tea.InterruptMsg:
+		return bannerStopMsg{code: bannerExitInterrupted}
+	case tea.QuitMsg:
+		return bannerStopMsg{code: bannerExitTerminated}
+	}
+	return msg
 }
 
 const (
@@ -117,9 +159,12 @@ type bannerPickerModel struct {
 	width  int
 	height int
 	color  bool // render color previews
+	ascii  bool // NIMBU_ASCII, TERM=dumb or a non-UTF-8 locale: no Unicode glyphs
 	dark   bool // terminal background is dark (assumed until the terminal says otherwise)
 	done   bool
 	chosen bool
+	// exitCode is non-zero when ctrl+c or a signal ended the picker.
+	exitCode int
 }
 
 func newBannerPickerModel(themes []BannerTheme, current string, color bool) bannerPickerModel {
@@ -153,11 +198,24 @@ func (m bannerPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 	case tea.BackgroundColorMsg:
 		m.dark = msg.IsDark()
+	case tea.ResumeMsg:
+		// Back from Ctrl-Z: the window may have been resized meanwhile.
+		return m, tea.RequestWindowSize
+	case bannerStopMsg:
+		m.done, m.exitCode = true, msg.code
+		return m, tea.Quit
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "ctrl+c", "ctrl+d", "esc", "q":
+		case "ctrl+c":
+			m.done, m.exitCode = true, bannerExitInterrupted
+			return m, tea.Quit
+		case "ctrl+d", "esc", "q":
 			m.done = true
 			return m, tea.Quit
+		case "ctrl+z":
+			// Raw mode delivers Ctrl-Z as a key; suspend through Bubble Tea so
+			// the terminal is restored (a no-op on Windows).
+			return m, tea.Suspend
 		case "enter":
 			m.done, m.chosen = true, true
 			return m, tea.Quit
@@ -231,7 +289,11 @@ func (m bannerPickerModel) render() string {
 		}
 		rows = append(rows, "  "+m.themes[i].Label)
 	}
-	rows = append(rows, "", dim.Render("↑/↓ move · enter select · esc cancel"))
+	hint := "↑/↓ move · enter select · esc cancel"
+	if m.ascii {
+		hint = "up/down move - enter select - esc cancel"
+	}
+	rows = append(rows, "", dim.Render(hint))
 
 	for i, row := range rows {
 		rows[i] = ansi.Truncate(row, w, "")
@@ -241,7 +303,8 @@ func (m bannerPickerModel) render() string {
 
 // preview returns the color preview for the selected theme: the full banner
 // when it fits, a row of swatches when only that fits, and nothing when color
-// is off (every theme would look the same) or space is too tight.
+// is off (every theme would look the same) or space is too tight. ASCII-only
+// output skips the block-art banner and draws the swatches with "#".
 func (m bannerPickerModel) preview(width, budget int) []string {
 	if !m.color {
 		return nil
@@ -256,7 +319,7 @@ func (m bannerPickerModel) preview(width, budget int) []string {
 	for _, line := range m.banner {
 		bannerWidth = max(bannerWidth, ansi.StringWidth(line))
 	}
-	if width >= bannerWidth+2 && budget-(len(m.banner)+1) >= minList {
+	if !m.ascii && width >= bannerWidth+2 && budget-(len(m.banner)+1) >= minList {
 		lines := make([]string, len(m.banner))
 		for i, line := range m.banner {
 			lines[i] = "  " + colorAt(i).Render(line)
@@ -266,8 +329,12 @@ func (m bannerPickerModel) preview(width, budget int) []string {
 	if budget-2 >= minList {
 		var swatches strings.Builder
 		swatches.WriteString("  ")
+		swatch := "██"
+		if m.ascii {
+			swatch = "##"
+		}
 		for i := range palette {
-			swatches.WriteString(colorAt(i).Render("██"))
+			swatches.WriteString(colorAt(i).Render(swatch))
 		}
 		return []string{swatches.String()}
 	}

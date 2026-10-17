@@ -2,8 +2,12 @@ package cmd
 
 import (
 	"image/color"
+	"strings"
 
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nimbu/cli/internal/output"
 )
@@ -15,6 +19,7 @@ import (
 // off.
 type initTheme struct {
 	enabled bool
+	glyphs  initGlyphs
 
 	Done   color.Color // finished-step markers and the "Done!" label
 	Active color.Color // current-step marker, selection markers, primary action
@@ -28,17 +33,81 @@ type initTheme struct {
 // With color off every token is nil and styles render plain text.
 func newInitTheme(useColor, isDark bool) initTheme {
 	if !useColor {
-		return initTheme{}
+		return initTheme{glyphs: initUnicodeGlyphs}
 	}
 	palette := output.PaletteFor(isDark)
 	return initTheme{
 		enabled: true,
+		glyphs:  initUnicodeGlyphs,
 		Done:    lipgloss.Color(palette.Success),
 		Active:  lipgloss.Color(palette.Accent),
 		Muted:   lipgloss.Color(palette.Muted),
 		Border:  lipgloss.Color(palette.Border),
 		Warn:    lipgloss.Color(palette.Warning),
 	}
+}
+
+// initGlyphs is the wizard's symbol set. ASCII-only output (NIMBU_ASCII,
+// TERM=dumb or a non-UTF-8 locale, see output.ASCIIOnly) swaps every one.
+type initGlyphs struct {
+	Top, Rail, Bottom string // timeline corner, connector and closing corner
+	Done, Active      string // finished and current step markers
+	Cursor            string // list cursor
+	On, Off           string // multi-select checked and unchecked
+	Up, Down          string // "N more" indicators
+	Move              string // move-key hint
+	Sep               string // hint separator
+	Times             string // "80×24"
+	Ellipsis          string // truncation marker
+	Spinner           []string
+}
+
+var initUnicodeGlyphs = initGlyphs{
+	Top:      "┌",
+	Rail:     "│",
+	Bottom:   "└",
+	Done:     "◇",
+	Active:   "●",
+	Cursor:   "›",
+	On:       "●",
+	Off:      "○",
+	Up:       "↑",
+	Down:     "↓",
+	Move:     "↑↓",
+	Sep:      " · ",
+	Times:    "×",
+	Ellipsis: "…",
+}
+
+var initASCIIGlyphs = initGlyphs{
+	Top:      "+",
+	Rail:     "|",
+	Bottom:   "+",
+	Done:     "*",
+	Active:   ">",
+	Cursor:   ">",
+	On:       "[x]",
+	Off:      "[ ]",
+	Up:       "^",
+	Down:     "v",
+	Move:     "up/down",
+	Sep:      " - ",
+	Times:    "x",
+	Ellipsis: "...",
+	Spinner:  output.GlyphSet(true).Spinner,
+}
+
+// truncate cuts s to width terminal cells with the theme's ellipsis, keeping
+// ANSI sequences intact and counting wide (CJK, emoji) graphemes correctly.
+func (t initTheme) truncate(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	tail := t.glyphs.Ellipsis
+	if tail == "" {
+		tail = initUnicodeGlyphs.Ellipsis
+	}
+	return ansi.Truncate(s, width, tail)
 }
 
 func (t initTheme) style(fg color.Color, bold bool) lipgloss.Style {
@@ -70,4 +139,42 @@ func (t initTheme) bannerLineColor(palette []string, idx int) color.Color {
 		return t.Text
 	}
 	return lipgloss.Color(hex)
+}
+
+// initSpinner is the Dot spinner without its trailing padding, so the
+// spinner takes exactly the marker's single cell on the timeline rail. ASCII
+// output spins through "- \\ | /" instead of braille.
+func initSpinner(ascii bool) spinner.Spinner {
+	if ascii {
+		return spinner.Spinner{Frames: initASCIIGlyphs.Spinner, FPS: spinner.Line.FPS}
+	}
+	frames := make([]string, 0, len(spinner.Dot.Frames))
+	for _, frame := range spinner.Dot.Frames {
+		frames = append(frames, strings.TrimSpace(frame))
+	}
+	return spinner.Spinner{Frames: frames, FPS: spinner.Dot.FPS}
+}
+
+// applyTheme rebuilds every style from the current color decision and
+// background, including the embedded bubbles.
+func (m *initTeaModel) applyTheme() {
+	m.theme = newInitTheme(m.useColor, m.isDark)
+	if m.ascii {
+		m.theme.glyphs = initASCIIGlyphs
+	}
+	m.spinner.Style = m.theme.style(m.theme.Active, true)
+
+	styles := textinput.DefaultStyles(m.isDark)
+	if !m.useColor {
+		plain := lipgloss.NewStyle()
+		styles.Focused = textinput.StyleState{Text: plain, Placeholder: plain, Suggestion: plain, Prompt: plain}
+		styles.Blurred = styles.Focused
+	}
+	// The bubbles default caret is reverse video on ANSI 7, a light grey
+	// block that all but vanishes on a light background. Without a color the
+	// caret reverses the terminal's own foreground, which always contrasts.
+	styles.Cursor.Color = nil
+	styles.Cursor.Blink = false
+	m.filterInput.SetStyles(styles)
+	m.directoryInput.SetStyles(styles)
 }

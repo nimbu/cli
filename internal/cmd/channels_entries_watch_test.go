@@ -175,6 +175,17 @@ func TestChannelEntriesWatchHumanLineAndResyncHint(t *testing.T) {
 	}
 }
 
+func TestChannelEntriesWatchResyncLineHonorsASCII(t *testing.T) {
+	t.Setenv("NIMBU_ASCII", "1")
+	printer := &watchPrinter{writer: &output.Writer{Out: &strings.Builder{}, Err: &strings.Builder{}, NoTTY: true}, channel: "blog"}
+	line := printer.humanEventLine(realtime.Event{Event: "resync", OccurredAt: "2026-09-21T10:00:00Z"})
+	for _, r := range line {
+		if r > 0x7f {
+			t.Fatalf("ASCII resync line has %q: %q", r, line)
+		}
+	}
+}
+
 func TestWatchExitErrorMapsOutcomes(t *testing.T) {
 	if err := watchExitError(realtime.ExitOnce, nil); err != nil {
 		t.Fatalf("once = %v, want nil", err)

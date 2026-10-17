@@ -458,3 +458,37 @@ func TestServerPresenterChromeFollowsProfileAndKeepsTextColor(t *testing.T) {
 func rgbSGR(hex string) string {
 	return strings.TrimSuffix(truecolorFG(hex), "m")
 }
+
+// Regression: on a terminal narrower than the frame (init --no-input, nimbu
+// server at 40 columns) every banner row wrapped into fragments.
+func TestServerPresenterBannerFitsNarrowTerminal(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := output.WithMode(context.Background(), output.Mode{})
+	ctx = output.WithWriter(ctx, &output.Writer{Out: &buf, Err: &buf, Color: "never"})
+	forceBannerTerminal(t, true)
+
+	orig := bannerStderrWidth
+	t.Cleanup(func() { bannerStderrWidth = orig })
+
+	bannerStderrWidth = func(*output.Writer) int { return 40 }
+	newServerPresenter(ctx, false).PrintBanner()
+	narrow := buf.String()
+	if strings.Contains(narrow, "██") || strings.Contains(narrow, "+--") {
+		t.Fatalf("40 columns must not get the framed banner, got:\n%s", narrow)
+	}
+	if !strings.Contains(narrow, "nimbu ") || strings.Count(strings.TrimSpace(narrow), "\n") != 0 {
+		t.Fatalf("want a one-line title, got %q", narrow)
+	}
+	for _, line := range strings.Split(narrow, "\n") {
+		if w := utf8.RuneCountInString(line); w > 40 {
+			t.Fatalf("line wider than the terminal (%d): %q", w, line)
+		}
+	}
+
+	buf.Reset()
+	bannerStderrWidth = func(*output.Writer) int { return 80 }
+	newServerPresenter(ctx, false).PrintBanner()
+	if !strings.Contains(buf.String(), "██╗") {
+		t.Fatalf("80 columns keeps the framed banner, got:\n%s", buf.String())
+	}
+}

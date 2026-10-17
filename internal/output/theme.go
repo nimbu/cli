@@ -273,5 +273,14 @@ func animationAllowed(noSpin, isTTY bool, getenv func(string) string) bool {
 	if noSpin || !isTTY {
 		return false
 	}
-	return !strings.EqualFold(getenv("TERM"), "dumb")
+	return !dumbTerminal(getenv)
+}
+
+// DumbTerminal reports TERM=dumb: a terminal without cursor control (Emacs
+// shell-mode, some editors' consoles). Full-screen programs such as the init
+// wizard must fall back to line output there.
+func DumbTerminal() bool { return dumbTerminal(os.Getenv) }
+
+func dumbTerminal(getenv func(string) string) bool {
+	return strings.EqualFold(getenv("TERM"), "dumb")
 }

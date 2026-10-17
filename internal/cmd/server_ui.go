@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/muesli/termenv"
+	"golang.org/x/term"
 
 	"github.com/nimbu/cli/internal/output"
 )
@@ -118,11 +119,24 @@ func (p *serverPresenter) Enabled() bool {
 	return p != nil && p.enabled
 }
 
+// bannerStderrWidth is stderr's terminal width, 0 when unknown; swapped in
+// tests, which write to buffers.
+var bannerStderrWidth = func(w *output.Writer) int {
+	if w == nil {
+		return 0
+	}
+	if f, ok := w.Err.(*os.File); ok {
+		if cols, _, err := term.GetSize(int(f.Fd())); err == nil && cols > 0 {
+			return cols
+		}
+	}
+	return 0
+}
+
 func (p *serverPresenter) PrintBanner() {
 	if !p.Enabled() || !p.showBanner {
 		return
 	}
-	p.resolveBackground()
 
 	lines := strings.Split(strings.Trim(serverBanner, "\n"), "\n")
 	label := fmt.Sprintf(" nimbu %s ", serverCLIVersion())
@@ -140,6 +154,16 @@ func (p *serverPresenter) PrintBanner() {
 	padStr := strings.Repeat(" ", pad)
 
 	innerWidth := contentWidth + 2*pad
+
+	// On a terminal narrower than the frame every row would wrap into
+	// fragments: print a one-line title instead (and skip the background
+	// query, which only colors the frame).
+	if cols := bannerStderrWidth(p.writer); cols > 0 && cols < innerWidth+2 {
+		_, _ = fmt.Fprintln(p.out)
+		_, _ = fmt.Fprintln(p.out, p.border(strings.TrimSpace(label)))
+		return
+	}
+	p.resolveBackground()
 
 	emptyRow := "|" + strings.Repeat(" ", innerWidth) + "|"
 
