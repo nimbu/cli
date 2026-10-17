@@ -157,7 +157,9 @@ func TestNewServerStreamsPassesThroughWhenNotInteractive(t *testing.T) {
 		if streams.childOut != nil || streams.childErr != nil {
 			t.Fatalf("human=%v: expected raw child passthrough", human)
 		}
-		if streams.out != &out || streams.err != &errOut {
+		// stdout is wrapped only to notice a closed pipe.
+		watch, ok := streams.out.(*serverPipeWatch)
+		if !ok || watch.dst != &out || streams.err != &errOut {
 			t.Fatalf("human=%v: expected nimbu lines on the writer streams", human)
 		}
 		if streams.childForceColor != "" {
