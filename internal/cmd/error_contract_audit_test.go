@@ -29,7 +29,7 @@ func assertTyped(t *testing.T, err error, code canonicalErrorCode) {
 func TestEnvironmentUsageErrorsAreTyped(t *testing.T) {
 	t.Run("unknown environment", func(t *testing.T) {
 		environmentProject(t)
-		err := applyEnvironment(&RootFlags{Environment: "nope"})
+		err := applyEnvironment(&RootFlags{Environment: "nope"}, nil)
 		assertTyped(t, err, errorUsageInvalid)
 		if desc := classifyError(err); !strings.Contains(desc.Hint, "nimbu env list") {
 			t.Fatalf("hint = %q", desc.Hint)
@@ -37,7 +37,7 @@ func TestEnvironmentUsageErrorsAreTyped(t *testing.T) {
 	})
 	t.Run("--env outside a project", func(t *testing.T) {
 		t.Setenv(config.ProjectDirEnv, t.TempDir())
-		assertTyped(t, applyEnvironment(&RootFlags{Environment: "staging"}), errorUsageInvalid)
+		assertTyped(t, applyEnvironment(&RootFlags{Environment: "staging"}, nil), errorUsageInvalid)
 	})
 	t.Run("env add without --site", func(t *testing.T) {
 		environmentProject(t)

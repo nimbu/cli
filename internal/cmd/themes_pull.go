@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/nimbu/cli/internal/output"
 	"github.com/nimbu/cli/internal/themes"
@@ -64,7 +65,7 @@ func (c *ThemePullCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	if mode.Plain {
 		for _, action := range result.Written {
-			if _, err := output.Fprintln(ctx, action.LocalPath); err != nil {
+			if err := output.Plain(ctx, filepath.ToSlash(action.LocalPath)); err != nil {
 				return err
 			}
 		}

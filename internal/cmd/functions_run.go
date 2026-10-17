@@ -77,12 +77,12 @@ func (c *FunctionsRunCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, result)
 	}
 
+	// --plain is one compact JSON object on one line, not a TSV record:
+	// running it through the TSV escaper would double the JSON escapes.
 	if mode.Plain {
-		b, err := json.Marshal(result)
-		if err != nil {
-			return err
-		}
-		return output.Plain(ctx, string(b))
+		enc := json.NewEncoder(output.WriterFromContext(ctx).Out)
+		enc.SetEscapeHTML(false)
+		return enc.Encode(result)
 	}
 
 	return output.JSON(ctx, result)

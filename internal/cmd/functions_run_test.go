@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/nimbu/cli/internal/output"
 )
 
 func TestFunctionsRunPositionalNameSuggestsFlag(t *testing.T) {
@@ -43,5 +46,27 @@ func TestFunctionsRunSendsFlatBody(t *testing.T) {
 	}
 	if _, exists := captured.body["params"]; exists {
 		t.Fatalf("body should not wrap params in an envelope: %#v", captured.body)
+	}
+}
+
+func TestFunctionsRunPlainPrintsValidCompactJSON(t *testing.T) {
+	srv, _ := jobsTestServer(t, http.StatusOK, `{"message":"He said \"hi\"\nC:\\tmp <b>"}`)
+	ctx, out, _ := newContractTestContext(t, srv.URL, output.Mode{Plain: true})
+
+	cmd := &FunctionsRunCmd{Function: "hello", Assignments: []string{"x=1"}}
+	if err := cmd.Run(ctx, &RootFlags{Site: "demo", APIURL: srv.URL}); err != nil {
+		t.Fatalf("run function: %v", err)
+	}
+
+	got := out.String()
+	if strings.Count(got, "\n") != 1 || !strings.HasSuffix(got, "\n") {
+		t.Fatalf("want one line, got %q", got)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(got), &decoded); err != nil {
+		t.Fatalf("--plain output is not valid JSON: %v\n%s", err, got)
+	}
+	if want := "He said \"hi\"\nC:\\tmp <b>"; decoded["message"] != want {
+		t.Fatalf("message = %q, want %q", decoded["message"], want)
 	}
 }

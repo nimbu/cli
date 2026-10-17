@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -133,4 +134,38 @@ func withTempCWD(t *testing.T, dir string, fn func()) {
 		}
 	}()
 	fn()
+}
+
+func TestNotificationsPullPlainEscapesPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("tab in a directory name is not allowed on Windows")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/notifications" {
+			_, _ = w.Write([]byte(`[{"slug":"welcome","name":"Welcome","subject":"Hi","text":"Body"}]`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	ctx, out, _ := newNotificationSyncTestContext(t, srv.URL)
+	ctx = output.WithMode(ctx, output.Mode{Plain: true})
+	dir := filepath.Join(t.TempDir(), "odd\tproj\\new")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	withTempCWD(t, dir, func() {
+		if err := (&NotificationsPullCmd{}).Run(ctx, &RootFlags{Site: "demo"}); err != nil {
+			t.Fatalf("run pull: %v", err)
+		}
+	})
+
+	got := out.String()
+	if strings.Count(got, "\n") != 1 || strings.Count(got, "\t") != 0 {
+		t.Fatalf("want one escaped single-field record, got %q", got)
+	}
+	if !strings.Contains(got, `odd\tproj\\new`) {
+		t.Fatalf("path not TSV-escaped: %q", got)
+	}
 }

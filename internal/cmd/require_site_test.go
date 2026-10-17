@@ -124,7 +124,7 @@ func TestResolveSitePrecedencePairs(t *testing.T) {
 func TestResolveSiteEnvironmentFlagOverridesExplicitSite(t *testing.T) {
 	environmentProject(t)
 	flags := &RootFlags{Environment: "production", Site: "explicit-site"}
-	if err := applyEnvironment(flags); err != nil {
+	if err := applyEnvironment(flags, nil); err != nil {
 		t.Fatal(err)
 	}
 	got := resolveSite(flags, &config.Config{DefaultSite: "config-site"})

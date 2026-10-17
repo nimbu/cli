@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"path/filepath"
 
 	"github.com/nimbu/cli/internal/notifications"
 	"github.com/nimbu/cli/internal/output"
@@ -41,7 +42,7 @@ func (c *NotificationsPullCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 	if mode.Plain {
 		for _, item := range result.Written {
-			if _, err := output.Fprintln(ctx, item); err != nil {
+			if err := output.Plain(ctx, filepath.ToSlash(item)); err != nil {
 				return err
 			}
 		}

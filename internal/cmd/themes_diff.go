@@ -50,17 +50,7 @@ func (c *ThemeDiffCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return output.JSON(ctx, result)
 	}
 	if mode.Plain {
-		for _, item := range result.Entries {
-			if err := output.Plain(ctx, item.Status, item.Path); err != nil {
-				return err
-			}
-			if item.Diff != "" {
-				if _, err := output.Fprintf(ctx, "%s", item.Diff); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
+		return writeThemeDiffPlain(ctx, result.Entries, c.Content)
 	}
 	if len(result.Entries) == 0 {
 		if _, err := output.Fprintln(ctx, "no differences found"); err != nil {
@@ -149,4 +139,20 @@ func (s diffStyles) colorize(diff string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// writeThemeDiffPlain writes one `status<TAB>path` record per entry. With
+// --content the unified diff is an escaped third field (empty when there is
+// no textual diff), so every entry stays one line with a fixed field count.
+func writeThemeDiffPlain(ctx context.Context, entries []themes.DiffEntry, content bool) error {
+	for _, item := range entries {
+		values := []any{item.Status, item.Path}
+		if content {
+			values = append(values, item.Diff)
+		}
+		if err := output.Plain(ctx, values...); err != nil {
+			return err
+		}
+	}
+	return nil
 }

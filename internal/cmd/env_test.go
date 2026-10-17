@@ -24,14 +24,14 @@ func environmentProject(t *testing.T) {
 func TestEnvironmentOverridesExplicitHostAndSite(t *testing.T) {
 	environmentProject(t)
 	flags := RootFlags{Environment: "production", Site: "explicit-site", APIURL: "https://api.explicit.test"}
-	if err := applyEnvironment(&flags); err != nil {
+	if err := applyEnvironment(&flags, nil); err != nil {
 		t.Fatal(err)
 	}
 	if flags.Site != "prod-site" || flags.APIURL != "https://api.production.test" || !IsProtectedEnvironment(&flags) {
 		t.Fatalf("flags = %#v", flags)
 	}
 	flags.Environment = "unknown"
-	if err := applyEnvironment(&flags); err == nil || !strings.Contains(err.Error(), "unknown environment") {
+	if err := applyEnvironment(&flags, nil); err == nil || !strings.Contains(err.Error(), "unknown environment") {
 		t.Fatalf("error = %v", err)
 	}
 }
@@ -143,5 +143,21 @@ func TestEnvironmentNameDoesNotOverrideBareChannelReference(t *testing.T) {
 		if channel.Channel != "production" || channel.Site != "default" || channel.BaseURL != "https://api.explicit.test" {
 			t.Fatalf("channel = %#v", channel)
 		}
+	}
+}
+
+func TestEnvironmentUnknownKeyWarnsThroughRootSink(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(config.ProjectDirEnv, dir)
+	if err := os.WriteFile(filepath.Join(dir, "nimbu.yml"), []byte("environments:\n  staging: {host: api.staging.test, site: stage-site, bogus: 1}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	flags := RootFlags{Environment: "staging"}
+	if err := applyEnvironment(&flags, func(msg string) { writeRootWarning(&buf, true, msg) }); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); !strings.HasPrefix(got, `{"status":"warning"`) || !strings.Contains(got, "bogus") {
+		t.Fatalf("warning = %q, want a JSON warning envelope naming the key", got)
 	}
 }

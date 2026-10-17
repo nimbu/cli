@@ -102,7 +102,10 @@ func (c *EnvRemoveCmd) Run(ctx context.Context, flags *RootFlags) error {
 	return environmentResult(ctx, c.Name, "Removed")
 }
 
-func applyEnvironment(flags *RootFlags) error {
+// applyEnvironment resolves --env into the API URL and site. Warnings about
+// the environment entry go through warn, the root warning sink, so they get
+// the same --json envelope and completion silence as config warnings.
+func applyEnvironment(flags *RootFlags, warn func(string)) error {
 	if flags.Environment == "" {
 		return nil
 	}
@@ -130,9 +133,9 @@ func applyEnvironment(flags *RootFlags) error {
 	}
 	flags.APIURL, flags.Site = ref.BaseURL, ref.Site
 	flags.SelectedEnvironmentProtected = env.Protected
-	if warnings, err := config.WarnUnknownEnvironmentKeys(path); err == nil {
+	if warnings, err := config.WarnUnknownEnvironmentKeys(path); err == nil && warn != nil {
 		for _, warning := range warnings {
-			_, _ = fmt.Fprintf(output.DefaultWriter().Err, "warning: %s\n", warning)
+			warn(warning)
 		}
 	}
 	return nil

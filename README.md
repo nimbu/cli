@@ -422,7 +422,9 @@ Nimbu data directory when debugging dynamic completions.
 tab-separated record per line. Inside a field, a backslash becomes `\\`, a
 tab `\t`, a line feed `\n` and a carriage return `\r`, so every record stays
 on one line with a fixed field count; decode by replacing those four
-sequences left to right.
+sequences left to right. `themes diff --content --plain` adds the unified
+diff as an escaped third field. `functions run --plain` is the exception: it
+prints the function result as one compact JSON object per line.
 
 Colors follow, highest first: `--color always|never` (or `NIMBU_COLOR`),
 `NO_COLOR`, `TERM=dumb`, `FORCE_COLOR=0`, then whether the stream is a

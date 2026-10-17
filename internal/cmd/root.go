@@ -239,7 +239,7 @@ func execute(args []string) (err error) {
 		warn(cfgErr.Error())
 	}
 	cli.RootFlags = applyRootConfigDefaultsWarn(cli.RootFlags, cfg, args, warn)
-	if err := applyEnvironment(&cli.RootFlags); err != nil {
+	if err := applyEnvironment(&cli.RootFlags, warn); err != nil {
 		return emitCommandError(ctx, err)
 	}
 

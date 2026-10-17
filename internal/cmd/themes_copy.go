@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/nimbu/cli/internal/output"
@@ -61,7 +62,7 @@ func (c *ThemeCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	if mode.Plain {
 		for _, item := range result.Items {
-			if _, err := output.Fprintln(ctx, item.DisplayPath); err != nil {
+			if err := output.Plain(ctx, filepath.ToSlash(item.DisplayPath)); err != nil {
 				return err
 			}
 		}
