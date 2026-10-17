@@ -377,7 +377,7 @@ func TestServerPresenterBannerUsesLightPaletteOnLightBackground(t *testing.T) {
 	presenter := newServerPresenter(ctx, false)
 	presenter.PrintBanner()
 	buf.Reset()
-	presenter.PrintStopping("")
+	presenter.PrintStopping("", "")
 	if !strings.Contains(buf.String(), rgbSGR(output.PaletteFor(false).Muted)) {
 		t.Fatalf("chrome does not use the light muted color: %q", buf.String())
 	}
