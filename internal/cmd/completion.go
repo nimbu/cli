@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/alecthomas/kong"
@@ -65,7 +66,9 @@ _nimbu_completions() {
     if [[ ${COMP_CWORD} -gt 0 ]]; then
         prev="${COMP_WORDS[COMP_CWORD-1]}"
     fi
-    if [[ "${cur}" == --site=* || "${cur}" == --from=* || "${cur}" == --to=* || "${cur}" == --channel=* || "${cur}" == --theme=* || "${prev}" == "--site" || "${prev}" == "--from" || "${prev}" == "--to" || "${prev}" == "--channel" || "${prev}" == "--theme" ]]; then
+    # Flag values (--site, --channel, --theme, --from, --to, enums such as
+    # --color) come from __complete; an empty answer falls through.
+    if [[ "${cur}" == --*=* || ( "${prev}" == --* && "${prev}" != *=* ) ]]; then
         local dynamic
         dynamic="$(nimbu __complete --shell bash --current="${cur}" -- "${COMP_WORDS[@]:0:COMP_CWORD}" 2>/dev/null)"
         if [[ -n "${dynamic}" ]]; then
@@ -269,6 +272,17 @@ complete -F _nimbu_completions nb`)
 	return nil
 }
 
+// completionValueFlagList is completionValueFlags as space-separated
+// "--name" words, sorted, for the fish script.
+func completionValueFlagList() string {
+	names := make([]string, 0, len(completionValueFlags))
+	for name := range completionValueFlags {
+		names = append(names, "--"+name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, " ")
+}
+
 func writeZshCompletion(_ *kong.Kong) error {
 	_, _ = fmt.Fprintln(os.Stdout, `#compdef nimbu nb
 
@@ -315,6 +329,7 @@ _nimbu() {
     _nimbu_dynamic_complete() {
         local -a rows
         rows=("${(@f)$(nimbu __complete --shell zsh --current="${words[CURRENT]}" -- "${words[@]:1:$((CURRENT-1))}" 2>/dev/null)}")
+        rows=(${rows:#})
         if (( ${#rows} == 0 )); then
             return 1
         fi
@@ -393,7 +408,9 @@ _nimbu() {
         _describe -t nimbu-commands 'command' values
     }
 
-    if [[ "${words[CURRENT]}" == --site=* || "${words[CURRENT]}" == --from=* || "${words[CURRENT]}" == --to=* || "${words[CURRENT]}" == --channel=* || "${words[CURRENT]}" == --theme=* || "${words[CURRENT-1]}" == "--site" || "${words[CURRENT-1]}" == "--from" || "${words[CURRENT-1]}" == "--to" || "${words[CURRENT-1]}" == "--channel" || "${words[CURRENT-1]}" == "--theme" ]]; then
+    # Flag values (--site, --channel, --theme, --from, --to, enums such as
+    # --color) come from __complete; an empty answer falls through.
+    if [[ "${words[CURRENT]}" == --*=* || ( "${words[CURRENT-1]}" == --* && "${words[CURRENT-1]}" != *=* ) ]]; then
         _nimbu_dynamic_complete && return
     fi
     if [[ "${words[CURRENT]}" == --* && "${words[CURRENT]}" != --*=* ]]; then
@@ -744,7 +761,7 @@ compdef _nimbu nb`)
 }
 
 func writeFishCompletion(_ *kong.Kong) error {
-	_, _ = fmt.Fprintln(os.Stdout, `# Fish completion for nimbu
+	_, _ = fmt.Fprintln(os.Stdout, strings.Replace(`# Fish completion for nimbu
 # Add this to your ~/.config/fish/config.fish:
 #   nimbu completion fish | source
 
@@ -773,7 +790,20 @@ function __fish_nimbu_dynamic_flag
     if test (count $tokens) -gt 0
         set previous $tokens[-1]
     end
-    string match -q -- "--site=*" "$current"; or string match -q -- "--from=*" "$current"; or string match -q -- "--to=*" "$current"; or string match -q -- "--channel=*" "$current"; or string match -q -- "--theme=*" "$current"; or test "$previous" = "--site"; or test "$previous" = "--from"; or test "$previous" = "--to"; or test "$previous" = "--channel"; or test "$previous" = "--theme"
+    # Flag values (--site, --channel, --theme, --from, --to, enums such as
+    # --color) come from __complete.
+    string match -q -- "--*=*" "$current"; and return 0
+    string match -q -- "--*" "$previous"; and not string match -q -- "*=*" "$previous"
+end
+
+# Like __fish_use_subcommand, but not where a flag value goes: after
+# "--color" the next word is auto/always/never, not a command name.
+function __fish_nimbu_use_subcommand
+    __fish_use_subcommand; or return 1
+    set -l current (commandline -ct)
+    string match -q -- "--*=*" "$current"; and return 1
+    set -l tokens (commandline -opc)
+    not contains -- $tokens[-1] __NIMBU_VALUE_FLAGS__
 end
 
 function __fish_nimbu_flag_name
@@ -789,37 +819,37 @@ complete -c nimbu -f -a "(__fish_nimbu_complete_commands)"
 complete -c nb -f -a "(__fish_nimbu_complete_commands)"
 
 # Main commands
-complete -c nimbu -n "__fish_use_subcommand" -a "auth" -d "Authentication and credentials"
-complete -c nimbu -n "__fish_use_subcommand" -a "init" -d "Bootstrap a local theme project"
-complete -c nimbu -n "__fish_use_subcommand" -a "sites" -d "Manage sites"
-complete -c nimbu -n "__fish_use_subcommand" -a "channels" -d "Manage channels and entries"
-complete -c nimbu -n "__fish_use_subcommand" -a "pages" -d "Manage pages"
-complete -c nimbu -n "__fish_use_subcommand" -a "menus" -d "Manage navigation menus"
-complete -c nimbu -n "__fish_use_subcommand" -a "products" -d "Manage products"
-complete -c nimbu -n "__fish_use_subcommand" -a "shipping-rates" -d "Manage shipping rates"
-complete -c nimbu -n "__fish_use_subcommand" -a "collections" -d "Manage collections"
-complete -c nimbu -n "__fish_use_subcommand" -a "coupons" -d "Manage coupons"
-complete -c nimbu -n "__fish_use_subcommand" -a "domains" -d "Manage custom domains"
-complete -c nimbu -n "__fish_use_subcommand" -a "orders" -d "Manage orders"
-complete -c nimbu -n "__fish_use_subcommand" -a "customers" -d "Manage customers"
-complete -c nimbu -n "__fish_use_subcommand" -a "mails" -d "Sync notification templates to local files"
-complete -c nimbu -n "__fish_use_subcommand" -a "settings" -d "Manage site settings"
-complete -c nimbu -n "__fish_use_subcommand" -a "notifications" -d "Manage notifications"
-complete -c nimbu -n "__fish_use_subcommand" -a "roles" -d "Manage roles"
-complete -c nimbu -n "__fish_use_subcommand" -a "redirects" -d "Manage redirects"
-complete -c nimbu -n "__fish_use_subcommand" -a "functions" -d "Execute cloud functions"
-complete -c nimbu -n "__fish_use_subcommand" -a "jobs" -d "Execute cloud jobs"
-complete -c nimbu -n "__fish_use_subcommand" -a "apps" -d "Manage OAuth apps"
-complete -c nimbu -n "__fish_use_subcommand" -a "senders" -d "Manage email sender domains"
-complete -c nimbu -n "__fish_use_subcommand" -a "themes" -d "Manage themes"
-complete -c nimbu -n "__fish_use_subcommand" -a "uploads" -d "Manage uploads"
-complete -c nimbu -n "__fish_use_subcommand" -a "blogs" -d "Manage blogs"
-complete -c nimbu -n "__fish_use_subcommand" -a "webhooks" -d "Manage webhooks"
-complete -c nimbu -n "__fish_use_subcommand" -a "translations" -d "Manage translations"
-complete -c nimbu -n "__fish_use_subcommand" -a "server" -d "Run local simulator proxy with child dev server"
-complete -c nimbu -n "__fish_use_subcommand" -a "config" -d "Manage configuration"
-complete -c nimbu -n "__fish_use_subcommand" -a "api" -d "Raw API access"
-complete -c nimbu -n "__fish_use_subcommand" -a "completion" -d "Generate shell completions"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "auth" -d "Authentication and credentials"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "init" -d "Bootstrap a local theme project"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "sites" -d "Manage sites"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "channels" -d "Manage channels and entries"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "pages" -d "Manage pages"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "menus" -d "Manage navigation menus"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "products" -d "Manage products"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "shipping-rates" -d "Manage shipping rates"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "collections" -d "Manage collections"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "coupons" -d "Manage coupons"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "domains" -d "Manage custom domains"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "orders" -d "Manage orders"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "customers" -d "Manage customers"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "mails" -d "Sync notification templates to local files"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "settings" -d "Manage site settings"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "notifications" -d "Manage notifications"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "roles" -d "Manage roles"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "redirects" -d "Manage redirects"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "functions" -d "Execute cloud functions"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "jobs" -d "Execute cloud jobs"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "apps" -d "Manage OAuth apps"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "senders" -d "Manage email sender domains"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "themes" -d "Manage themes"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "uploads" -d "Manage uploads"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "blogs" -d "Manage blogs"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "webhooks" -d "Manage webhooks"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "translations" -d "Manage translations"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "server" -d "Run local simulator proxy with child dev server"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "config" -d "Manage configuration"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "api" -d "Raw API access"
+complete -c nimbu -n "__fish_nimbu_use_subcommand" -a "completion" -d "Generate shell completions"
 
 # Auth subcommands
 complete -c nimbu -n "__fish_seen_subcommand_from auth" -a "login" -d "Log in to Nimbu"
@@ -897,6 +927,6 @@ complete -c nimbu -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
 complete -c nimbu -n "__fish_seen_subcommand_from completion" -l shell -d "Shell to generate completions for"
 
 # Alias for nb
-complete -c nb -w nimbu`)
+complete -c nb -w nimbu`, "__NIMBU_VALUE_FLAGS__", completionValueFlagList(), 1))
 	return nil
 }

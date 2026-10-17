@@ -48,7 +48,7 @@ func (c *AuthLoginCmd) helpExamples() []helpExample {
 	return []helpExample{
 		{About: "Log in through the browser", Command: "nimbu auth login"},
 		{About: "Log in from SSH or a container with a one-time code", Command: "nimbu auth login --device"},
-		{About: "Store an existing API token", Command: "nimbu auth login --token <token>"},
+		{About: "Store an existing API token, read from stdin", Command: "nimbu auth login --token - < token-file"},
 	}
 }
 

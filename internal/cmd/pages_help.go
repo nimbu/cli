@@ -33,7 +33,8 @@ and depth are server-derived and are always stripped from --file input.
 
 To set a localized slug, send a minimal document for that locale:
 
-  echo '{"slug":"about-us"}' | nimbu pages update --page over-ons --locale en --file -
+  echo '{"slug":"about-us"}' | \
+    nimbu pages update --page over-ons --locale en --file -
 
 or an explicit translations block: translations:='{"en":{"slug":"about-us"}}'.
 `

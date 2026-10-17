@@ -71,7 +71,13 @@ func parseUsageError(err error) error {
 	help := "nimbu --help"
 	var parseErr *kong.ParseError
 	if errors.As(err, &parseErr) && parseErr.Context != nil {
-		if node := parseErr.Context.Selected(); node != nil {
+		node := parseErr.Context.Selected()
+		// Point at help a user can find: `nimbu api`, not the hidden
+		// `nimbu api legacy` default behind it.
+		for node != nil && node.Hidden {
+			node = node.Parent
+		}
+		if node != nil {
 			help = node.FullPath() + " --help"
 		}
 		// Default help hides the Output/Agent-CI/Connection flags.

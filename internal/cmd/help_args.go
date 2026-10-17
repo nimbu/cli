@@ -18,6 +18,10 @@ const helpCommandName = "help"
 //     prints root help, which documents `nimbu help <command>`
 //   - a bare command group (`nimbu channels`) gets --help, so it prints the
 //     group's help and exits 0 instead of a usage error, like git and gh.
+//     The same goes for the root with only global flags (`nimbu --verbose`)
+//     and a group whose default subcommand is hidden (`nimbu api`).
+//     Not in --json/--plain mode: there an implicit help request stays a
+//     usage error, so stdout never carries help text a script would parse.
 //
 // Positional tokens are matched against the model; flags are skipped (with
 // their value when the flag takes one). Anything Kong would reject anyway is
@@ -28,6 +32,7 @@ func rewriteHelpArgs(app *kong.Application, args []string) []string {
 	scope.add(node)
 	helpWords := map[int]bool{}
 	unmatched := false
+	flagsSinceNode := false
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -36,6 +41,7 @@ func rewriteHelpArgs(app *kong.Application, args []string) []string {
 			break
 		}
 		if strings.HasPrefix(arg, "-") && arg != "-" {
+			flagsSinceNode = true
 			if scope.takesValue(arg) {
 				if i+1 >= len(args) {
 					// A trailing flag with no value: let Kong report it
@@ -48,7 +54,7 @@ func rewriteHelpArgs(app *kong.Application, args []string) []string {
 			continue
 		}
 		child := findChildCommand(node, arg)
-		if child == nil && arg == helpCommandName && (node == app.Node || isCommandGroup(node)) {
+		if child == nil && arg == helpCommandName && (node == app.Node || acceptsHelpWord(node)) {
 			// Only where no positional can take the word: a group or the root.
 			helpWords[i] = true
 			continue
@@ -59,6 +65,7 @@ func rewriteHelpArgs(app *kong.Application, args []string) []string {
 		}
 		node = child
 		scope.add(node)
+		flagsSinceNode = false
 	}
 
 	out := args
@@ -70,12 +77,40 @@ func rewriteHelpArgs(app *kong.Application, args []string) []string {
 			}
 		}
 	}
-	if len(helpWords) > 0 || (!unmatched && isCommandGroup(node)) {
+	implicit := !unmatched && (isCommandGroup(node) ||
+		(hiddenDefaultGroup(node) && !flagsSinceNode) ||
+		(node == app.Node && len(args) > 0 && !hasCLIFlag(args, "--version")))
+	if len(helpWords) > 0 || (implicit && !helpMachineOutput(args)) {
 		if !hasHelpFlag(out) {
 			out = append(append([]string{}, out...), "--help")
 		}
 	}
 	return out
+}
+
+// acceptsHelpWord reports whether a trailing "help" after node can only be a
+// help request: node dispatches to subcommands, and neither node nor its
+// default subcommand (`nimbu api`, `nimbu auth keyring`) takes positionals.
+func acceptsHelpWord(node *kong.Node) bool {
+	if isCommandGroup(node) {
+		return true
+	}
+	if node == nil || node.Type != kong.CommandNode || node.DefaultCmd == nil || len(node.Positional) > 0 || len(node.DefaultCmd.Positional) > 0 {
+		return false
+	}
+	for _, child := range node.Children {
+		if child.Type != kong.CommandNode {
+			return false
+		}
+	}
+	return true
+}
+
+// hiddenDefaultGroup reports a group whose default subcommand is hidden
+// (`nimbu api` runs the legacy --method/--path form): run bare, it can only
+// fail on that hidden command's required flags, so show the group instead.
+func hiddenDefaultGroup(node *kong.Node) bool {
+	return acceptsHelpWord(node) && node.DefaultCmd != nil && node.DefaultCmd.Hidden
 }
 
 // isCommandGroup reports whether node only dispatches to subcommands, so

@@ -135,7 +135,10 @@ func helpColorProfile(args []string, stdout io.Writer) termenv.Profile {
 }
 
 // helpWidth is the wrap width: $COLUMNS, else the terminal width, else 80,
-// capped at maxHelpWidth.
+// capped at maxHelpWidth. Flag tables and prose re-flow to any width;
+// examples and verbatim Help() blocks are written to fit 80 columns
+// (TestHelpFitsEightyColumns) and are never re-flowed, because wrapping a
+// command mid-line breaks copy-paste. Below 80 the terminal soft-wraps them.
 func helpWidth(w io.Writer) int {
 	width := 0
 	if cols, err := strconv.Atoi(strings.TrimSpace(os.Getenv("COLUMNS"))); err == nil && cols > 0 {

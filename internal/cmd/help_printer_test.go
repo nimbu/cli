@@ -275,6 +275,44 @@ func TestHelpExamplesParse(t *testing.T) {
 	}
 }
 
+// Examples and verbatim Help() blocks are not re-flowed, so every rendered
+// help line must fit the 80-column default (Usage lines are Kong's and may
+// run long). Regression: `pages update --help` had an 88-column line.
+func TestHelpFitsEightyColumns(t *testing.T) {
+	pinHelpEnv(t)
+	parser, _, err := newParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths [][]string
+	_ = kong.Visit(parser.Model.Node, func(v kong.Visitable, next kong.Next) error {
+		node, ok := v.(*kong.Node)
+		if !ok || node.Hidden {
+			return next(nil)
+		}
+		var path []string
+		for n := node; n != nil && n.Type == kong.CommandNode; n = n.Parent {
+			path = append([]string{n.Name}, path...)
+		}
+		paths = append(paths, path)
+		return next(nil)
+	})
+	if len(paths) < 100 {
+		t.Fatalf("visited only %d commands", len(paths))
+	}
+	for _, path := range paths {
+		out := helpOutput(t, append(path, "--help")...)
+		for _, line := range strings.Split(out, "\n") {
+			if strings.HasPrefix(line, "Usage:") {
+				continue
+			}
+			if len(line) > defaultHelpWidth {
+				t.Errorf("%v --help: line wider than %d columns (%d): %q", path, defaultHelpWidth, len(line), line)
+			}
+		}
+	}
+}
+
 // exampleArgs extracts the nimbu arguments from an example shell line.
 func exampleArgs(line string) []string {
 	at := strings.Index(line, "nimbu ")
@@ -282,7 +320,7 @@ func exampleArgs(line string) []string {
 		return nil
 	}
 	rest := line[at+len("nimbu "):]
-	for _, stop := range []string{" | ", `)"`} {
+	for _, stop := range []string{" | ", " < ", `)"`} {
 		if i := strings.Index(rest, stop); i >= 0 {
 			rest = rest[:i]
 		}
@@ -341,6 +379,55 @@ func TestBareGroupAndHelpCommandPrintHelp(t *testing.T) {
 	}
 }
 
+// Regression: `nimbu --verbose` exited 2 with "expected one of ..." while
+// bare `nimbu` printed help; bare `nimbu api` failed on the hidden legacy
+// command's flags and hinted at `nimbu api legacy --help`.
+func TestImplicitHelpForRootFlagsAndHiddenDefault(t *testing.T) {
+	pinHelpEnv(t)
+	root := helpOutput(t, "--help")
+	for _, args := range [][]string{{"--verbose"}, {"--site", "demo"}} {
+		if got := helpOutput(t, args...); got != root {
+			t.Fatalf("%v should print root help:\n%s", args, got)
+		}
+	}
+	if got, want := helpOutput(t, "api"), helpOutput(t, "api", "--help"); got != want {
+		t.Fatalf("bare api should print the api group help:\n%s", got)
+	}
+	code, _, stderr := captureExecute(t, []string{"api", "--method", "GET"})
+	if code != ExitUsage || !strings.Contains(stderr, "run `nimbu api --help` for usage") || strings.Contains(stderr, "legacy") {
+		t.Fatalf("api --method GET: exit %d stderr=%q", code, stderr)
+	}
+}
+
+// Regression: an implicit help request in --json/--plain mode printed text
+// help on stdout with exit 0, breaking `| jq`. It stays a usage error with
+// the JSON envelope; an explicit help request still prints help.
+func TestImplicitHelpStaysUsageErrorInMachineMode(t *testing.T) {
+	pinHelpEnv(t)
+	for _, args := range [][]string{{"channels", "--json"}, {"--json"}, {"api", "--json"}} {
+		code, stdout, stderr := captureExecute(t, args)
+		if code != ExitUsage || stdout != "" || !strings.Contains(stderr, `"code": "cli.usage.invalid_args"`) {
+			t.Fatalf("%v: exit %d stdout=%q stderr=%q", args, code, stdout, stderr)
+		}
+	}
+	code, stdout, _ := captureExecute(t, []string{"channels", "--plain"})
+	if code != ExitUsage || stdout != "" {
+		t.Fatalf("channels --plain: exit %d stdout=%q", code, stdout)
+	}
+
+	t.Setenv("NIMBU_JSON", "1")
+	code, stdout, stderr := captureExecute(t, []string{"channels"})
+	if code != ExitUsage || stdout != "" || !strings.Contains(stderr, `"code": "cli.usage.invalid_args"`) {
+		t.Fatalf("NIMBU_JSON=1 channels: exit %d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if got := helpOutput(t, "channels", "--json=false"); !strings.HasPrefix(got, "Usage: nimbu channels <command>") {
+		t.Fatalf("--json=false should print help:\n%s", got)
+	}
+	if got := helpOutput(t, "help", "channels"); !strings.HasPrefix(got, "Usage: nimbu channels <command>") {
+		t.Fatalf("explicit help in JSON mode should print help:\n%s", got)
+	}
+}
+
 // Regression: `nimbu channels help` and `nimbu help help` exited 2 with
 // "unexpected argument help".
 func TestHelpWordInsideGroupPrintsHelp(t *testing.T) {
@@ -355,7 +442,15 @@ func TestHelpWordInsideGroupPrintsHelp(t *testing.T) {
 	if got := helpOutput(t, "help", "help"); got != root || !strings.Contains(got, `nimbu help <command>`) {
 		t.Fatalf("help help should print root help naming `nimbu help <command>`:\n%s", got)
 	}
-	for _, args := range [][]string{{"channels", "help"}, {"help", "help"}} {
+	// Groups with a default subcommand: `nimbu api` runs the hidden legacy
+	// form, `nimbu auth keyring` runs show.
+	for _, group := range [][]string{{"api"}, {"auth", "keyring"}} {
+		want := helpOutput(t, append(append([]string{}, group...), "--help")...)
+		if got := helpOutput(t, append(append([]string{}, group...), "help")...); got != want {
+			t.Fatalf("%v help differs from %v --help:\n%s", group, group, got)
+		}
+	}
+	for _, args := range [][]string{{"channels", "help"}, {"help", "help"}, {"api", "help"}, {"auth", "keyring", "help"}} {
 		code, _, stderr := captureExecute(t, args)
 		if code != 0 {
 			t.Fatalf("%v: exit %d stderr=%q", args, code, stderr)
@@ -364,6 +459,7 @@ func TestHelpWordInsideGroupPrintsHelp(t *testing.T) {
 }
 
 func TestRewriteHelpArgs(t *testing.T) {
+	pinHelpEnv(t)
 	parser, _, err := newParser()
 	if err != nil {
 		t.Fatal(err)
@@ -385,8 +481,23 @@ func TestRewriteHelpArgs(t *testing.T) {
 		{[]string{"channels", "list"}, []string{"channels", "list"}},
 		{[]string{"channels", "bogus"}, []string{"channels", "bogus"}},
 		{[]string{"--site", "channels", "pages"}, []string{"--site", "channels", "pages", "--help"}},
-		{[]string{"api"}, []string{"api"}},       // default subcommand
-		{[]string{"server"}, []string{"server"}}, // leaf
+		{[]string{"api"}, []string{"api", "--help"}}, // hidden default subcommand
+		{[]string{"api", "--method", "GET"}, []string{"api", "--method", "GET"}},
+		{[]string{"auth", "keyring"}, []string{"auth", "keyring"}}, // visible default: runs show
+		{[]string{"server"}, []string{"server"}},                   // leaf
+		// The root with only global flags prints root help.
+		{[]string{"--verbose"}, []string{"--verbose", "--help"}},
+		{[]string{"--site", "demo"}, []string{"--site", "demo", "--help"}},
+		{[]string{"--site"}, []string{"--site"}},
+		{[]string{"--version"}, []string{"--version"}},
+		{[]string{"--verbose", "--version"}, []string{"--verbose", "--version"}},
+		// Machine output keeps the usage error for implicit help requests.
+		{[]string{"--json"}, []string{"--json"}},
+		{[]string{"channels", "--json"}, []string{"channels", "--json"}},
+		{[]string{"channels", "--plain"}, []string{"channels", "--plain"}},
+		{[]string{"api", "--json"}, []string{"api", "--json"}},
+		{[]string{"channels", "--json=false"}, []string{"channels", "--json=false", "--help"}},
+		{[]string{"channels", "help", "--json"}, []string{"channels", "--json", "--help"}},
 		{[]string{"channels", "--", "x"}, []string{"channels", "--", "x"}},
 		// A trailing value flag keeps Kong's "expected value" error.
 		{[]string{"channels", "--site"}, []string{"channels", "--site"}},
@@ -400,7 +511,9 @@ func TestRewriteHelpArgs(t *testing.T) {
 		{[]string{"help", "channels", "help"}, []string{"channels", "--help"}},
 		{[]string{"--site", "demo", "channels", "help"}, []string{"--site", "demo", "channels", "--help"}},
 		{[]string{"channels", "list", "help"}, []string{"channels", "list", "help"}}, // leaf: Kong decides
-		{[]string{"api", "help"}, []string{"api", "help"}},                           // default subcommand takes args
+		{[]string{"api", "help"}, []string{"api", "--help"}},                         // default takes no positionals
+		{[]string{"auth", "keyring", "help"}, []string{"auth", "keyring", "--help"}},
+		{[]string{"auth", "keyring", "help", "set"}, []string{"auth", "keyring", "set", "--help"}},
 		{[]string{}, []string{}},
 	}
 	for _, tc := range cases {
