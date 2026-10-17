@@ -178,6 +178,9 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 	defer func() {
 		_ = child.Stop(5 * time.Second)
 	}()
+	if shortcutListener != nil {
+		ignoreServerBackgroundReads()
+	}
 
 	// The goroutine owns its channel value: the loop below sets readyCh to nil
 	// once consumed, which must not race with the send.

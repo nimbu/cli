@@ -47,6 +47,17 @@ func watchServerSuspend(listener *serverShortcutListener) (stop func()) {
 	}
 }
 
+// ignoreServerBackgroundReads makes a read from the terminal while nimbu
+// runs in the background (Ctrl-Z, then `bg`) fail with EIO instead of
+// stopping the whole process with SIGTTIN, which would freeze the proxy and
+// hold a SIGTERM until `fg`. The shortcut listener pauses on that EIO. Call
+// it after the child started: an ignored signal is inherited across exec.
+// It stays ignored until nimbu exits; os/signal cannot reset an ignored
+// signal it does not otherwise handle.
+func ignoreServerBackgroundReads() {
+	signal.Ignore(syscall.SIGTTIN)
+}
+
 type serverSuspender interface {
 	Suspend() error
 	Resume() error

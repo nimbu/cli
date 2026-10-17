@@ -29,22 +29,29 @@ func prepareServerShortcutInput(file *os.File) (serverTermMode, error) {
 	}
 	oldState := *termios
 	nextState := serverShortcutTermios(oldState)
-	if err := unix.IoctlSetTermios(fd, serverShortcutWriteTermios, &nextState); err != nil {
-		return serverTermMode{}, err
-	}
-	return serverTermMode{
+	mode := serverTermMode{
+		// Setting termios from a background job (resumed with `bg`, or
+		// started with `&`) raises SIGTTOU and would stop nimbu again; only
+		// the foreground job may. In the background the terminal is already
+		// in the shell's mode: Ctrl-Z restored it before `bg`.
 		apply: func() error {
-			// Setting termios from a background job (resumed with `bg`) raises
-			// SIGTTOU and would stop nimbu again; only the foreground job may.
 			if !serverTerminalIsForeground(fd) {
 				return nil
 			}
 			return unix.IoctlSetTermios(fd, serverShortcutWriteTermios, &nextState)
 		},
 		restore: func() error {
+			if !serverTerminalIsForeground(fd) {
+				return nil
+			}
 			return unix.IoctlSetTermios(fd, serverShortcutWriteTermios, &oldState)
 		},
-	}, nil
+		foreground: func() bool { return serverTerminalIsForeground(fd) },
+	}
+	if err := mode.apply(); err != nil {
+		return serverTermMode{}, err
+	}
+	return mode, nil
 }
 
 func serverTerminalIsForeground(fd int) bool {

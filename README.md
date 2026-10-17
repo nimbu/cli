@@ -781,7 +781,11 @@ Runtime notes:
 - In a terminal, keys act on the running server: `o`/`l`/`b` open the dev
   server, live site or admin, `Enter` prints a blank line to mark a spot in
   the log, `?` or `h` shows the keys, `q` quits. Ctrl-C stops gracefully; a
-  second Ctrl-C force-stops the child and exits 130.
+  second Ctrl-C force-stops the child and exits 130. Ctrl-\ force-stops at
+  once and exits 131. Ctrl-Z suspends nimbu; after `bg` the proxy keeps
+  serving and `fg` brings the keys back.
+- When stdout is piped and the reader goes away (`nimbu server | head`),
+  nimbu stops the child and exits instead of dying on SIGPIPE.
 - The child runs in its own process group, so nimbu can stop everything it
   started. Stop nimbu with SIGINT, SIGTERM or SIGHUP and it takes the child
   down with it. A SIGKILL (`timeout -s KILL`, a hard CI cancel) cannot be
