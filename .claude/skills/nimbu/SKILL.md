@@ -102,7 +102,7 @@ Color: `--color always|never` (or `NIMBU_COLOR`) wins, then `NO_COLOR`, `TERM=du
 | `--debug` | HTTP request/response traces |
 | `--color auto\|always\|never` | Color policy (`NIMBU_COLOR`) |
 
-Help: `nimbu help <command>`, `nimbu <command> --help` and `nimbu <group> help` are equivalent; `--help-all` also lists the hidden output, agent and connection flags. Commands that can stop for a confirmation list `--force`/`--yes`/`--dry-run` under **Safety** in their help.
+Help: `nimbu help <command>`, `nimbu <command> --help` and `nimbu <group> help` are equivalent. A bare group (`nimbu channels`) prints its help, except with `--json`/`--plain` or `NIMBU_JSON`/`NIMBU_PLAIN`, where it is a usage error (exit 2, JSON envelope); `--help-all` also lists the hidden output, agent and connection flags. Commands that can stop for a confirmation list `--force`/`--yes`/`--dry-run` under **Safety** in their help.
 
 ## Localized Content
 
@@ -517,7 +517,7 @@ A 422 `invalid editable` / `invalid slug` on `pages update`/`create` carries a h
 |------|---------|
 | 0 | Success |
 | 1 | General error |
-| 2 | Usage / invalid arguments, no site (`cli.usage.site_required`), confirmation needed (`cli.confirmation_required`) |
+| 2 | Usage / invalid arguments, no site (`cli.usage.site_required`), confirmation needed (`cli.confirmation_required`), write blocked by readonly mode (`cli.readonly`) |
 | 3 | Authentication failure |
 | 4 | Authorization / scope failure |
 | 5 | Resource not found |
@@ -533,7 +533,7 @@ A 422 `invalid editable` / `invalid slug` on `pages update`/`create` carries a h
 `resource.not_found`, `resource.conflict`, `request.invalid`, `request.validation`,
 `rate_limit.exceeded`, `network.timeout`, `network.failure`, `server.error`,
 `cli.usage.invalid_args`, `cli.usage.site_required`, `cli.confirmation_required`
-(pass the flag the hint names, usually `--force`), `cli.readonly`, `cli.interrupted`.
+(pass the flag the hint names, usually `--force`), `cli.readonly` (exit 2), `cli.interrupted`.
 
 Usage errors (bad flags, `--json` with `--plain`) use the same envelope when
 `--json` or `NIMBU_JSON` is set.

@@ -370,43 +370,67 @@ a translated field is absent.
 
 ## Commands
 
+`nimbu --help` is the authoritative list; this is its overview:
+
 ```
-nimbu auth       Authentication and credentials
-nimbu init       Bootstrap a local theme project
-nimbu sites      Manage sites
-nimbu channels   Manage channels and entries
-nimbu pages      Manage pages
-nimbu menus      Manage navigation menus
-nimbu products   Manage products
-nimbu shipping-rates Manage shipping rates
-nimbu collections Manage collections
-nimbu coupons    Manage coupons
-nimbu domains    Manage custom domains
-nimbu orders     Manage orders
-nimbu customers  Manage customers
-nimbu mails      Sync notification templates to local files
-nimbu settings   Manage site settings and consent configuration
-nimbu notifications Manage notifications
-nimbu roles      Manage roles
-nimbu redirects  Manage redirects
-nimbu functions  Execute cloud functions
-nimbu jobs       Execute cloud jobs
-nimbu apps       Manage OAuth apps
-nimbu senders    Manage email sender domains
-nimbu themes     Manage themes
-nimbu uploads    Manage uploads
-nimbu blogs      Manage blogs
-nimbu webhooks   Manage webhooks
-nimbu server     Run local simulator proxy with child dev server
-nimbu config     Manage configuration
-nimbu realtime   Realtime grants and live queries
-nimbu api        Raw API access
-nimbu completion Generate shell completions (bash, zsh, fish)
+Getting started:
+  nimbu auth                    Authentication and credentials
+  nimbu init                    Bootstrap a local theme project
+  nimbu sites                   Manage sites
+  nimbu server                  Run local simulator proxy with child dev server
+  nimbu env                     Manage project environments
+  nimbu config                  Manage configuration
+
+Content:
+  nimbu channels                Manage channels and entries
+  nimbu pages                   Manage pages
+  nimbu menus                   Manage navigation menus
+  nimbu blogs                   Manage blogs
+  nimbu translations            Manage translations
+  nimbu uploads                 Manage uploads
+  nimbu mails (mail)            Sync notification templates to local files
+  nimbu notifications           Manage notifications
+
+Commerce:
+  nimbu products                Manage products
+  nimbu orders                  Manage orders
+  nimbu customers               Manage customers
+  nimbu coupons                 Manage coupons
+  nimbu collections             Manage collections
+  nimbu shipping-rates          Manage shipping rates
+
+Theme & code:
+  nimbu themes                  Manage themes
+  nimbu schema                  Manage declarative schemas
+  nimbu release                 Release schema, cloud code and theme
+  nimbu releases                List successful releases
+  nimbu functions               Execute cloud functions
+  nimbu jobs                    Execute cloud jobs
+  nimbu apps                    Manage OAuth apps
+
+Admin:
+  nimbu domains                 Manage custom domains
+  nimbu domain-registrations    Manage domain registrations
+  nimbu senders                 Manage email sender domains
+  nimbu settings                Manage site settings
+  nimbu roles                   Manage roles
+  nimbu redirects               Manage redirects
+  nimbu webhooks                Manage webhooks
+  nimbu announcements           Manage platform announcements
+  nimbu events                  Track and ingest events
+  nimbu realtime                Realtime grants and live queries
+
+Advanced:
+  nimbu api                     Raw API access
+  nimbu commands                Export the machine-readable command contract
+  nimbu completion              Generate shell completions (bash, zsh, fish)
 ```
 
 `nimbu help <command>`, `nimbu <command> --help` and `nimbu <group> help`
 print the same help; a bare group such as `nimbu channels` lists its
-subcommands. Default help hides output, agent and connection flags; add
+subcommands. With `--json`/`--plain` (or `NIMBU_JSON`/`NIMBU_PLAIN`) a bare
+group is a usage error (exit 2) instead, so stdout never carries help text a
+script would parse. Default help hides output, agent and connection flags; add
 `--help-all` to see them. Commands that can stop for a confirmation list
 `--force`, `--yes` and `--dry-run` under **Safety**.
 
@@ -450,7 +474,7 @@ unless `NIMBU_THEME=light` is set or `COLORFGBG` reports a light background;
 |------|---------|
 | 0 | Success |
 | 1 | General error |
-| 2 | Usage error: bad flags, no site (`cli.usage.site_required`), or a confirmation nobody could give (`cli.confirmation_required`) |
+| 2 | Usage error: bad flags, no site (`cli.usage.site_required`), a confirmation nobody could give (`cli.confirmation_required`), or a write refused by `--readonly`/`NIMBU_READONLY` (`cli.readonly`) |
 | 3 | Not logged in / authentication failed |
 | 4 | Forbidden or missing scope |
 | 5 | Not found |
@@ -797,7 +821,13 @@ sync:
 
 Runtime notes:
 
-- Child stdout/stderr is passed through unchanged.
+- In a terminal (stdout and stderr both TTYs, no `--json`/`--plain`/
+  `--events-json`), each child output line is prefixed with a dim `dev │ `
+  and kept whole next to nimbu's own lines. The child gets `FORCE_COLOR` set
+  to match nimbu's color decision so its colors survive, unless you set
+  `FORCE_COLOR` or `NO_COLOR` yourself. Piped, or with `--json`, `--plain` or
+  `--events-json`, the child inherits nimbu's stdout/stderr and its output
+  passes through unchanged.
 - In a terminal, keys act on the running server: `o`/`l`/`b` open the dev
   server, live site or admin, `Enter` prints a blank line to mark a spot in
   the log, `?` or `h` shows the keys, `q` quits. Ctrl-C, SIGTERM or `q` stops
@@ -822,8 +852,10 @@ Runtime notes:
 Override example:
 
 ```bash
-nimbu server --cmd pnpm --arg vite --arg --port --arg 5173 --ready-url http://127.0.0.1:5173
+nimbu server --cmd pnpm --arg vite --arg=--port --arg 5173 --ready-url http://127.0.0.1:5173
 ```
+
+Use `--arg=<value>` for child arguments that start with `-`.
 
 ### Dev Server Integration
 
