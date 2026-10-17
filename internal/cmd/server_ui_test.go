@@ -163,7 +163,7 @@ func TestServerPresenterPrintSummaryShowsShortcutHint(t *testing.T) {
 	if strings.Contains(got, "live site:") {
 		t.Fatalf("did not expect separate live site line, got: %s", got)
 	}
-	if !strings.Contains(got, "[o] open dev  [l] open live  [b] open admin  [enter] mark  [?] help  [q] quit") {
+	if !strings.Contains(got, "  [o] open dev  [l] open live  [b] open admin\n  [enter] mark  [?] help       [q] quit\n") {
 		t.Fatalf("expected shortcut hint in output, got: %s", got)
 	}
 }
@@ -213,7 +213,7 @@ func TestServerPresenterPrintSummaryHidesDevShortcutWithoutReadyURL(t *testing.T
 	if strings.Contains(got, "[o] open dev") {
 		t.Fatalf("did not expect dev shortcut in output, got: %s", got)
 	}
-	if !strings.Contains(got, "[l] open live  [b] open admin  [enter] mark") {
+	if !strings.Contains(got, "  [l] open live  [b] open admin\n  [enter] mark   [?] help        [q] quit\n") {
 		t.Fatalf("expected live/admin shortcuts in output, got: %s", got)
 	}
 }

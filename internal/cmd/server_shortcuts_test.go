@@ -196,16 +196,41 @@ func TestDecideServerShortcutKeyTable(t *testing.T) {
 }
 
 func TestServerShortcutHint(t *testing.T) {
-	if got := (serverShortcutLinks{DevURL: "http://localhost:3456"}).Hint(); got != "" {
-		t.Fatalf("inactive listener hint = %q, want empty", got)
+	if got := (serverShortcutLinks{DevURL: "http://localhost:3456"}).HintLines(); got != nil {
+		t.Fatalf("inactive listener hint = %q, want none", got)
 	}
-	if got, want := (serverShortcutLinks{Active: true}).Hint(), "[enter] mark  [?] help  [q] quit"; got != want {
-		t.Fatalf("hint without links = %q, want %q", got, want)
+	tests := []struct {
+		name  string
+		links serverShortcutLinks
+		want  []string
+	}{
+		{
+			name:  "no links",
+			links: serverShortcutLinks{Active: true},
+			want:  []string{"[enter] mark  [?] help  [q] quit"},
+		},
+		{
+			name:  "all links",
+			links: serverShortcutLinks{Active: true, DevURL: "http://localhost:3456", LiveURL: "https://demo.nimbu.io", AdminURL: "https://demo.nimbu.io/admin"},
+			want: []string{
+				"[o] open dev  [l] open live  [b] open admin",
+				"[enter] mark  [?] help       [q] quit",
+			},
+		},
+		{
+			name:  "live and admin",
+			links: serverShortcutLinks{Active: true, LiveURL: "https://demo.nimbu.io", AdminURL: "https://demo.nimbu.io/admin"},
+			want: []string{
+				"[l] open live  [b] open admin",
+				"[enter] mark   [?] help        [q] quit",
+			},
+		},
 	}
-	links := serverShortcutLinks{Active: true, DevURL: "http://localhost:3456", LiveURL: "https://demo.nimbu.io", AdminURL: "https://demo.nimbu.io/admin"}
-	want := "[o] open dev  [l] open live  [b] open admin  [enter] mark  [?] help  [q] quit"
-	if got := links.Hint(); got != want {
-		t.Fatalf("hint = %q, want %q", got, want)
+	for _, tt := range tests {
+		got := tt.links.HintLines()
+		if strings.Join(got, "\n") != strings.Join(tt.want, "\n") {
+			t.Errorf("%s: hint =\n%s\nwant\n%s", tt.name, strings.Join(got, "\n"), strings.Join(tt.want, "\n"))
+		}
 	}
 }
 
