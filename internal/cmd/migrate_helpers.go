@@ -65,14 +65,31 @@ func writeDiffSet(ctx context.Context, diff any, plainLines []string, humanLines
 	return nil
 }
 
+// renderDiffChanges renders diff changes as tab-separated lines for human
+// output; --plain uses plainDiffChanges.
 func renderDiffChanges(prefix string, changes []migrate.DiffChange) []string {
+	return renderDiffLines(prefix, changes, func(s string) string { return s })
+}
+
+// plainDiffChanges is renderDiffChanges for --plain: each field goes through
+// output.EscapeTSV, so a value holding a tab or newline (a field hint, a
+// select option label) stays one escaped field instead of splitting the
+// record.
+func plainDiffChanges(prefix string, changes []migrate.DiffChange) []string {
+	return renderDiffLines(prefix, changes, output.EscapeTSV)
+}
+
+func renderDiffLines(prefix string, changes []migrate.DiffChange, escape func(string) string) []string {
 	lines := make([]string, 0, len(changes))
 	for _, change := range changes {
-		line := fmt.Sprintf("%s\t%s", prefix, change.Path)
+		fields := []string{prefix, change.Path}
 		if change.Kind == "updated" {
-			line = fmt.Sprintf("%s\t%s\t%v\t%v", prefix, change.Path, change.From, change.To)
+			fields = append(fields, fmt.Sprintf("%v", change.From), fmt.Sprintf("%v", change.To))
 		}
-		lines = append(lines, line)
+		for i, field := range fields {
+			fields[i] = escape(field)
+		}
+		lines = append(lines, strings.Join(fields, "\t"))
 	}
 	return lines
 }

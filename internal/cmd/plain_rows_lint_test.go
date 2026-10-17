@@ -35,7 +35,9 @@ func TestNoHandWrittenTSVRows(t *testing.T) {
 				return true
 			}
 			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || !strings.HasPrefix(sel.Sel.Name, "Fprint") {
+			// Sprint* too: a row built with Sprintf("%s\t%s") and printed
+			// later (diff lines) bypasses the escaper just the same.
+			if !ok || (!strings.HasPrefix(sel.Sel.Name, "Fprint") && !strings.HasPrefix(sel.Sel.Name, "Sprint")) {
 				return true
 			}
 			for _, arg := range call.Args {
