@@ -505,17 +505,6 @@ func completeDynamic(ctx context.Context, req completionRequest) ([]completionIt
 		return nil, nil
 	}
 
-	credential, err := ResolveAuthCredential(ctx)
-	if err != nil {
-		completionDebugf("resolve auth: %v", err)
-		return nil, nil
-	}
-	token := strings.TrimSpace(credential.Token)
-	if token == "" {
-		completionDebugf("resolve auth: empty token")
-		return nil, nil
-	}
-
 	flags, _ := ctx.Value(rootFlagsKey{}).(*RootFlags)
 	apiURL := config.Defaults().APIURL
 	timeout := 30 * time.Second
@@ -532,8 +521,29 @@ func completeDynamic(ctx context.Context, req completionRequest) ([]completionIt
 	if value, ok := completionOriginalFlagValue(req.Words, "apiurl"); ok {
 		apiURL = value
 	}
-
 	currentSite := completionSiteFromContext(ctx, req.Words)
+	// The words being completed are never parsed as root flags, so --env is
+	// resolved here. Like applyEnvironment, it overrides --apiurl and --site.
+	if name, ok := completionOriginalFlagValue(req.Words, "env"); ok {
+		_, _, ref, err := resolveEnvironment(name)
+		if err != nil {
+			completionDebugf("resolve --env %s: %v", name, err)
+			return nil, nil
+		}
+		apiURL, currentSite = ref.BaseURL, ref.Site
+	}
+
+	credential, err := resolveAuthCredentialForBaseURL(ctx, apiURL)
+	if err != nil {
+		completionDebugf("resolve auth: %v", err)
+		return nil, nil
+	}
+	token := strings.TrimSpace(credential.Token)
+	if token == "" {
+		completionDebugf("resolve auth: empty token")
+		return nil, nil
+	}
+
 	scope := completionScope(kind, req.Prefix, currentSite)
 	cacheKey := completionCacheKey(apiURL, token, kind, scope)
 	cache := readCompletionCache()

@@ -317,8 +317,13 @@ func TestCheckerFailsOpenOnTimeout(t *testing.T) {
 	if stderr.Len() != 0 {
 		t.Fatalf("expected no notice, got %q", stderr.String())
 	}
-	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
-		t.Fatalf("expected no cache file, got %v", err)
+	// The timed-out attempt is recorded as a backoff, not as a result.
+	cache := readCacheFile(t, cachePath)
+	if cache.LatestVersion != "" || !cache.CheckedAt.IsZero() {
+		t.Fatalf("expected no cached release after a timeout, got %+v", cache)
+	}
+	if !cache.RetryAfter.After(fixedNow()()) {
+		t.Fatalf("expected a retry backoff after a timeout, got %+v", cache)
 	}
 }
 
@@ -592,6 +597,8 @@ func TestDisabledInCIAndByEnv(t *testing.T) {
 		{env: map[string]string{"CI": "1"}, want: true},
 		{env: map[string]string{"CI": "false"}, want: false},
 		{env: map[string]string{"CI": "0"}, want: false},
+		{env: map[string]string{"CI": "no"}, want: false},
+		{env: map[string]string{"CI": " False "}, want: false},
 		{env: map[string]string{"NIMBU_NO_UPDATE_NOTIFIER": "1"}, want: true},
 	}
 	for _, tc := range cases {

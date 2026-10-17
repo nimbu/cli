@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/nimbu/cli/internal/config"
+	"github.com/nimbu/cli/internal/envutil"
 )
 
 const (
@@ -29,6 +31,11 @@ const (
 	// command (Prefetch) and is long done; if not, this run stays quiet and
 	// the next run tries again.
 	defaultNotifyWait = 150 * time.Millisecond
+
+	// failureBackoff is how long a failed or unfinished refresh holds off the
+	// next one, so an offline, firewalled or rate-limited user does not pay a
+	// request and the exit wait on every run.
+	failureBackoff = time.Hour
 )
 
 type cacheState struct {
@@ -37,6 +44,9 @@ type cacheState struct {
 	LatestURL       string    `json:"latest_url,omitempty"`
 	UpdateAvailable bool      `json:"update_available"`
 	ETag            string    `json:"etag,omitempty"`
+	// RetryAfter holds off refreshes after an attempt that failed or did not
+	// finish. A successful refresh clears it.
+	RetryAfter time.Time `json:"retry_after,omitzero"`
 }
 
 type checker struct {
@@ -118,12 +128,7 @@ func disabled(getenv func(string) string) bool {
 	if getenv(disableEnvVarName) != "" {
 		return true
 	}
-	switch strings.ToLower(strings.TrimSpace(getenv("CI"))) {
-	case "", "0", "false", "no":
-		return false
-	default:
-		return true
-	}
+	return envutil.IsCI(getenv)
 }
 
 func defaultChecker() checker {
@@ -158,7 +163,7 @@ func (c checker) startRefresh(ctx context.Context, currentVersion string) *pendi
 		return nil
 	}
 	cache := c.loadCache()
-	if cache != nil && c.now().Sub(cache.CheckedAt) < cacheTTL {
+	if cache != nil && (c.now().Sub(cache.CheckedAt) < cacheTTL || c.now().Before(cache.RetryAfter)) {
 		return nil
 	}
 	pending := &pendingRefresh{done: make(chan struct{})}
@@ -255,6 +260,11 @@ func (c checker) refresh(ctx context.Context, currentVersion string, existing *c
 	if err != nil {
 		return nil
 	}
+	// Record the attempt before the request: a refresh cut short by process
+	// exit or Ctrl-C (a blackholed network outlives a fast command) counts as
+	// failed. The root context is canceled on every exit, so a canceled
+	// request cannot tell a user's interrupt from a hung network.
+	c.recordAttempt(existing, c.now().Add(failureBackoff))
 	req.Header.Set("Accept", "application/vnd.github+json")
 	if existing != nil && existing.ETag != "" {
 		req.Header.Set("If-None-Match", existing.ETag)
@@ -273,6 +283,7 @@ func (c checker) refresh(ctx context.Context, currentVersion string, existing *c
 		}
 		next := *existing
 		next.CheckedAt = c.now()
+		next.RetryAfter = time.Time{}
 		if etag := resp.Header.Get("ETag"); etag != "" {
 			next.ETag = etag
 		}
@@ -299,8 +310,43 @@ func (c checker) refresh(ctx context.Context, currentVersion string, existing *c
 		c.storeCache(next)
 		return &next
 	default:
+		if until := rateLimitReset(resp.Header, c.now()); !until.IsZero() {
+			c.recordAttempt(existing, until)
+		}
 		return nil
 	}
+}
+
+// recordAttempt stores the existing cache with refreshes held off until
+// until. The cached release and ETag are kept, so an earlier result survives.
+func (c checker) recordAttempt(existing *cacheState, until time.Time) {
+	var next cacheState
+	if existing != nil {
+		next = *existing
+	}
+	next.RetryAfter = until
+	c.storeCache(next)
+}
+
+// rateLimitReset returns when GitHub allows the next request, from
+// Retry-After or an exhausted X-RateLimit-Reset, when that is later than the
+// default backoff. It is capped at the cache TTL.
+func rateLimitReset(header http.Header, now time.Time) time.Time {
+	var until time.Time
+	if seconds, err := strconv.Atoi(strings.TrimSpace(header.Get("Retry-After"))); err == nil && seconds > 0 {
+		until = now.Add(time.Duration(seconds) * time.Second)
+	} else if header.Get("X-RateLimit-Remaining") == "0" {
+		if epoch, err := strconv.ParseInt(strings.TrimSpace(header.Get("X-RateLimit-Reset")), 10, 64); err == nil {
+			until = time.Unix(epoch, 0)
+		}
+	}
+	if !until.After(now.Add(failureBackoff)) {
+		return time.Time{}
+	}
+	if limit := now.Add(cacheTTL); until.After(limit) {
+		return limit
+	}
+	return until
 }
 
 func (c checker) storeCache(cache cacheState) {

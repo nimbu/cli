@@ -14,6 +14,7 @@ import (
 
 	"github.com/alecthomas/kong"
 
+	"github.com/nimbu/cli/internal/apps"
 	"github.com/nimbu/cli/internal/auth"
 	"github.com/nimbu/cli/internal/config"
 )
@@ -220,6 +221,56 @@ func TestCompleteDynamicUsesOriginalCommandSiteAndAPIURL(t *testing.T) {
 	}
 	if got := completionValues(items); strings.Join(got, ",") != "blog" {
 		t.Fatalf("values = %#v", got)
+	}
+}
+
+func TestCompleteDynamicResolvesEnvFromCommandWords(t *testing.T) {
+	ctx := completionTestContext(t)
+	var defaultHits atomic.Int32
+	defaultServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defaultHits.Add(1)
+		_, _ = w.Write([]byte(`[{"id":"c0","slug":"wrong","name":"Wrong"}]`))
+	}))
+	t.Cleanup(defaultServer.Close)
+	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Nimbu-Site"); got != "stagesite" {
+			t.Errorf("site header = %q, want stagesite", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer staging-token" {
+			t.Errorf("authorization = %q, want the staging host's token", got)
+		}
+		_, _ = w.Write([]byte(`[{"id":"c1","slug":"blog","name":"Blog"}]`))
+	}))
+	t.Cleanup(envServer.Close)
+
+	withFakeAuthStoresByHost(t, map[string]*fakeAuthStore{
+		"api.nimbu.io":                    {credential: auth.Credential{Token: "default-token"}},
+		apps.NormalizeHost(envServer.URL): {credential: auth.Credential{Token: "staging-token"}},
+	})
+	dir := t.TempDir()
+	yml := "site: projsite\nenvironments:\n  staging: {host: " + envServer.URL + ", site: stagesite}\n"
+	if err := os.WriteFile(filepath.Join(dir, "nimbu.yml"), []byte(yml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	flags := ctx.Value(rootFlagsKey{}).(*RootFlags)
+	flags.APIURL = defaultServer.URL
+
+	items, err := completeDynamic(ctx, completionRequest{
+		Shell:       "bash",
+		Words:       []string{"nimbu", "--env", "staging", "--site", "other", "channels", "get"},
+		CommandPath: []string{"channels", "get"},
+		Flag:        "channel",
+	})
+	if err != nil {
+		t.Fatalf("completeDynamic: %v", err)
+	}
+	if got := completionValues(items); strings.Join(got, ",") != "blog" {
+		t.Fatalf("values = %#v", got)
+	}
+	if hits := defaultHits.Load(); hits != 0 {
+		t.Fatalf("default API host got %d requests, want 0", hits)
 	}
 }
 

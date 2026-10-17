@@ -127,7 +127,9 @@ func TestInitTeaGoldenFrames(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read golden (run with -update-init-golden): %v", err)
 			}
-			if got != string(want) {
+			// A Windows checkout may turn the golden's LF into CRLF; the
+			// comparison stays exact otherwise, so frame height is pinned.
+			if got != strings.ReplaceAll(string(want), "\r\n", "\n") {
 				t.Fatalf("frame mismatch for %s\n--- got ---\n%s--- want ---\n%s", tc.name, got, want)
 			}
 		})

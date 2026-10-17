@@ -109,27 +109,9 @@ func applyEnvironment(flags *RootFlags, warn func(string)) error {
 	if flags.Environment == "" {
 		return nil
 	}
-	path, err := environmentProjectFile("--env " + flags.Environment)
+	path, env, ref, err := resolveEnvironment(flags.Environment)
 	if err != nil {
 		return err
-	}
-	project, err := config.ReadProjectConfigFrom(path)
-	if err != nil {
-		return err
-	}
-	env, ok := project.Environments[flags.Environment]
-	if !ok {
-		return newHintedError(fmt.Errorf("unknown environment %q", flags.Environment), errorUsageInvalid, ExitUsage,
-			"run `nimbu env list` to see the configured environments")
-	}
-	if err := env.Validate(); err != nil {
-		return newHintedError(fmt.Errorf("environment %q: %w", flags.Environment, err), errorUsageInvalid, ExitUsage,
-			"fix the environment in "+config.ProjectFileName+", or re-add it with `nimbu env add`")
-	}
-	ref, err := migrate.ParseSiteRef(env.Site, env.Host, "", "")
-	if err != nil {
-		return newHintedError(fmt.Errorf("environment %q: %w", flags.Environment, err), errorUsageInvalid, ExitUsage,
-			"fix the environment in "+config.ProjectFileName+", or re-add it with `nimbu env add`")
 	}
 	flags.APIURL, flags.Site = ref.BaseURL, ref.Site
 	flags.SelectedEnvironmentProtected = env.Protected
@@ -139,6 +121,35 @@ func applyEnvironment(flags *RootFlags, warn func(string)) error {
 		}
 	}
 	return nil
+}
+
+// resolveEnvironment reads the named environment from nimbu.yml and resolves
+// it into an API base URL and site. It returns the project file path so the
+// caller can report unknown keys in it.
+func resolveEnvironment(name string) (string, config.EnvironmentConfig, migrate.SiteRef, error) {
+	path, err := environmentProjectFile("--env " + name)
+	if err != nil {
+		return "", config.EnvironmentConfig{}, migrate.SiteRef{}, err
+	}
+	project, err := config.ReadProjectConfigFrom(path)
+	if err != nil {
+		return "", config.EnvironmentConfig{}, migrate.SiteRef{}, err
+	}
+	env, ok := project.Environments[name]
+	if !ok {
+		return "", config.EnvironmentConfig{}, migrate.SiteRef{}, newHintedError(fmt.Errorf("unknown environment %q", name), errorUsageInvalid, ExitUsage,
+			"run `nimbu env list` to see the configured environments")
+	}
+	if err := env.Validate(); err != nil {
+		return "", config.EnvironmentConfig{}, migrate.SiteRef{}, newHintedError(fmt.Errorf("environment %q: %w", name, err), errorUsageInvalid, ExitUsage,
+			"fix the environment in "+config.ProjectFileName+", or re-add it with `nimbu env add`")
+	}
+	ref, err := migrate.ParseSiteRef(env.Site, env.Host, "", "")
+	if err != nil {
+		return "", config.EnvironmentConfig{}, migrate.SiteRef{}, newHintedError(fmt.Errorf("environment %q: %w", name, err), errorUsageInvalid, ExitUsage,
+			"fix the environment in "+config.ProjectFileName+", or re-add it with `nimbu env add`")
+	}
+	return path, env, ref, nil
 }
 
 // environmentProjectFile finds nimbu.yml for an environment command. A missing

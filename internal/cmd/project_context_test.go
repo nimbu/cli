@@ -35,6 +35,8 @@ func TestPromptBlocker(t *testing.T) {
 		{name: "CI", flags: &RootFlags{}, terminal: true, ci: "true", want: "CI"},
 		{name: "CI=false is interactive", flags: &RootFlags{}, terminal: true, ci: "false", want: ""},
 		{name: "CI=0 is interactive", flags: nil, terminal: true, ci: "0", want: ""},
+		{name: "CI=no is interactive", flags: &RootFlags{}, terminal: true, ci: "no", want: ""},
+		{name: "CI=NO is interactive", flags: &RootFlags{}, terminal: true, ci: "NO", want: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

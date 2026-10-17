@@ -9,6 +9,7 @@ import (
 
 	"github.com/nimbu/cli/internal/apps"
 	"github.com/nimbu/cli/internal/config"
+	"github.com/nimbu/cli/internal/envutil"
 )
 
 type projectContext struct {
@@ -54,11 +55,10 @@ func currentAPIHost(flags *RootFlags) string {
 // swapped in tests.
 var promptStdinIsTerminal = stdinIsTerminal
 
-// ciEnvironment reports a CI runner (CI set to anything but false/0), where
-// nobody can answer a prompt.
+// ciEnvironment reports a CI runner (see envutil.IsCI), where nobody can
+// answer a prompt.
 func ciEnvironment() bool {
-	value := strings.TrimSpace(os.Getenv("CI"))
-	return value != "" && value != "0" && !strings.EqualFold(value, "false")
+	return envutil.IsCI(os.Getenv)
 }
 
 // promptBlocker explains why a prompt cannot be shown, or "" when it can.
