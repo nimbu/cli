@@ -70,7 +70,7 @@ Each resource type has its own standalone copy command for targeted operations.
 ### Ref format
 
 - **Site-level commands** use `--from <site> --to <site>` where `<site>` is a subdomain or ID.
-- **Channel-level commands** use `--from <site>/<channel> --to <site>/<channel>`. If a default site is configured, the site part can be omitted (just `<channel>`).
+- **Channel-level commands** use `--from <site>/<channel> --to <site>/<channel>`. The site part can be omitted (just `<channel>`) when a current site resolves (`--site`/`NIMBU_SITE`, then `nimbu.yml`, then `default_site`).
 - **Theme copy** uses `--from <site>[/<theme>] --to <site>[/<theme>]`. Theme defaults to `default-theme` if omitted.
 
 ### Available commands
