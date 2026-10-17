@@ -30,15 +30,18 @@ type SyncTimeline struct {
 	spinnerDelay time.Duration
 	delState     *deleteState
 	lines        int // volatile lines for ANSI erase
-	stopCh       chan struct{}
-	doneCh       chan struct{}
-	stopOnce     sync.Once
-	closed       bool
-	loopOnce     sync.Once
-	uploaded     int
-	deleted      int
-	failed       int
-	skipped      int
+	// terminalWidth overrides the detected width live lines are fitted to
+	// (tests); 0 detects it from the writer.
+	terminalWidth int
+	stopCh        chan struct{}
+	doneCh        chan struct{}
+	stopOnce      sync.Once
+	closed        bool
+	loopOnce      sync.Once
+	uploaded      int
+	deleted       int
+	failed        int
+	skipped       int
 }
 
 type catState struct {
@@ -556,26 +559,26 @@ func (tl *SyncTimeline) renderActiveLocked() {
 	tl.frame++
 	dash := tl.glyphs.Dash
 
-	var line string
+	var head string
 	if tl.delState != nil {
 		label := fmt.Sprintf("%-*s", tl.padWidth, "Deleting")
-		if tl.activeFile != "" {
-			line = fmt.Sprintf("%s %s %s %d/%d  %s", spinner, label, dash, tl.delState.done, tl.delState.total, tl.activeFile)
-		} else {
-			line = fmt.Sprintf("%s %s %s %d/%d", spinner, label, dash, tl.delState.done, tl.delState.total)
-		}
+		head = fmt.Sprintf("%s %s %s %d/%d", spinner, label, dash, tl.delState.done, tl.delState.total)
 	} else if tl.activeCat >= 0 {
 		cat := tl.cats[tl.activeCat]
 		label := fmt.Sprintf("%-*s", tl.padWidth, cat.label)
 		progress := cat.done + cat.skipped
-		if tl.activeFile != "" {
-			line = fmt.Sprintf("%s %s %s %d/%d  %s", spinner, label, dash, progress, cat.total, tl.activeFile)
-		} else {
-			line = fmt.Sprintf("%s %s %s %d/%d", spinner, label, dash, progress, cat.total)
-		}
+		head = fmt.Sprintf("%s %s %s %d/%d", spinner, label, dash, progress, cat.total)
 	}
 
-	_, _ = fmt.Fprint(tl.writer, tl.renderRail()+"\n")
+	// Both live lines must fit on one row each: erasing moves up exactly
+	// tl.lines rows, so a wrapped line would leave a stale row per redraw.
+	width := liveWidth(tl.terminalWidth, tl.writer)
+	line := fitLiveLine(head, width, tl.glyphs.Ellipsis)
+	if tl.activeFile != "" {
+		line = fitLiveTail(head, "  ", tl.activeFile, width, tl.glyphs.Ellipsis)
+	}
+
+	_, _ = fmt.Fprint(tl.writer, fitLiveLine(tl.renderRail(), width, tl.glyphs.Ellipsis)+"\n")
 	_, _ = fmt.Fprint(tl.writer, line+"\n")
 	tl.lines = 2
 }

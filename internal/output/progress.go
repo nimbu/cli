@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 type progressCtxKey struct{}
@@ -38,11 +40,14 @@ type Progress struct {
 	frame        int
 	task         *Task
 	lineOpen     bool // an animated line is drawn without its trailing newline
-	interrupted  bool
-	cancel       <-chan struct{} // closed when the command is interrupted
-	stopCh       chan struct{}
-	doneCh       chan struct{}
-	closeOnce    sync.Once
+	// terminalWidth overrides the detected width the live line is fitted to
+	// (tests); 0 detects it from the writer.
+	terminalWidth int
+	interrupted   bool
+	cancel        <-chan struct{} // closed when the command is interrupted
+	stopCh        chan struct{}
+	doneCh        chan struct{}
+	closeOnce     sync.Once
 }
 
 // Task represents one in-flight spinner, counter, or transfer.
@@ -220,7 +225,14 @@ func (p *Progress) renderLocked(final bool) {
 		if !finished && !p.lineOpen && time.Since(p.task.started) < p.spinnerDelay {
 			return
 		}
-		line := p.renderLineLocked(final)
+		// clearLine only clears the cursor's row, so the live line must
+		// never wrap. The final line is permanent and may wrap.
+		var line string
+		if finished {
+			line = p.renderLineLocked(final)
+		} else {
+			line = p.fitLiveLineLocked(final)
+		}
 		_, _ = fmt.Fprint(p.writer, clearLine+line)
 		if finished {
 			_, _ = fmt.Fprint(p.writer, "\n")
@@ -235,13 +247,35 @@ func (p *Progress) renderLocked(final bool) {
 }
 
 func (p *Progress) renderLineLocked(final bool) string {
+	prefix, label, metrics := p.renderPartsLocked(final)
+	return strings.Join(filterEmpty(append([]string{prefix, label}, metrics...)), "  ")
+}
+
+// fitLiveLineLocked renders the live line fitted to the terminal width,
+// shortening the label (often a file path) from the left first.
+func (p *Progress) fitLiveLineLocked(final bool) string {
+	prefix, label, metrics := p.renderPartsLocked(final)
+	width := liveWidth(p.terminalWidth, p.writer)
+	tail := strings.Join(filterEmpty(metrics), "  ")
+	if label == "" || width <= 1 {
+		return strings.Join(filterEmpty([]string{prefix, label, tail}), "  ")
+	}
+	// Fit "prefix  label" so the label's end survives, then append metrics.
+	reserve := 0
+	if tail != "" {
+		reserve = ansi.StringWidth(tail) + 2
+	}
+	head := fitLiveTail(prefix, "  ", label, width-reserve, p.glyphs.Ellipsis)
+	return fitLiveLine(strings.Join(filterEmpty([]string{head, tail}), "  "), width, p.glyphs.Ellipsis)
+}
+
+func (p *Progress) renderPartsLocked(final bool) (prefix, label string, metrics []string) {
 	task := p.task
 	if task == nil {
-		return ""
+		return "", "", nil
 	}
 	elapsed := time.Since(task.started)
 
-	var prefix string
 	if final || task.done {
 		if task.status == "" {
 			task.status = "done"
@@ -255,16 +289,15 @@ func (p *Progress) renderLineLocked(final bool) string {
 		prefix = p.theme.Accent(p.spinnerFrameLocked())
 	}
 
-	parts := []string{prefix, task.label}
 	switch task.kind {
 	case taskCounter:
-		parts = append(parts, renderCounterMetrics(task.current, task.total, elapsed)...)
+		metrics = renderCounterMetrics(task.current, task.total, elapsed)
 	case taskTransfer:
-		parts = append(parts, renderTransferMetrics(task.current, task.total, elapsed)...)
+		metrics = renderTransferMetrics(task.current, task.total, elapsed)
 	default:
-		parts = append(parts, formatElapsed(elapsed))
+		metrics = []string{formatElapsed(elapsed)}
 	}
-	return strings.Join(filterEmpty(parts), "  ")
+	return prefix, task.label, metrics
 }
 
 func (p *Progress) spinnerFrameLocked() string {

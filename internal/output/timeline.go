@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/term"
 )
 
@@ -384,18 +383,7 @@ func (tl *CopyTimeline) writeActiveLineLocked(line string) {
 }
 
 func (tl *CopyTimeline) fitActiveLine(line string) string {
-	width := tl.terminalWidth
-	if width <= 0 {
-		width = terminalWidth(tl.writer)
-	}
-	if width <= 1 {
-		return line
-	}
-	maxWidth := width - 1
-	if ansi.StringWidth(line) <= maxWidth {
-		return line
-	}
-	return ansi.Truncate(line, maxWidth, tl.glyphs.Ellipsis)
+	return fitLiveLine(line, liveWidth(tl.terminalWidth, tl.writer), tl.glyphs.Ellipsis)
 }
 
 func (tl *CopyTimeline) clearActiveLocked() {
