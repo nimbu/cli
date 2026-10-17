@@ -136,7 +136,7 @@ func TestInitTeaConfirmPathKeepsDirectoryName(t *testing.T) {
 	model := initGoldenModel(false, "confirm", 80, 24)
 	model.outputDir = "/Users/someone/code"
 	model.answers.DirectoryName = "site"
-	if frame := ansi.Strip(initView(model)); !strings.Contains(frame, "Path: ~/code/site") {
+	if frame := ansi.Strip(initView(model)); !strings.Contains(frame, "Path: "+filepath.Join("~", "code", "site")) {
 		t.Fatalf("home should show as ~:\n%s", frame)
 	}
 }

@@ -70,6 +70,7 @@ func TestScopeLinesWrapsWhenVerbose(t *testing.T) {
 // Lipgloss v2 styles never downsample; status lines must still follow the
 // stdout profile: no 24-bit sequences on a 256-color terminal.
 func TestStatusStylerFollowsStdoutProfile(t *testing.T) {
+	skipColorDepthOnWindows(t)
 	t.Setenv("NO_COLOR", "")
 	t.Setenv("NIMBU_THEME", "")
 	t.Setenv("COLORFGBG", "")

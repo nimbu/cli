@@ -125,6 +125,7 @@ func TestInitTeaUnknownPresetIsUsageError(t *testing.T) {
 // Lipgloss v2 renders colors as given; stdout output outside Bubble Tea must
 // be downsampled to what the terminal shows (v1 did this implicitly).
 func TestStdoutColorFollowsTerminalProfile(t *testing.T) {
+	skipColorDepthOnWindows(t)
 	t.Setenv("NO_COLOR", "")
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("COLORTERM", "")

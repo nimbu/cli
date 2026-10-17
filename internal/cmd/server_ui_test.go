@@ -426,6 +426,7 @@ func TestServerPresenterSkipsBackgroundQueryWithoutBanner(t *testing.T) {
 // Values keep the terminal's foreground (a near-white hex vanished on light
 // backgrounds), and on a 256-color terminal no 24-bit sequence is emitted.
 func TestServerPresenterChromeFollowsProfileAndKeepsTextColor(t *testing.T) {
+	skipColorDepthOnWindows(t)
 	var buf bytes.Buffer
 	ctx := serverColorContext(t, &buf, "rainbow")
 	t.Setenv("COLORTERM", "")

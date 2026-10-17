@@ -89,7 +89,7 @@ func TestReadmeCommandsListsEveryCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	readme := string(data)
+	readme := strings.ReplaceAll(string(data), "\r\n", "\n") // Windows checkouts may use CRLF
 	start := strings.Index(readme, "## Commands\n")
 	if start < 0 {
 		t.Fatal("README has no ## Commands section")

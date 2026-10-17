@@ -107,10 +107,11 @@ func TestInitTeaGoldenFrames(t *testing.T) {
 			if strings.Contains(frame, "38;") || strings.Contains(frame, "48;") {
 				t.Fatalf("ASCII profile frame still carries color sequences:\n%q", frame)
 			}
-			got := ansi.Strip(frame) + "\n"
+			// Paths render with native separators; goldens are stored in slash form.
+			got := filepath.ToSlash(ansi.Strip(frame)) + "\n"
 
 			// Styling must never change layout: the no-color frame is identical.
-			if plain := ansi.Strip(initView(initGoldenModel(false, tc.step, tc.width, tc.height))) + "\n"; plain != got {
+			if plain := filepath.ToSlash(ansi.Strip(initView(initGoldenModel(false, tc.step, tc.width, tc.height)))) + "\n"; plain != got {
 				t.Fatalf("color and no-color layouts differ\ncolor:\n%s\nplain:\n%s", got, plain)
 			}
 
