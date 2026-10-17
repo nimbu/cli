@@ -1,0 +1,29 @@
+Usage: nimbu channels entries gallery remove --channel=STRING --entry=STRING --field=STRING --image-id=IMAGE-ID,... [flags]
+
+Remove gallery images (requires --force)
+
+Flags:
+      --channel=STRING           Channel ID or slug
+      --entry=STRING             Entry ID or slug
+      --field=STRING             Gallery field name
+      --image-id=IMAGE-ID,...    Gallery image ID to remove (repeatable)
+      --locale=STRING            Content locale for localized channel fields
+
+Safety:
+      --force                    Skip confirmations for destructive operations
+  -y, --yes                      Confirm prompts and protected environments
+      --dry-run                  Print the payload without updating the entry
+
+Global Flags:
+  -h, --help                     Show context-sensitive help.
+      --env=STRING               Named project environment (overrides site and
+                                 API URL)
+      --site=STRING              Site ID/subdomain (else nimbu.yml, config)
+                                 ($NIMBU_SITE)
+      --json                     Output JSON to stdout ($NIMBU_JSON)
+      --plain                    Output stable TSV to stdout ($NIMBU_PLAIN)
+      --verbose                  Enable verbose logging
+      --debug                    Enable debug logging (HTTP traces)
+      --version                  Print version and exit
+
+Run "nimbu channels entries gallery remove --help-all" for all flags.

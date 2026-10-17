@@ -19,7 +19,6 @@ type ReleaseCmd struct {
 	Only       []string `help:"Release stages: schema,code,theme" name:"only"`
 	DryRun     bool     `help:"Plan each selected stage without deploying" name:"dry-run"`
 	AllowDirty bool     `help:"Allow uncommitted changes; mark the release dirty" name:"allow-dirty"`
-	Yes        bool     `help:"Confirm protected environment deployment"`
 }
 
 type releaseRecord struct {
@@ -60,9 +59,9 @@ func (c *ReleaseCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	record.Environment = flags.Environment
-	record.Forced = c.Yes
+	record.Forced = flags.Yes
 	if !c.DryRun && names[0] != "schema" {
-		if err := confirmProtectedEnvironment(ctx, flags, c.Yes, "release project"); err != nil {
+		if err := confirmProtectedEnvironment(ctx, flags, flags.Yes, "release project"); err != nil {
 			return err
 		}
 	}
@@ -107,7 +106,7 @@ func (c *ReleaseCmd) Run(ctx context.Context, flags *RootFlags) error {
 					}
 					return releaseSchemaSummary(command.Plans, c.DryRun), err
 				}
-				command := &SchemaApplyCmd{Yes: c.Yes, DisableRenamePrompts: true}
+				command := &SchemaApplyCmd{DisableRenamePrompts: true}
 				err := command.Run(stageCtx, flags)
 				return releaseSchemaSummary(command.Plans, c.DryRun), err
 			case "code":

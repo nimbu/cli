@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -82,6 +84,8 @@ type BootstrapOptions struct {
 	// SkipPaths holds source-relative file paths (forward-slash) the caller
 	// chose not to overwrite. Planned files in this set are left as-is.
 	SkipPaths map[string]struct{}
+	// Context cancels the git steps of a fresh bootstrap; nil means none.
+	Context context.Context
 }
 
 type Result struct {
@@ -178,7 +182,7 @@ func BootstrapProject(opts BootstrapOptions) (Result, error) {
 	// In-place init leaves git untouched so an existing repository is preserved;
 	// freshly-created targets get an initial commit.
 	if !opts.AllowExisting {
-		if err := initGitRepo(destDir); err != nil {
+		if err := initGitRepo(opts.Context, destDir); err != nil {
 			return Result{}, err
 		}
 	}
@@ -775,25 +779,47 @@ func setMappingScalar(node *yaml.Node, key, value string) {
 	)
 }
 
-func initGitRepo(root string) error {
-	if err := runGit(root, "init"); err != nil {
+// gitStepTimeout bounds each bootstrap git step, so a stuck git (a network
+// filesystem, a credential helper) cannot hang init forever.
+const gitStepTimeout = time.Minute
+
+func initGitRepo(ctx context.Context, root string) error {
+	if err := runGit(ctx, root, "init"); err != nil {
 		return err
 	}
-	if err := runGit(root, "add", "."); err != nil {
+	if err := runGit(ctx, root, "add", "."); err != nil {
 		return err
 	}
-	if err := runGit(root,
+	if err := runGit(ctx, root,
 		"-c", "user.name=nimbu",
 		"-c", "user.email=noreply@nimbu.local",
-		"commit", "-m", "chore: bootstrap theme project",
+		"commit", "--no-verify", "-m", "chore: bootstrap theme project",
 	); err != nil {
 		return err
 	}
 	return nil
 }
 
-func runGit(root string, args ...string) error {
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+// runGit runs one bootstrap git step. The initial commit is nimbu's own, so
+// the user's hooks and commit signing stay out of it: a blocking hook or a
+// pinentry prompt would hang init while the wizard owns the terminal. Git
+// never reads the terminal either (stdin is /dev/null, no credential prompt).
+func runGit(ctx context.Context, root string, args ...string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, gitStepTimeout)
+	defer cancel()
+	gitArgs := append([]string{
+		"-C", root,
+		"-c", "core.hooksPath=" + os.DevNull,
+		"-c", "commit.gpgsign=false",
+	}, args...)
+	cmd := exec.CommandContext(ctx, "git", gitArgs...)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	// A grandchild that keeps the output pipe open must not keep Wait
+	// blocked once git itself was killed.
+	cmd.WaitDelay = 2 * time.Second
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))

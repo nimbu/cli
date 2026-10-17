@@ -25,20 +25,26 @@ type SimulatorClient interface {
 
 // Config controls proxy server behavior.
 type Config struct {
-	APIURL            string
-	Debug             bool
-	DevToken          string
-	EventsJSON        bool
-	ExcludeRules      []string
-	Host              string
-	IncludeRules      []string
-	MaxBodyBytes      int64
-	Port              int
-	QuietRequests     bool
-	Site              string
-	TemplateRoot      string
-	UseColor          bool
-	UserAgent         string
+	APIURL        string
+	Debug         bool
+	DevToken      string
+	EventsJSON    bool
+	ExcludeRules  []string
+	Host          string
+	IncludeRules  []string
+	MaxBodyBytes  int64
+	Port          int
+	QuietRequests bool
+	Site          string
+	TemplateRoot  string
+	// UseColor colors request log lines. The caller decides it for the
+	// RequestLog stream (stdout), honoring --color, NO_COLOR and TERM=dumb.
+	UseColor  bool
+	UserAgent string
+	// RequestLog receives per-request log lines; nil means os.Stdout.
+	RequestLog io.Writer
+	// Diagnostics receives warnings and debug output; nil means os.Stderr.
+	Diagnostics       io.Writer
 	Watch             bool
 	WatchScanInterval time.Duration
 }
@@ -87,7 +93,7 @@ func New(config Config, client SimulatorClient) (*Server, error) {
 		config.UserAgent = "nimbu-go-cli"
 	}
 
-	logger := &Logger{DebugEnabled: config.Debug, EventsJSON: config.EventsJSON, UseColor: config.UseColor}
+	logger := &Logger{DebugEnabled: config.Debug, EventsJSON: config.EventsJSON, UseColor: config.UseColor, Out: config.Diagnostics}
 	cache := NewTemplateCache(config.TemplateRoot, config.Watch, config.WatchScanInterval, logger)
 	matcher := NewMatcher(config.IncludeRules, config.ExcludeRules)
 
@@ -147,6 +153,15 @@ func (s *Server) Stop(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// Close stops the proxy at once, dropping in-flight requests. It is the
+// forced-stop path; Stop is the graceful one.
+func (s *Server) Close() error {
+	if s.httpServer != nil {
+		_ = s.httpServer.Close()
+	}
+	return s.cache.Stop()
 }
 
 func (s *Server) Errors() <-chan error {
@@ -323,13 +338,20 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		}
 		if !s.config.EventsJSON {
 			s.requestLogSpacer.Do(func() {
-				_, _ = fmt.Fprintln(os.Stdout)
+				_, _ = fmt.Fprintln(s.requestLog())
 			})
 		}
 
 		line := requestLogLine(strings.ToUpper(req.Method), requestPath(req), rec.status, s.config.UseColor && !s.config.EventsJSON)
-		_, _ = fmt.Fprintln(os.Stdout, line)
+		_, _ = fmt.Fprintln(s.requestLog(), line)
 	})
+}
+
+func (s *Server) requestLog() io.Writer {
+	if s.config.RequestLog != nil {
+		return s.config.RequestLog
+	}
+	return os.Stdout
 }
 
 type statusRecorder struct {

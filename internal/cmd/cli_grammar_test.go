@@ -47,6 +47,11 @@ func TestPublicCommandsUseFlagsForIdentity(t *testing.T) {
 			if strings.Contains(compactLine, "Directory string") && strings.Contains(compactLine, `help:"Target directory`) {
 				continue
 			}
+			// `nimbu completion zsh` names a shell, not a resource identity;
+			// --shell stays accepted for existing scripts.
+			if file == "completion.go" && strings.Contains(compactLine, "ShellArg string") {
+				continue
+			}
 			offenders = append(offenders, filepath.ToSlash(file)+":"+itoa(idx+1)+": "+strings.TrimSpace(line))
 		}
 	}
@@ -73,6 +78,7 @@ func TestFlagFirstSyntaxParsesRepresentativeCommands(t *testing.T) {
 		{"config", "set", "--key=default_site", "--value=demo"},
 		{"api", "--method=GET", "--path=/channels"},
 		{"completion", "--shell=zsh"},
+		{"completion", "zsh"},
 		{"themes", "push", "--only=assets/app.css"},
 		{"themes", "push", "--only=assets/app.css,layouts/theme.liquid"},
 		{"themes", "push", "--only=templates/page.liquid", "--no-deps"},
@@ -183,7 +189,6 @@ func TestOldPositionalIdentitySyntaxFails(t *testing.T) {
 		{"pages", "get", "about/team"},
 		{"products", "update", "sku-123", "name=Wine"},
 		{"config", "set", "default_site", "demo"},
-		{"completion", "zsh"},
 	}
 
 	for _, args := range tests {

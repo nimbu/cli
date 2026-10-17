@@ -379,5 +379,5 @@ func truncatePreview(value string) string {
 	if len(runes) <= pageOutlinePreviewLimit {
 		return value
 	}
-	return strings.TrimRight(string(runes[:pageOutlinePreviewLimit]), " ") + "…"
+	return strings.TrimRight(string(runes[:pageOutlinePreviewLimit]), " ") + output.GlyphSet(output.ASCIIOnly()).Ellipsis
 }

@@ -23,8 +23,9 @@ func (c *AppsConfigCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err := requireWrite(flags, "configure app"); err != nil {
 		return err
 	}
-	if flags != nil && flags.NoInput {
-		return fmt.Errorf("apps config is interactive only; remove --no-input")
+	if reason := promptBlocker(flags); reason != "" {
+		return newHintedError(fmt.Errorf("apps config is interactive only (cannot prompt: %s)", reason),
+			errorUsageInvalid, ExitUsage, "run it in an interactive terminal")
 	}
 
 	project, err := resolveProjectContext()
@@ -136,6 +137,7 @@ func (c *AppsConfigCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 func promptWithReader(reader *bufio.Reader, message string) (string, error) {
+	defer beginPrompt()()
 	fmt.Fprint(os.Stderr, message)
 	line, err := reader.ReadString('\n')
 	if err != nil && len(line) == 0 {

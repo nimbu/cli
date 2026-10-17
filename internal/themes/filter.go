@@ -1,11 +1,15 @@
 package themes
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"path/filepath"
 	"strings"
 )
+
+// ErrSelectorNoMatch reports an --only selector that matched no managed file.
+var ErrSelectorNoMatch = errors.New("theme selector matched no managed files")
 
 var (
 	cssPatterns   = []string{"**/*.css", "**/*.scss", "**/*.sass", "**/*.less"}
@@ -216,7 +220,7 @@ func (f *selectionFilter) validateOnlySelectors(resources []Resource) error {
 			}
 		}
 		if !matched {
-			return fmt.Errorf("theme selector matched no managed files: %s", selector.raw)
+			return fmt.Errorf("%w: %s", ErrSelectorNoMatch, selector.raw)
 		}
 	}
 	return nil

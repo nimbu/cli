@@ -6,6 +6,6 @@ type BlogPostsCmd struct {
 	Get    BlogPostsGetCmd    `cmd:"" help:"Get blog article"`
 	Create BlogPostsCreateCmd `cmd:"" help:"Create a blog article"`
 	Update BlogPostsUpdateCmd `cmd:"" help:"Update a blog article"`
-	Delete BlogPostsDeleteCmd `cmd:"" help:"Delete a blog article"`
+	Delete BlogPostsDeleteCmd `cmd:"" help:"Delete a blog article (requires --force)"`
 	Count  BlogPostsCountCmd  `cmd:"" help:"Count blog articles"`
 }

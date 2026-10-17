@@ -8,8 +8,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/muesli/termenv"
-
 	"github.com/nimbu/cli/internal/migrate"
 	"github.com/nimbu/cli/internal/output"
 )
@@ -100,52 +98,52 @@ func (c *SitesCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if result.DryRun {
 			prefix = "[dry-run] "
 		}
-		if _, err := output.Fprintf(ctx, "%suploads\t%d\n", prefix, len(result.Uploads.Items)); err != nil {
+		if err := output.Plain(ctx, prefix+"uploads", len(result.Uploads.Items)); err != nil {
 			return err
 		}
-		if _, err := output.Fprintf(ctx, "%schannels\t%d\n", prefix, len(result.Channels.Items)); err != nil {
+		if err := output.Plain(ctx, prefix+"channels", len(result.Channels.Items)); err != nil {
 			return err
 		}
-		if _, err := output.Fprintf(ctx, "%schannel_entries\t%d\n", prefix, len(result.ChannelEntries)); err != nil {
+		if err := output.Plain(ctx, prefix+"channel_entries", len(result.ChannelEntries)); err != nil {
 			return err
 		}
-		if _, err := output.Fprintf(ctx, "%sroles\t%d\n", prefix, len(result.Roles.Items)); err != nil {
+		if err := output.Plain(ctx, prefix+"roles", len(result.Roles.Items)); err != nil {
 			return err
 		}
-		if _, err := output.Fprintf(ctx, "%sproducts\t%d\n", prefix, len(result.Products.Items)); err != nil {
+		if err := output.Plain(ctx, prefix+"products", len(result.Products.Items)); err != nil {
 			return err
 		}
-		if _, err := output.Fprintf(ctx, "%scollections\t%d\n", prefix, len(result.Collections.Items)); err != nil {
+		if err := output.Plain(ctx, prefix+"collections", len(result.Collections.Items)); err != nil {
 			return err
 		}
-		if _, err := output.Fprintf(ctx, "%sshipping_rates\t%d\n", prefix, result.ShippingRates.Skipped); err != nil {
+		if err := output.Plain(ctx, prefix+"shipping_rates", result.ShippingRates.Skipped); err != nil {
 			return err
 		}
-		if _, err := output.Fprintf(ctx, "%spages\t%d\n", prefix, len(result.Pages.Items)); err != nil {
+		if err := output.Plain(ctx, prefix+"pages", len(result.Pages.Items)); err != nil {
 			return err
 		}
-		if _, err := output.Fprintf(ctx, "%sconsent\t%s\n", prefix, result.Consent.Action); err != nil {
+		if err := output.Plain(ctx, prefix+"consent", result.Consent.Action); err != nil {
 			return err
 		}
-		if _, err := output.Fprintf(ctx, "%smenus\t%d\n", prefix, len(result.Menus.Items)); err != nil {
+		if err := output.Plain(ctx, prefix+"menus", len(result.Menus.Items)); err != nil {
 			return err
 		}
-		if _, err := output.Fprintf(ctx, "%sblogs\t%d\n", prefix, len(result.Blogs.Items)); err != nil {
+		if err := output.Plain(ctx, prefix+"blogs", len(result.Blogs.Items)); err != nil {
 			return err
 		}
-		if _, err := output.Fprintf(ctx, "%snotifications\t%d\n", prefix, len(result.Notifications.Items)); err != nil {
+		if err := output.Plain(ctx, prefix+"notifications", len(result.Notifications.Items)); err != nil {
 			return err
 		}
-		if _, err := output.Fprintf(ctx, "%sredirects\t%d\n", prefix, len(result.Redirects.Items)); err != nil {
+		if err := output.Plain(ctx, prefix+"redirects", len(result.Redirects.Items)); err != nil {
 			return err
 		}
-		if _, err := output.Fprintf(ctx, "%stranslations\t%d\n", prefix, len(result.Translations.Items)); err != nil {
+		if err := output.Plain(ctx, prefix+"translations", len(result.Translations.Items)); err != nil {
 			return err
 		}
-		if _, err := output.Fprintf(ctx, "%scloud_code\t%d\n", prefix, len(result.CloudCode.Items)); err != nil {
+		if err := output.Plain(ctx, prefix+"cloud_code", len(result.CloudCode.Items)); err != nil {
 			return err
 		}
-		_, err := output.Fprintf(ctx, "%swarnings\t%d\n", prefix, len(result.Warnings))
+		err := output.Plain(ctx, prefix+"warnings", len(result.Warnings))
 		return err
 	}
 
@@ -159,8 +157,9 @@ func siteCopyConflictResolver(flags *RootFlags, tl *output.CopyTimeline) migrate
 		if flags != nil && flags.Force {
 			return migrate.ExistingContentDecision{Action: migrate.ExistingContentUpdate, ApplyToAll: true}, nil
 		}
-		if flags != nil && flags.NoInput {
-			return migrate.ExistingContentDecision{}, fmt.Errorf("use --force to update existing %s", strings.ToLower(prompt.Type))
+		if reason := promptBlocker(flags); reason != "" {
+			return migrate.ExistingContentDecision{}, forceRequiredError(
+				fmt.Sprintf("refusing to update existing %s without --force (cannot prompt: %s)", strings.ToLower(prompt.Type), reason))
 		}
 		if tl != nil {
 			tl.PreparePrompt()
@@ -173,7 +172,8 @@ func siteCopyConflictResolver(flags *RootFlags, tl *output.CopyTimeline) migrate
 		if errw == nil {
 			errw = os.Stderr
 		}
-		style := newSiteCopyPromptStyle(w, errw)
+		style := newSiteCopyPromptStyle(w)
+		defer beginPrompt()()
 		if prompt.Item != "" {
 			return readSiteCopyItemConflictDecision(reader, errw, prompt, style)
 		}
@@ -294,42 +294,25 @@ func siteCopySingular(kind string) string {
 	}
 }
 
+// siteCopyPromptStyle styles conflict prompts, which are written to stderr.
 type siteCopyPromptStyle struct {
-	useColor bool
-	termOut  *termenv.Output
+	theme output.Theme
 }
 
-func newSiteCopyPromptStyle(w *output.Writer, errw io.Writer) siteCopyPromptStyle {
-	useColor := w != nil && (w.Color == "always" || (w.Color != "never" && w.ErrIsTTY()))
-	profile := termenv.Ascii
-	if useColor {
-		switch w.Color {
-		case "always":
-			profile = termenv.TrueColor
-		default:
-			profile = termenv.EnvColorProfile()
-		}
+func newSiteCopyPromptStyle(w *output.Writer) siteCopyPromptStyle {
+	if w == nil {
+		return siteCopyPromptStyle{}
 	}
-	return siteCopyPromptStyle{useColor: useColor, termOut: termenv.NewOutput(errw, termenv.WithProfile(profile))}
+	return siteCopyPromptStyle{theme: w.ErrTheme()}
 }
 
 func firstSiteCopyPromptStyle(styles []siteCopyPromptStyle) siteCopyPromptStyle {
 	if len(styles) > 0 {
 		return styles[0]
 	}
-	return siteCopyPromptStyle{termOut: termenv.NewOutput(io.Discard, termenv.WithProfile(termenv.Ascii))}
+	return siteCopyPromptStyle{}
 }
 
-func (s siteCopyPromptStyle) bright(value string) string {
-	if !s.useColor {
-		return value
-	}
-	return s.termOut.String(value).Foreground(s.termOut.Color("#e2e8f0")).Bold().String()
-}
+func (s siteCopyPromptStyle) bright(value string) string { return s.theme.Strong(value) }
 
-func (s siteCopyPromptStyle) dim(value string) string {
-	if !s.useColor {
-		return value
-	}
-	return s.termOut.String(value).Foreground(s.termOut.Color("#94a3b8")).String()
-}
+func (s siteCopyPromptStyle) dim(value string) string { return s.theme.Muted(value) }

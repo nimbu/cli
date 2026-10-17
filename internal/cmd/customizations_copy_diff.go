@@ -104,7 +104,7 @@ func runCustomizationCopy(ctx context.Context, flags *RootFlags, service migrate
 		return output.JSON(ctx, result)
 	}
 	if mode.Plain {
-		_, err := output.Fprintf(ctx, "%s\t%s\t%d\n", result.Action, result.Kind, result.FieldCount)
+		err := output.Plain(ctx, result.Action, result.Kind, result.FieldCount)
 		return err
 	}
 	if tl != nil {
@@ -139,8 +139,8 @@ func runCustomizationDiff(ctx context.Context, service migrate.CustomizationServ
 	if mode.JSON {
 		return output.JSON(ctx, result)
 	}
-	plainLines := append(renderDiffChanges("add", result.Diff.Added), renderDiffChanges("remove", result.Diff.Removed)...)
-	plainLines = append(plainLines, renderDiffChanges("update", result.Diff.Updated)...)
+	plainLines := append(plainDiffChanges("add", result.Diff.Added), plainDiffChanges("remove", result.Diff.Removed)...)
+	plainLines = append(plainLines, plainDiffChanges("update", result.Diff.Updated)...)
 	humanLines := append([]string{}, renderDiffChanges("+", result.Diff.Added)...)
 	humanLines = append(humanLines, renderDiffChanges("-", result.Diff.Removed)...)
 	humanLines = append(humanLines, renderDiffChanges("~", result.Diff.Updated)...)

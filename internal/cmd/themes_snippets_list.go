@@ -37,20 +37,24 @@ func (c *ThemeSnippetsListCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 
 	var snippets []api.ThemeResource
+	var meta listFooterMeta
 
 	if c.All {
 		snippets, err = api.List[api.ThemeResource](ctx, client, path, opts...)
 		if err != nil {
 			return fmt.Errorf("list theme snippets: %w", err)
 		}
+		meta = allListFooterMeta(len(snippets))
 	} else {
 		paged, err := api.ListPage[api.ThemeResource](ctx, client, path, c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list theme snippets: %w", err)
 		}
 		snippets = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(snippets))
 	}
 
+	noteMoreResults(ctx, "snippets", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, snippets)
@@ -65,5 +69,8 @@ func (c *ThemeSnippetsListCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 
 	fields, headers := listOutputColumns(&c.QueryFlags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, snippets, fields, headers)
+	if err := output.WriteTable(ctx, snippets, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "snippets", meta)
 }

@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"golang.org/x/term"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/apps"
@@ -30,13 +32,14 @@ func (c *AuthStatusCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	host := apps.NormalizeHost(flags.APIURL)
-	useColor := output.WriterFromContext(ctx).UseColor()
+	// Status lines go to stdout, so stdout decides color.
+	st := newStatusStyler(output.WriterFromContext(ctx))
 
 	// Structured output modes
 	mode := output.FromContext(ctx)
 
 	if !hasToken {
-		return c.renderNotLoggedIn(ctx, mode, host, useColor, false)
+		return c.renderNotLoggedIn(ctx, mode, host, st, false)
 	}
 
 	// Verify token against API and fetch user info
@@ -54,7 +57,7 @@ func (c *AuthStatusCmd) Run(ctx context.Context, flags *RootFlags) error {
 	current, err := ResolveAuthCredential(ctx)
 	switch {
 	case errors.Is(verifyErr, oauth.ErrSessionExpired), errors.Is(err, auth.ErrNoToken):
-		return c.renderNotLoggedIn(ctx, mode, host, useColor, true)
+		return c.renderNotLoggedIn(ctx, mode, host, st, true)
 	case err == nil:
 		cred = current
 	}
@@ -92,35 +95,35 @@ func (c *AuthStatusCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if verified {
-		symbol := colorSymbol("✓", "#22c55e", useColor)
+		symbol := st.ok()
 		if name != "" {
-			if _, err := output.Fprintf(ctx, "%s Logged in to %s as %s (%s)\n", symbol, bold(host, useColor), bold(name, useColor), email); err != nil {
+			if _, err := output.Fprintf(ctx, "%s Logged in to %s as %s (%s)\n", symbol, st.bold(host), st.bold(name), email); err != nil {
 				return err
 			}
 		} else {
-			if _, err := output.Fprintf(ctx, "%s Logged in to %s as %s\n", symbol, bold(host, useColor), bold(email, useColor)); err != nil {
+			if _, err := output.Fprintf(ctx, "%s Logged in to %s as %s\n", symbol, st.bold(host), st.bold(email)); err != nil {
 				return err
 			}
 		}
 	} else {
-		symbol := colorSymbol("!", "#f59e0b", useColor)
+		symbol := st.warn()
 		if email != "" {
-			if _, err := output.Fprintf(ctx, "%s Logged in to %s as %s (unverified)\n", symbol, bold(host, useColor), bold(email, useColor)); err != nil {
+			if _, err := output.Fprintf(ctx, "%s Logged in to %s as %s (unverified)\n", symbol, st.bold(host), st.bold(email)); err != nil {
 				return err
 			}
 		} else {
-			if _, err := output.Fprintf(ctx, "%s Logged in to %s (unverified)\n", symbol, bold(host, useColor)); err != nil {
+			if _, err := output.Fprintf(ctx, "%s Logged in to %s (unverified)\n", symbol, st.bold(host)); err != nil {
 				return err
 			}
 		}
 	}
 
-	return printSessionDetails(ctx, session)
+	return printSessionDetails(ctx, session, flags.Verbose)
 }
 
 // renderNotLoggedIn reports the logged-out state; expired means a stored
 // session was just found revoked or expired on the server.
-func (c *AuthStatusCmd) renderNotLoggedIn(ctx context.Context, mode output.Mode, host string, useColor, expired bool) error {
+func (c *AuthStatusCmd) renderNotLoggedIn(ctx context.Context, mode output.Mode, host string, st statusStyler, expired bool) error {
 	if mode.JSON {
 		payload := map[string]any{
 			"logged_in": false,
@@ -138,28 +141,32 @@ func (c *AuthStatusCmd) renderNotLoggedIn(ctx context.Context, mode output.Mode,
 		return output.Plain(ctx, "logged_out", "", host)
 	}
 
-	symbol := colorSymbol("✗", "#ef4444", useColor)
+	symbol := st.fail()
 	if expired {
-		_, err := output.Fprintf(ctx, "%s Not logged in to %s: the login session expired or was revoked. Run `nimbu auth login`.\n", symbol, bold(host, useColor))
+		_, err := output.Fprintf(ctx, "%s Not logged in to %s: the login session expired or was revoked. Run `nimbu auth login`.\n", symbol, st.bold(host))
 		return err
 	}
-	_, err := output.Fprintf(ctx, "%s Not logged in to %s\n", symbol, bold(host, useColor))
+	_, err := output.Fprintf(ctx, "%s Not logged in to %s\n", symbol, st.bold(host))
 	return err
 }
 
-func colorSymbol(symbol, color string, useColor bool) string {
-	if !useColor {
-		return symbol
-	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Bold(true).Render(symbol)
+// statusStyler styles auth status lines for stdout through the shared
+// semantic theme, downsampled to stdout's color profile. Each status keeps a
+// glyph (with ASCII fallback) and a sentence, so it reads the same uncolored.
+type statusStyler struct {
+	theme  output.Theme
+	glyphs output.Glyphs
 }
 
-func bold(s string, useColor bool) string {
-	if !useColor {
-		return s
-	}
-	return lipgloss.NewStyle().Bold(true).Render(s)
+func newStatusStyler(w *output.Writer) statusStyler {
+	return statusStyler{theme: w.OutTheme(), glyphs: w.Glyphs()}
 }
+
+func (s statusStyler) ok() string   { return s.theme.Success(s.glyphs.OK) }
+func (s statusStyler) warn() string { return s.theme.Warning(s.glyphs.Warn) }
+func (s statusStyler) fail() string { return s.theme.Error(s.glyphs.Fail) }
+
+func (s statusStyler) bold(text string) string { return s.theme.Strong(text) }
 
 // sessionInfo describes how the CLI is authenticated.
 type sessionInfo struct {
@@ -186,7 +193,7 @@ func describeSession(cred auth.Credential) sessionInfo {
 	}
 }
 
-func printSessionDetails(ctx context.Context, session sessionInfo) error {
+func printSessionDetails(ctx context.Context, session sessionInfo, verbose bool) error {
 	if session.Method != auth.AuthMethodOAuth {
 		return nil
 	}
@@ -197,10 +204,62 @@ func printSessionDetails(ctx context.Context, session sessionInfo) error {
 	if _, err := output.Fprintln(ctx, line); err != nil {
 		return err
 	}
-	if len(session.Scopes) > 0 {
-		if _, err := output.Fprintf(ctx, "  Scopes: %s\n", strings.Join(session.Scopes, ", ")); err != nil {
+	for _, line := range scopeLines(session.Scopes, verbose, stdoutWidth(output.WriterFromContext(ctx))) {
+		if _, err := output.Fprintln(ctx, line); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+const scopesPrefix = "  Scopes: "
+
+// scopeLines renders granted scopes for humans. A list that fits on one line
+// is shown in full; a longer one is summarized unless verbose is set, in which
+// case it is wrapped to width under a hanging indent. --json always carries
+// the full list.
+func scopeLines(scopes []string, verbose bool, width int) []string {
+	if len(scopes) == 0 {
+		return nil
+	}
+	full := scopesPrefix + strings.Join(scopes, ", ")
+	if ansi.StringWidth(full) <= width {
+		return []string{full}
+	}
+	if !verbose {
+		return []string{fmt.Sprintf("%s%d granted (--verbose lists them)", scopesPrefix, len(scopes))}
+	}
+
+	indent := strings.Repeat(" ", ansi.StringWidth(scopesPrefix))
+	var lines []string
+	line := scopesPrefix
+	empty := true
+	for i, scope := range scopes {
+		token := scope
+		if i < len(scopes)-1 {
+			token += ","
+		}
+		sep := " "
+		if empty {
+			sep = ""
+		}
+		if !empty && ansi.StringWidth(line+sep+token) > width {
+			lines = append(lines, line)
+			line, sep = indent, ""
+		}
+		line += sep + token
+		empty = false
+	}
+	return append(lines, line)
+}
+
+// stdoutWidth is the terminal width of stdout, or 80 when it is not a
+// terminal or the size is unknown.
+func stdoutWidth(w *output.Writer) int {
+	if f, ok := w.Out.(*os.File); ok && w.IsTTY() {
+		if width, _, err := term.GetSize(int(f.Fd())); err == nil && width > 0 {
+			return width
+		}
+	}
+	return 80
 }

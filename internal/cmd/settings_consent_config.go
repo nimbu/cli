@@ -46,8 +46,8 @@ func (c *SettingsConsentConfigReplaceCmd) Run(ctx context.Context, flags *RootFl
 	if err := requireWrite(flags, "replace consent configuration"); err != nil {
 		return err
 	}
-	if flags == nil || !flags.Force {
-		return fmt.Errorf("use --force to replace the whole consent configuration")
+	if !confirmedByFlag(flags) {
+		return confirmationRequiredError("refusing to replace the whole consent configuration without --force", "--force")
 	}
 	body, err := readJSONInputUseNumber(c.File)
 	if err != nil {
@@ -96,7 +96,7 @@ func (c *SettingsConsentConfigCopyCmd) Run(ctx context.Context, flags *RootFlags
 		return output.JSON(ctx, result)
 	}
 	if mode.Plain {
-		_, err = output.Fprintf(ctx, "%s\t%s\t%s\n", result.Action, result.From.Site, result.To.Site)
+		err = output.Plain(ctx, result.Action, result.From.Site, result.To.Site)
 		return err
 	}
 	_, err = output.Fprintf(ctx, "%s consent configuration from %s to %s\n", result.Action, result.From.Site, result.To.Site)

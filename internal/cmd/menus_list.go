@@ -56,6 +56,7 @@ func (c *MenusListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		meta.probeTotal(ctx, client, "/menus/count", opts)
 	}
 
+	noteMoreResults(ctx, "menus", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, documents)

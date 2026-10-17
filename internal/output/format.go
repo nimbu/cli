@@ -73,6 +73,7 @@ type Writer struct {
 	NoTTY  bool
 	Color  string // "auto", "always", "never"
 	NoSpin bool   // Disable spinner
+	Wide   bool   // Never fit tables to the terminal width
 }
 
 // DefaultWriter returns a writer with default settings.
@@ -105,18 +106,6 @@ func (w *Writer) ErrIsTTY() bool {
 		return term.IsTerminal(int(f.Fd()))
 	}
 	return false
-}
-
-// UseColor returns true if color output should be used.
-func (w *Writer) UseColor() bool {
-	switch w.Color {
-	case "always":
-		return true
-	case "never":
-		return false
-	default: // "auto"
-		return w.IsTTY()
-	}
 }
 
 type writerCtxKey struct{}

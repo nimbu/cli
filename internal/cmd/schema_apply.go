@@ -39,19 +39,15 @@ func (c *SchemaApplyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if schemaPlanExit(plans) == 1 {
 		return fmt.Errorf("schema plan is blocked; resolve the reported operations and plan again")
 	}
-	if err = confirmProtectedEnvironment(ctx, flags, c.Yes, "apply schemas"); err != nil {
+	if err = confirmProtectedEnvironment(ctx, flags, flags.Yes, "apply schemas"); err != nil {
 		return err
 	}
 	if schemaPlanExit(plans) == 0 {
 		return nil
 	}
-	if !c.Yes && !IsProtectedEnvironment(flags) {
-		if flags.NoInput {
-			return fmt.Errorf("use --yes to confirm schema changes with --no-input")
-		}
-		promptFlags := *flags
-		promptFlags.Force = false
-		ok, e := confirmPrompt(&promptFlags, "apply the planned schema changes")
+	if !IsProtectedEnvironment(flags) {
+		// --yes and --force both confirm an unprotected apply.
+		ok, e := confirmPromptFlag(flags, "apply the planned schema changes", "--yes")
 		if e != nil {
 			return e
 		}

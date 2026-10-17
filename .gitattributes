@@ -1,0 +1,2 @@
+# Goldens and fixtures compare byte for byte; keep them LF on every checkout.
+*.golden text eol=lf

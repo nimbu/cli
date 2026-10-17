@@ -46,6 +46,7 @@ func TestAppsConfigWritesProjectAppEntry(t *testing.T) {
 	defer srv.Close()
 
 	ctx := newAppsTestContext(t, srv.URL)
+	stubInteractivePrompt(t, true)
 	withTempCWD(t, t.TempDir(), func() {
 		withTempStdin(t, "1\n\n\n\n", func() {
 			cmd := &AppsConfigCmd{}
@@ -68,11 +69,37 @@ func TestAppsConfigWritesProjectAppEntry(t *testing.T) {
 }
 
 func TestAppsConfigRejectsNoInput(t *testing.T) {
-	ctx := newAppsTestContext(t, "https://api.example.test")
-	cmd := &AppsConfigCmd{}
-	err := cmd.Run(ctx, &RootFlags{Site: "demo", NoInput: true})
-	if err == nil || !strings.Contains(err.Error(), "interactive only") {
-		t.Fatalf("expected interactive-only error, got %v", err)
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		_, _ = w.Write([]byte(`[{"key":"storefront","name":"Storefront"}]`))
+	}))
+	defer srv.Close()
+	for name, setup := range map[string]func(t *testing.T) *RootFlags{
+		"no-input": func(t *testing.T) *RootFlags {
+			stubInteractivePrompt(t, true)
+			return &RootFlags{Site: "demo", NoInput: true}
+		},
+		"CI": func(t *testing.T) *RootFlags {
+			stubInteractivePrompt(t, true)
+			t.Setenv("CI", "true")
+			return &RootFlags{Site: "demo"}
+		},
+		"stdin": func(t *testing.T) *RootFlags { stubInteractivePrompt(t, false); return &RootFlags{Site: "demo"} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := newAppsTestContext(t, srv.URL)
+			err := (&AppsConfigCmd{}).Run(ctx, setup(t))
+			if err == nil || !strings.Contains(err.Error(), "interactive only") {
+				t.Fatalf("expected interactive-only error, got %v", err)
+			}
+			if desc := classifyError(err); desc.Code != errorUsageInvalid || desc.ExitCode != ExitUsage {
+				t.Fatalf("refusal = %s/%d", desc.Code, desc.ExitCode)
+			}
+		})
+	}
+	if requests != 0 {
+		t.Fatalf("apps config called the API %d times before refusing", requests)
 	}
 }
 

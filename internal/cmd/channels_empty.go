@@ -19,7 +19,7 @@ func (c *ChannelsEmptyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err := requireWrite(flags, "empty channel"); err != nil {
 		return err
 	}
-	if err := requireForce(flags, "channel "+c.Channel); err != nil {
+	if err := requireForceAction(flags, "empty channel "+c.Channel); err != nil {
 		return err
 	}
 	site, err := RequireSite(ctx, "")

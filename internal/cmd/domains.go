@@ -6,6 +6,6 @@ type DomainsCmd struct {
 	Get         DomainsGetCmd         `cmd:"" help:"Get domain details"`
 	Create      DomainsCreateCmd      `cmd:"" help:"Create a domain"`
 	Update      DomainsUpdateCmd      `cmd:"" help:"Update a domain"`
-	Delete      DomainsDeleteCmd      `cmd:"" help:"Delete a domain"`
-	MakePrimary DomainsMakePrimaryCmd `cmd:"" help:"Make a domain primary"`
+	Delete      DomainsDeleteCmd      `cmd:"" help:"Delete a domain (requires --force)"`
+	MakePrimary DomainsMakePrimaryCmd `cmd:"" help:"Make a domain primary (requires --force)"`
 }

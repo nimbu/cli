@@ -8,7 +8,7 @@ Cross-site commands (`copy`, `diff`, `info`) use a `site/channel` ref format:
 --from staging/blog --to production/blog
 ```
 
-If only `channel` is given (no `/`), the default site is used.
+If only `channel` is given (no `/`), the current site is used (`--site`/`NIMBU_SITE`, then `nimbu.yml`, then `default_site`).
 For different API hosts, add `--from-host` / `--to-host` (bare domain or full URL; `api.` prefix is auto-added).
 
 ## Channel Commands

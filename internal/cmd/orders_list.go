@@ -60,6 +60,7 @@ func (c *OrdersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		meta.probeTotal(ctx, client, "/orders/count", opts)
 	}
 
+	noteMoreResults(ctx, "orders", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, documents)

@@ -175,6 +175,17 @@ func TestChannelEntriesWatchHumanLineAndResyncHint(t *testing.T) {
 	}
 }
 
+func TestChannelEntriesWatchResyncLineHonorsASCII(t *testing.T) {
+	t.Setenv("NIMBU_ASCII", "1")
+	printer := &watchPrinter{writer: &output.Writer{Out: &strings.Builder{}, Err: &strings.Builder{}, NoTTY: true}, channel: "blog"}
+	line := printer.humanEventLine(realtime.Event{Event: "resync", OccurredAt: "2026-09-21T10:00:00Z"})
+	for _, r := range line {
+		if r > 0x7f {
+			t.Fatalf("ASCII resync line has %q: %q", r, line)
+		}
+	}
+}
+
 func TestWatchExitErrorMapsOutcomes(t *testing.T) {
 	if err := watchExitError(realtime.ExitOnce, nil); err != nil {
 		t.Fatalf("once = %v, want nil", err)
@@ -293,4 +304,28 @@ func newWatchTestSocket(t *testing.T, event string) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// Regression: --plain watch lines were written with Fprintf, so an entry
+// title holding a tab or newline split the record.
+func TestChannelEntriesWatchPlainEscapesTitle(t *testing.T) {
+	var out strings.Builder
+	printer := &watchPrinter{
+		writer: &output.Writer{Out: &out, Err: &strings.Builder{}, NoTTY: true},
+		mode:   output.Mode{Plain: true},
+	}
+	printer.OnEvent(realtime.Event{
+		Event:      "added",
+		ID:         "e1",
+		OccurredAt: "2026-09-21T10:00:00Z",
+		Object:     json.RawMessage(`{"title":"a\tb\nc\\d"}`),
+	})
+	line := out.String()
+	if strings.Count(line, "\n") != 1 || !strings.HasSuffix(line, "\n") {
+		t.Fatalf("plain event must be one line, got %q", line)
+	}
+	fields := strings.Split(strings.TrimSuffix(line, "\n"), "\t")
+	if len(fields) != 4 || fields[1] != "added" || fields[2] != "e1" || fields[3] != `a\tb\nc\\d` {
+		t.Fatalf("plain fields = %q", fields)
+	}
 }

@@ -110,48 +110,6 @@ func TestReadmeDocumentsInlinePayloadSyntax(t *testing.T) {
 	}
 }
 
-func TestAppendRootInlinePayloadFooter(t *testing.T) {
-	input := "Usage: nimbu <command> [flags]\n\nCLI for the Nimbu API\n\nCommands:\n  sites\n"
-	out := appendRootInlinePayloadFooter(input)
-
-	required := []string{
-		"Create/Update supports inline payloads using:",
-		"key=value",
-		"key:=json",
-		"key=@file.txt",
-		"key:=@file.json",
-	}
-	for _, needle := range required {
-		if !strings.Contains(out, needle) {
-			t.Fatalf("footer missing %q", needle)
-		}
-	}
-
-	if !strings.HasSuffix(out, "Create/Update supports inline payloads using: key=value, key:=json, key=@file.txt or key:=@file.json\n") {
-		t.Fatalf("footer should be at bottom, got: %q", out)
-	}
-
-	out2 := appendRootInlinePayloadFooter(out)
-	if out2 != out {
-		t.Fatal("footer should not be appended twice")
-	}
-}
-
-func TestCompactCommandsSection(t *testing.T) {
-	input := "Usage: nimbu <command> [flags]\n\nCommands:\n  auth <command> [flags]\n    Authentication and credentials\n\n  sites <command> [flags]\n    Manage sites\n\nRun \"nimbu <command> --help\" for more information on a command.\n"
-	out := compactCommandsSection(input)
-
-	if strings.Contains(out, "\n    Authentication and credentials") {
-		t.Fatalf("description should be collapsed to single line, got: %q", out)
-	}
-	if !strings.Contains(out, "auth <command> [flags]") || !strings.Contains(out, "· Authentication and credentials") {
-		t.Fatalf("auth row not compacted: %q", out)
-	}
-	if !strings.Contains(out, "sites <command> [flags]") || !strings.Contains(out, "· Manage sites") {
-		t.Fatalf("sites row not compacted: %q", out)
-	}
-}
-
 func TestParserBuildsWithoutDuplicateFlags(t *testing.T) {
 	if _, _, err := newParser(); err != nil {
 		t.Fatalf("newParser() error = %v", err)

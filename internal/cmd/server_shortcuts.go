@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/muesli/cancelreader"
 )
@@ -17,6 +19,8 @@ type serverShortcutLinks struct {
 	DevURL   string
 	LiveURL  string
 	AdminURL string
+	// Active is set when the key listener runs; the hint is shown only then.
+	Active bool
 }
 
 func serverShortcutLinksFromSummary(summary serverSummary) serverShortcutLinks {
@@ -34,8 +38,13 @@ func serverShortcutLinksFromSummary(summary serverSummary) serverShortcutLinks {
 	}
 }
 
+// Hint is the one-line key summary printed under the startup summary. When
+// the listener runs, Enter, help and quit are always available.
 func (l serverShortcutLinks) Hint() string {
-	parts := make([]string, 0, 3)
+	if !l.Active {
+		return ""
+	}
+	parts := make([]string, 0, 6)
 	if l.DevURL != "" {
 		parts = append(parts, "[o] open dev")
 	}
@@ -45,7 +54,27 @@ func (l serverShortcutLinks) Hint() string {
 	if l.AdminURL != "" {
 		parts = append(parts, "[b] open admin")
 	}
+	parts = append(parts, "[enter] mark", "[?] help", "[q] quit")
 	return strings.Join(parts, "  ")
+}
+
+// HelpRows lists every shortcut with a full description, for the '?' help.
+func (l serverShortcutLinks) HelpRows() [][2]string {
+	rows := make([][2]string, 0, 6)
+	if l.DevURL != "" {
+		rows = append(rows, [2]string{"o", "open the dev server  " + l.DevURL})
+	}
+	if l.LiveURL != "" {
+		rows = append(rows, [2]string{"l", "open the live site   " + l.LiveURL})
+	}
+	if l.AdminURL != "" {
+		rows = append(rows, [2]string{"b", "open the site admin  " + l.AdminURL})
+	}
+	return append(rows,
+		[2]string{"enter", "print a blank line to mark a spot in the log"},
+		[2]string{"? h", "show this help"},
+		[2]string{"q", "quit (Ctrl-C works too; press it twice to force)"},
+	)
 }
 
 func (l serverShortcutLinks) target(action serverShortcutAction) (label string, target string, ok bool) {
@@ -78,6 +107,8 @@ const (
 	serverShortcutOpenDev
 	serverShortcutOpenLive
 	serverShortcutOpenAdmin
+	serverShortcutHelp
+	serverShortcutQuit
 )
 
 type serverShortcutDecision struct {
@@ -94,6 +125,10 @@ func decideServerShortcut(b byte, ready bool, links serverShortcutLinks) serverS
 	switch b {
 	case '\n', '\r':
 		action = serverShortcutLogMarker
+	case '?', 'h':
+		action = serverShortcutHelp
+	case 'q':
+		action = serverShortcutQuit
 	case 'o':
 		if links.DevURL != "" {
 			action = serverShortcutOpenDev
@@ -111,7 +146,9 @@ func decideServerShortcut(b byte, ready bool, links serverShortcutLinks) serverS
 	if action == serverShortcutNone {
 		return serverShortcutDecision{}
 	}
-	if action == serverShortcutLogMarker {
+	switch action {
+	case serverShortcutLogMarker, serverShortcutHelp, serverShortcutQuit:
+		// Local actions work before the child is ready.
 		return serverShortcutDecision{Action: action}
 	}
 	if !ready {
@@ -120,6 +157,20 @@ func decideServerShortcut(b byte, ready bool, links serverShortcutLinks) serverS
 	return serverShortcutDecision{Action: action}
 }
 
+// serverTermMode re-applies and restores the shortcut input mode.
+type serverTermMode struct {
+	apply   func() error
+	restore func() error
+	// foreground reports whether nimbu's job owns the terminal; nil means
+	// always (no job control).
+	foreground func() bool
+}
+
+// serverForegroundPoll is how often a listener paused in the background
+// checks whether the job is back in the foreground, for a `fg` that sends no
+// SIGCONT. A var for tests.
+var serverForegroundPoll = time.Second
+
 type serverShortcutListener struct {
 	closeOnce sync.Once
 	errCh     chan error
@@ -127,7 +178,15 @@ type serverShortcutListener struct {
 	input     *os.File
 	ownsInput bool
 	reader    cancelreader.CancelReader
-	restore   func() error
+	// done is closed by Close; resumed is signaled by Resume. Both wake a
+	// read loop paused while the job runs in the background.
+	done    chan struct{}
+	resumed chan struct{}
+
+	// modeMu guards the terminal mode against Suspend/Resume racing Close.
+	modeMu sync.Mutex
+	mode   serverTermMode
+	closed bool
 }
 
 func newServerShortcutListener() (*serverShortcutListener, error) {
@@ -136,7 +195,7 @@ func newServerShortcutListener() (*serverShortcutListener, error) {
 		return nil, fmt.Errorf("open shortcut input: %w", err)
 	}
 
-	restore, err := prepareServerShortcutInput(input)
+	mode, err := prepareServerShortcutInput(input)
 	if err != nil {
 		if ownsInput {
 			_ = input.Close()
@@ -146,8 +205,8 @@ func newServerShortcutListener() (*serverShortcutListener, error) {
 
 	reader, err := cancelreader.NewReader(input)
 	if err != nil {
-		if restore != nil {
-			_ = restore()
+		if mode.restore != nil {
+			_ = mode.restore()
 		}
 		if ownsInput {
 			_ = input.Close()
@@ -155,19 +214,26 @@ func newServerShortcutListener() (*serverShortcutListener, error) {
 		return nil, fmt.Errorf("prepare shortcut input: %w", err)
 	}
 
+	return newServerShortcutListenerFrom(reader, input, ownsInput, mode), nil
+}
+
+func newServerShortcutListenerFrom(reader cancelreader.CancelReader, input *os.File, ownsInput bool, mode serverTermMode) *serverShortcutListener {
 	listener := &serverShortcutListener{
 		errCh:     make(chan error, 1),
 		events:    make(chan byte, 16),
 		input:     input,
 		ownsInput: ownsInput,
 		reader:    reader,
-		restore:   restore,
+		done:      make(chan struct{}),
+		resumed:   make(chan struct{}, 1),
+		mode:      mode,
 	}
 	go listener.readLoop()
-	return listener, nil
+	return listener
 }
 
 func (l *serverShortcutListener) readLoop() {
+	defer l.RestoreOnPanic()
 	defer close(l.events)
 	defer close(l.errCh)
 
@@ -178,6 +244,12 @@ func (l *serverShortcutListener) readLoop() {
 			if errors.Is(err, cancelreader.ErrCanceled) || errors.Is(err, io.EOF) || errors.Is(err, os.ErrClosed) {
 				return
 			}
+			if l.inBackground(err) {
+				if !l.waitForeground() {
+					return
+				}
+				continue
+			}
 			l.errCh <- err
 			return
 		}
@@ -186,6 +258,33 @@ func (l *serverShortcutListener) readLoop() {
 			case l.events <- buf[0]:
 			default:
 			}
+		}
+	}
+}
+
+// inBackground reports a read that failed because the job runs in the
+// background (Ctrl-Z, then `bg`): with SIGTTIN ignored such a read fails with
+// EIO instead of stopping nimbu. The listener pauses rather than giving up.
+func (l *serverShortcutListener) inBackground(err error) bool {
+	return errors.Is(err, syscall.EIO) && l.mode.foreground != nil && !l.mode.foreground()
+}
+
+// waitForeground blocks until the job is in the foreground again, then
+// re-applies shortcut mode. It reports false when the listener was closed.
+func (l *serverShortcutListener) waitForeground() bool {
+	ticker := time.NewTicker(serverForegroundPoll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-l.done:
+			return false
+		case <-l.resumed:
+		case <-ticker.C:
+		}
+		if l.mode.foreground() {
+			// A no-op when SIGCONT already re-applied it.
+			_ = l.Resume()
+			return true
 		}
 	}
 }
@@ -217,11 +316,17 @@ func (l *serverShortcutListener) Close() error {
 				closeErr = err
 			}
 		}
-		if l.restore != nil {
-			if err := l.restore(); err != nil && closeErr == nil {
+		if l.done != nil {
+			close(l.done)
+		}
+		l.modeMu.Lock()
+		l.closed = true
+		if l.mode.restore != nil {
+			if err := l.mode.restore(); err != nil && closeErr == nil {
 				closeErr = err
 			}
 		}
+		l.modeMu.Unlock()
 		if l.ownsInput && l.input != nil {
 			if err := l.input.Close(); err != nil && closeErr == nil {
 				closeErr = err
@@ -229,6 +334,49 @@ func (l *serverShortcutListener) Close() error {
 		}
 	})
 	return closeErr
+}
+
+// Suspend hands the terminal back in its original mode (Ctrl-Z) without
+// stopping the listener.
+func (l *serverShortcutListener) Suspend() error {
+	if l == nil {
+		return nil
+	}
+	l.modeMu.Lock()
+	defer l.modeMu.Unlock()
+	if l.closed || l.mode.restore == nil {
+		return nil
+	}
+	return l.mode.restore()
+}
+
+// Resume re-applies shortcut mode after the job is continued (fg), and
+// wakes a read loop paused in the background.
+func (l *serverShortcutListener) Resume() error {
+	if l == nil {
+		return nil
+	}
+	l.modeMu.Lock()
+	defer l.modeMu.Unlock()
+	if l.closed || l.mode.apply == nil {
+		return nil
+	}
+	err := l.mode.apply()
+	select {
+	case l.resumed <- struct{}{}:
+	default:
+	}
+	return err
+}
+
+// RestoreOnPanic is deferred by every goroutine nimbu server starts. A panic
+// there would otherwise kill the process before Run's deferred Close, leaving
+// the user's shell without echo. It restores the terminal and re-panics.
+func (l *serverShortcutListener) RestoreOnPanic() {
+	if r := recover(); r != nil {
+		_ = l.Close()
+		panic(r)
+	}
 }
 
 func serverBrowserCommand(goos string, target string) (string, []string, error) {

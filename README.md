@@ -67,8 +67,14 @@ nimbu auth login
 # List your sites
 nimbu sites list
 
-# Bootstrap a local theme project
+# Bootstrap a local theme project (interactive wizard)
 nimbu init
+
+# ...or answer every step up front (CI, scripts, agents)
+nimbu init --no-input --site my-site --theme default my-theme
+
+# Help for any command or group
+nimbu help channels entries
 
 # Work with a specific site
 nimbu channels list --site my-site
@@ -105,6 +111,26 @@ nimbu sites settings --site staging --json
 ```
 
 ## Upgrade Notes
+
+Behavior changes that can affect scripts:
+
+- stdout carries results only. List footers ("Showing 25 of 100 ..."),
+  warnings and update notices go to stderr. With `--json` or `--plain`, an
+  incomplete listing adds one stderr line such as
+  `nimbu: showing 25 of 327 products; pass --all or --page 2`; stdout keeps
+  its shape.
+- `--plain` escapes fields (see [Output and Exit Codes](#output-and-exit-codes)).
+- Prompts never block a pipe: without a terminal on stdin, with `CI` set, or
+  with `--no-input`, a confirmation fails with `cli.confirmation_required`
+  (exit 2) instead of waiting. Pass `--force` or `--yes`.
+- Ctrl-C and SIGTERM exit 130 (the `nimbu init` wizard and the `nimbu config
+  banner` picker exit 143 on SIGTERM).
+  Long-running commands that stop gracefully on the first signal (`nimbu
+  server`, `apps logs --tail`, `channels entries watch`) exit 0; a second
+  Ctrl-C force-stops them with 130.
+- In the `nimbu init` wizard, `NIMBU_SITE` preselects the site but no longer
+  skips the question; `--site` or `--env` on the command line still does.
+  With `--no-input`, `NIMBU_SITE` answers it.
 
 `pages update --file` now merges by default. Use `--replace` with a file payload when existing automation depends on omission removing page content.
 
@@ -344,43 +370,122 @@ a translated field is absent.
 
 ## Commands
 
+`nimbu --help` is the authoritative list; this is its overview:
+
 ```
-nimbu auth       Authentication and credentials
-nimbu init       Bootstrap a local theme project
-nimbu sites      Manage sites
-nimbu channels   Manage channels and entries
-nimbu pages      Manage pages
-nimbu menus      Manage navigation menus
-nimbu products   Manage products
-nimbu shipping-rates Manage shipping rates
-nimbu collections Manage collections
-nimbu coupons    Manage coupons
-nimbu domains    Manage custom domains
-nimbu orders     Manage orders
-nimbu customers  Manage customers
-nimbu mails      Sync notification templates to local files
-nimbu settings   Manage site settings and consent configuration
-nimbu notifications Manage notifications
-nimbu roles      Manage roles
-nimbu redirects  Manage redirects
-nimbu functions  Execute cloud functions
-nimbu jobs       Execute cloud jobs
-nimbu apps       Manage OAuth apps
-nimbu senders    Manage email sender domains
-nimbu themes     Manage themes
-nimbu uploads    Manage uploads
-nimbu blogs      Manage blogs
-nimbu webhooks   Manage webhooks
-nimbu server     Run local simulator proxy with child dev server
-nimbu config     Manage configuration
-nimbu realtime   Realtime grants and live queries
-nimbu api        Raw API access
-nimbu completion Generate shell completions
+Getting started:
+  nimbu auth                    Authentication and credentials
+  nimbu init                    Bootstrap a local theme project
+  nimbu sites                   Manage sites
+  nimbu server                  Run local simulator proxy with child dev server
+  nimbu env                     Manage project environments
+  nimbu config                  Manage configuration
+
+Content:
+  nimbu channels                Manage channels and entries
+  nimbu pages                   Manage pages
+  nimbu menus                   Manage navigation menus
+  nimbu blogs                   Manage blogs
+  nimbu translations            Manage translations
+  nimbu uploads                 Manage uploads
+  nimbu mails (mail)            Sync notification templates to local files
+  nimbu notifications           Manage notifications
+
+Commerce:
+  nimbu products                Manage products
+  nimbu orders                  Manage orders
+  nimbu customers               Manage customers
+  nimbu coupons                 Manage coupons
+  nimbu collections             Manage collections
+  nimbu shipping-rates          Manage shipping rates
+
+Theme & code:
+  nimbu themes                  Manage themes
+  nimbu schema                  Manage declarative schemas
+  nimbu release                 Release schema, cloud code and theme
+  nimbu releases                List successful releases
+  nimbu functions               Execute cloud functions
+  nimbu jobs                    Execute cloud jobs
+  nimbu apps                    Manage OAuth apps
+
+Admin:
+  nimbu domains                 Manage custom domains
+  nimbu domain-registrations    Manage domain registrations
+  nimbu senders                 Manage email sender domains
+  nimbu settings                Manage site settings
+  nimbu roles                   Manage roles
+  nimbu redirects               Manage redirects
+  nimbu webhooks                Manage webhooks
+  nimbu announcements           Manage platform announcements
+  nimbu events                  Track and ingest events
+  nimbu realtime                Realtime grants and live queries
+
+Advanced:
+  nimbu api                     Raw API access
+  nimbu commands                Export the machine-readable command contract
+  nimbu completion              Generate shell completions (bash, zsh, fish)
 ```
+
+`nimbu help <command>`, `nimbu <command> --help` and `nimbu <group> help`
+print the same help; a bare group such as `nimbu channels` lists its
+subcommands. With `--json`/`--plain` (or `NIMBU_JSON`/`NIMBU_PLAIN`) a bare
+group is a usage error (exit 2) instead, so stdout never carries help text a
+script would parse. Default help hides output, agent and connection flags; add
+`--help-all` to see them. Commands that can stop for a confirmation list
+`--force`, `--yes` and `--dry-run` under **Safety**.
+
+Load completions with `eval "$(nimbu completion zsh)"` in `~/.zshrc` (or
+`bash`/`fish`; `--shell zsh` still works).
 
 Completion debug output is normally hidden by shell wrappers. Set
 `NIMBU_COMPLETION_DEBUG=1` and inspect the `completion-debug.log` file in the
 Nimbu data directory when debugging dynamic completions.
+
+## Output and Exit Codes
+
+`--json` prints the bare JSON value on stdout. `--plain` prints one
+tab-separated record per line. Inside a field, a backslash becomes `\\`, a
+tab `\t`, a line feed `\n` and a carriage return `\r`, so every record stays
+on one line with a fixed field count; decode by replacing those four
+sequences left to right. `themes diff --content --plain` adds the unified
+diff as an escaped third field. `functions run --plain` is the exception: it
+prints the function result as one compact JSON object per line.
+
+Human tables on a terminal are fitted to its width: free-text columns such as
+NAME or TITLE give way first, then URLs and timestamps, and identifier columns
+(ID, KEY, SLUG, FULLPATH, EMAIL, ...) are never cut. Pass `--wide` (or set
+`NIMBU_WIDE=1`) to print every value in full. Piped, `--plain` and `--json`
+output is never truncated. Control characters in API data (ESC, BEL, ...)
+show as `�` in human output so they cannot drive the terminal.
+
+Colors follow, highest first: `--color always|never` (or `NIMBU_COLOR`),
+`NO_COLOR`, `TERM=dumb`, `FORCE_COLOR=0`, then whether the stream is a
+terminal. `FORCE_COLOR=1` and `CLICOLOR_FORCE` are ignored on purpose: Node
+tooling exports them shell-wide, and honoring them would leak escape codes
+into pipes and agent logs. Use `--color always` to force color.
+`NIMBU_ASCII=1` (also `TERM=dumb` or a non-UTF-8 locale) swaps symbols such as
+`✓` and `…` for ASCII. Under `TERM=dumb`, `nimbu init` asks with line prompts
+instead of its full-screen wizard, and `nimbu config banner` refuses to start.
+Line output uses a palette tuned for dark backgrounds
+unless `NIMBU_THEME=light` is set or `COLORFGBG` reports a light background;
+`NIMBU_THEME=dark` forces the dark palette.
+
+| Exit | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | Usage error: bad flags, no site (`cli.usage.site_required`), a confirmation nobody could give (`cli.confirmation_required`), or a write refused by `--readonly`/`NIMBU_READONLY` (`cli.readonly`) |
+| 3 | Not logged in / authentication failed |
+| 4 | Forbidden or missing scope |
+| 5 | Not found |
+| 6 | Validation error |
+| 7 | Rate limited (retryable) |
+| 8 | Network error (retryable) |
+| 130 | Interrupted (Ctrl-C or SIGTERM); a second Ctrl-C exits at once. `server`, `apps logs --tail` and `channels entries watch` exit 0 when the first signal stops them gracefully |
+| 143 | The `nimbu init` wizard or `nimbu config banner` picker was stopped with SIGTERM |
+
+With `--json`, errors (usage errors too) are a JSON envelope on stderr with
+`code`, `hint`, `exit_code` and `retryable`.
 
 ## Admin Workflow Commands
 
@@ -427,7 +532,13 @@ pushes the theme. Commit your changes first; use `--allow-dirty` for a deliberat
 uncommitted deployment.
 
 Protected environments require confirmation. In CI, pass `--no-input --yes` to
-`schema apply` or `release`; `--force` does not bypass protection. Review `plan`
+`schema apply` or `release`; `--force` does not bypass protection. Elsewhere
+`--yes` (`-y`) answers the same confirmations as `--force`, but it never forces
+an overwrite: theme conflicts with remote edits, existing output files and
+`sites copy` conflicts still need `--force`, so `release --yes` stops on a
+remote theme edit. Without a terminal on stdin,
+or with `CI` set, nimbu never prompts: it fails with
+`cli.confirmation_required` (exit 2) and names the flag to pass. Review `plan`
 before adding `--prune`, which removes omitted fields and options. Creating
 circular channel references may leave placeholder fields; remove those with a
 reviewed `--prune` apply.
@@ -595,12 +706,26 @@ nimbu auth logout                         # Revoke the session on the server and
   in the Nimbu admin. After that, commands fail with `auth.not_logged_in`
   (exit code 3); run `nimbu auth login` again.
 - **CI and scripts** should keep using an API token: `NIMBU_TOKEN=... nimbu ...`,
-  or `nimbu auth login --token <token>` to store one. These tokens are never
+  or `nimbu auth login --token - < token-file` to store one (`--token -` reads
+  stdin, so the token stays out of shell history). These tokens are never
   refreshed.
 - Password login (`nimbu auth login --email you@example.com`) still works for
   now, but is deprecated and prints a warning.
 
 ## Configuration
+
+### Site Selection
+
+Every command that needs a site picks it in this order, first match wins:
+
+1. `--env <name>`: a named environment from `nimbu.yml` (sets site and API URL together)
+2. `--site <site>` or `NIMBU_SITE`
+3. `site:` in the nearest `nimbu.yml`
+4. `default_site` in the global config file
+
+Inside a project, `nimbu.yml` beats the global `default_site`, so a write never
+lands on a site you made the default for another project. `nimbu sites current`
+prints the site and which source chose it.
 
 ### Environment Variables
 
@@ -613,7 +738,11 @@ NIMBU_PLAIN          # Default TSV output (1/true)
 NIMBU_NO_INPUT       # Disable prompts for CI
 NIMBU_READONLY       # Disable write operations
 NIMBU_ENABLE_COMMANDS # Command allowlist (comma-separated)
+NIMBU_COLOR          # auto | always | never
+NIMBU_ASCII          # 1: ASCII symbols only
 ```
+
+An empty variable (`NIMBU_JSON=`) counts as unset.
 
 ### Config File
 
@@ -692,7 +821,26 @@ sync:
 
 Runtime notes:
 
-- Child stdout/stderr is passed through unchanged.
+- In a terminal (stdout and stderr both TTYs, no `--json`/`--plain`/
+  `--events-json`), each child output line is prefixed with a dim `dev │ `
+  and kept whole next to nimbu's own lines. The child gets `FORCE_COLOR` set
+  to match nimbu's color decision so its colors survive, unless you set
+  `FORCE_COLOR` or `NO_COLOR` yourself. Piped, or with `--json`, `--plain` or
+  `--events-json`, the child inherits nimbu's stdout/stderr and its output
+  passes through unchanged.
+- In a terminal, keys act on the running server: `o`/`l`/`b` open the dev
+  server, live site or admin, `Enter` prints a blank line to mark a spot in
+  the log, `?` or `h` shows the keys, `q` quits. Ctrl-C, SIGTERM or `q` stops
+  gracefully and exits 0; a second Ctrl-C force-stops the child and exits 130. Ctrl-\ force-stops at
+  once and exits 131. Ctrl-Z suspends nimbu; after `bg` the proxy keeps
+  serving and `fg` brings the keys back.
+- When stdout is piped and the reader goes away (`nimbu server | head`),
+  nimbu stops the child and exits instead of dying on SIGPIPE.
+- The child runs in its own process group, so nimbu can stop everything it
+  started. Stop nimbu with SIGINT, SIGTERM or SIGHUP and it takes the child
+  down with it. A SIGKILL (`timeout -s KILL`, a hard CI cancel) cannot be
+  caught: on Linux the kernel then sends the child SIGTERM, but on macOS the
+  child keeps running. Clean it up with `kill -- -<child pid>`.
 - Proxy request lines are on by default: `2026-03-04T13:06:32.802Z GET / (200)`
 - Use `--quiet-requests` to hide request lines.
 - Child should proxy simulator requests to `NIMBU_PROXY_URL`.
@@ -704,8 +852,10 @@ Runtime notes:
 Override example:
 
 ```bash
-nimbu server --cmd pnpm --arg vite --arg --port --arg 5173 --ready-url http://127.0.0.1:5173
+nimbu server --cmd pnpm --arg vite --arg=--port --arg 5173 --ready-url http://127.0.0.1:5173
 ```
+
+Use `--arg=<value>` for child arguments that start with `-`.
 
 ### Dev Server Integration
 
@@ -847,7 +997,7 @@ does not delete local-only files.
 
 `nimbu apps logs --app <app>` reads cloud code logs for a local app name or app key.
 Use `--tail` to print the last `--limit` entries oldest-first and keep polling
-for new log entries.
+for new log entries until Ctrl-C or SIGTERM, which ends the tail with exit 0.
 
 `nimbu sites copy` copies cloud code by default after content, theme,
 notifications, redirects, and translations. Pass `--skip-cloud-code` to leave

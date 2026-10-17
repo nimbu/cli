@@ -13,7 +13,9 @@ import (
 )
 
 func resolveSchemaRenames(ctx context.Context, flags *RootFlags, client *api.Client, docs []schemaDocument, plans []schemaPlan, prune bool) ([]schemaPlan, error) {
-	if flags.NoInput || flags.Readonly {
+	// Rename questions have no safe default answer: skip them whenever
+	// nobody can answer (--no-input, CI, piped stdin).
+	if flags.Readonly || promptBlocker(flags) != "" {
 		return plans, nil
 	}
 	for i, plan := range plans {
@@ -37,7 +39,7 @@ func resolveSchemaRenames(ctx context.Context, flags *RootFlags, client *api.Cli
 				continue
 			}
 			promptFlags := *flags
-			promptFlags.Force = false
+			promptFlags.Force, promptFlags.Yes = false, false
 			yes, err := confirmPrompt(&promptFlags, fmt.Sprintf("declare %s renamed_from: %s in %s", name, sources[0], docs[i].Path))
 			if err != nil {
 				return nil, err

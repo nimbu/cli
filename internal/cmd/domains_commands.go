@@ -56,6 +56,7 @@ func (c *DomainsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(domains))
 	}
 
+	noteMoreResults(ctx, "domains", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, domains)
@@ -249,7 +250,7 @@ func (c *DomainsMakePrimaryCmd) Run(ctx context.Context, flags *RootFlags) error
 	if err := requireWrite(flags, "make domain primary"); err != nil {
 		return err
 	}
-	if err := requireForce(flags, "domain "+c.Domain); err != nil {
+	if err := requireForceAction(flags, "make domain "+c.Domain+" primary"); err != nil {
 		return err
 	}
 	site, err := RequireSite(ctx, "")

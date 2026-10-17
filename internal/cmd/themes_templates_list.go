@@ -37,20 +37,24 @@ func (c *ThemeTemplatesListCmd) Run(ctx context.Context, flags *RootFlags) error
 	}
 
 	var templates []api.ThemeResource
+	var meta listFooterMeta
 
 	if c.All {
 		templates, err = api.List[api.ThemeResource](ctx, client, path, opts...)
 		if err != nil {
 			return fmt.Errorf("list theme templates: %w", err)
 		}
+		meta = allListFooterMeta(len(templates))
 	} else {
 		paged, err := api.ListPage[api.ThemeResource](ctx, client, path, c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list theme templates: %w", err)
 		}
 		templates = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(templates))
 	}
 
+	noteMoreResults(ctx, "templates", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, templates)
@@ -65,5 +69,8 @@ func (c *ThemeTemplatesListCmd) Run(ctx context.Context, flags *RootFlags) error
 	}
 
 	fields, headers := listOutputColumns(&c.QueryFlags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, templates, fields, headers)
+	if err := output.WriteTable(ctx, templates, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "templates", meta)
 }

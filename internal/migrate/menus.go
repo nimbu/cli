@@ -23,6 +23,16 @@ type MenuCopyResult struct {
 	Items []MenuCopyItem `json:"items,omitempty"`
 }
 
+// ExistingMenuError reports a target menu that a copy without overwrite
+// refuses to replace.
+type ExistingMenuError struct {
+	Slug string
+}
+
+func (e *ExistingMenuError) Error() string {
+	return fmt.Sprintf("menu %s already exists; rerun with --force to overwrite", e.Slug)
+}
+
 // MenuCopyOptions controls menu copy behavior.
 type MenuCopyOptions struct {
 	DryRun          bool
@@ -69,7 +79,7 @@ func CopyMenusWithOptions(ctx context.Context, fromClient, toClient *api.Client,
 		switch {
 		case err == nil:
 			if opts.ErrorOnExisting {
-				return result, fmt.Errorf("menu %s already exists; rerun with --force to overwrite", slug)
+				return result, &ExistingMenuError{Slug: slug}
 			}
 			existingAction, err := resolveExistingItem(ctx, opts.ResolveExisting, ExistingContentPrompt{
 				Type: "Menus", Item: slug, Source: fromRef.Site, Target: toRef.Site,

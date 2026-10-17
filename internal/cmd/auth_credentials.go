@@ -95,6 +95,15 @@ func ResolveAuthCredential(ctx context.Context) (auth.Credential, error) {
 	return resolverFromContext(ctx).Credential()
 }
 
+// resolveAuthCredentialForBaseURL returns the stored credential for the host
+// of baseURL, so a request to another API host uses that host's login.
+func resolveAuthCredentialForBaseURL(ctx context.Context, baseURL string) (auth.Credential, error) {
+	if token := envToken(); token != "" {
+		return auth.Credential{Token: token}, nil
+	}
+	return resolverForBaseURL(ctx, baseURL).Credential()
+}
+
 func DeleteStoredCredentials(ctx context.Context) error {
 	return resolverFromContext(ctx).DeleteStoredCredentials()
 }

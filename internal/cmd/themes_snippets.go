@@ -4,6 +4,6 @@ package cmd
 type ThemeSnippetsCmd struct {
 	List   ThemeSnippetsListCmd   `cmd:"" help:"List snippets"`
 	Get    ThemeSnippetsGetCmd    `cmd:"" help:"Get a snippet"`
-	Create ThemeSnippetsCreateCmd `cmd:"" help:"Create or update a snippet"`
-	Delete ThemeSnippetsDeleteCmd `cmd:"" help:"Delete a snippet"`
+	Create ThemeSnippetsCreateCmd `cmd:"" help:"Create or update a snippet (--force overrides conflicts)"`
+	Delete ThemeSnippetsDeleteCmd `cmd:"" help:"Delete a snippet (requires --force)"`
 }

@@ -1,0 +1,29 @@
+Usage: nimbu channels <command> [flags]
+
+Manage channels and entries
+
+Commands:
+  list       List channels
+  get        Get channel details
+  create     Create a channel from JSON or inline assignments
+  info       Show rich channel info and TypeScript output
+  types      Generate one TypeScript module with the types of all channels
+  copy       Copy channel configuration between sites
+  diff       Diff channel configuration between sites
+  empty      Empty a channel (requires --force and --confirm)
+  delete     Delete a channel (requires --force)
+  entries    Manage channel entries
+  fields     Manage channel fields
+
+Global Flags:
+  -h, --help           Show context-sensitive help.
+      --env=STRING     Named project environment (overrides site and API URL)
+      --site=STRING    Site ID/subdomain (else nimbu.yml, config) ($NIMBU_SITE)
+      --json           Output JSON to stdout ($NIMBU_JSON)
+      --plain          Output stable TSV to stdout ($NIMBU_PLAIN)
+      --verbose        Enable verbose logging
+      --debug          Enable debug logging (HTTP traces)
+      --version        Print version and exit
+
+Run "nimbu channels <command> --help" for more information on a command.
+Run "nimbu channels --help-all" for all flags.

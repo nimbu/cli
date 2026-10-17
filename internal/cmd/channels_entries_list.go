@@ -59,6 +59,7 @@ func (c *ChannelEntriesListCmd) Run(ctx context.Context, flags *RootFlags) error
 		meta.probeTotal(ctx, client, "/channels/"+url.PathEscape(c.Channel)+"/entries/count", opts)
 	}
 
+	noteMoreResults(ctx, "entries", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		if documents == nil {

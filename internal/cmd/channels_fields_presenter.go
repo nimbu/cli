@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/muesli/termenv"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -23,9 +23,8 @@ const (
 )
 
 type channelFieldPresenter struct {
-	out      io.Writer
-	termOut  *termenv.Output
-	useColor bool
+	out   io.Writer
+	theme output.Theme
 }
 
 type customFieldSchemaView struct {
@@ -47,29 +46,12 @@ type channelFieldRow struct {
 func newChannelFieldPresenter(ctx context.Context) *channelFieldPresenter {
 	writer := output.WriterFromContext(ctx)
 	out := io.Writer(io.Discard)
-
-	profile := termenv.Ascii
-	useColor := false
-	if writer != nil {
-		if writer.Out != nil {
-			out = writer.Out
-		}
-		useColor = writer.UseColor()
+	if writer.Out != nil {
+		out = writer.Out
 	}
-	if useColor {
-		switch writer.Color {
-		case "always":
-			profile = termenv.TrueColor
-		default:
-			profile = termenv.EnvColorProfile()
-		}
-	}
-
-	return &channelFieldPresenter{
-		out:      out,
-		termOut:  termenv.NewOutput(out, termenv.WithProfile(profile)),
-		useColor: useColor,
-	}
+	// The field table is content on stdout, so it follows stdout's color
+	// decision and profile.
+	return &channelFieldPresenter{out: out, theme: writer.OutTheme()}
 }
 
 func (p *channelFieldPresenter) Render(schema customFieldSchemaView) error {
@@ -256,7 +238,7 @@ func (p *channelFieldPresenter) renderAdvancedFields(fields []api.CustomField) e
 			kind:  field.Type,
 			flags: channelFieldFlagList(field),
 		}
-		if _, err := fmt.Fprintln(p.out, p.formatRow(row, len(row.key), len(row.label), len(row.kind), 0)); err != nil {
+		if _, err := fmt.Fprintln(p.out, p.formatRow(row, ansi.StringWidth(row.key), ansi.StringWidth(row.label), ansi.StringWidth(row.kind), 0)); err != nil {
 			return err
 		}
 		if err := p.renderExtraDetails(field, "    "); err != nil {
@@ -315,10 +297,10 @@ func (p *channelFieldPresenter) measureRows(rows []channelFieldRow) (int, int, i
 	typeWidth := 0
 	targetWidth := 0
 	for _, row := range rows {
-		keyWidth = max(keyWidth, len(row.key))
-		labelWidth = max(labelWidth, len(row.label))
-		typeWidth = max(typeWidth, len(row.kind))
-		targetWidth = max(targetWidth, len(row.target))
+		keyWidth = max(keyWidth, ansi.StringWidth(row.key))
+		labelWidth = max(labelWidth, ansi.StringWidth(row.label))
+		typeWidth = max(typeWidth, ansi.StringWidth(row.kind))
+		targetWidth = max(targetWidth, ansi.StringWidth(row.target))
 	}
 	return keyWidth, labelWidth, typeWidth, targetWidth
 }
@@ -344,10 +326,10 @@ func (p *channelFieldPresenter) renderOptionTable(options []api.SelectOption) er
 	idWidth := len("id")
 	posWidth := len("pos")
 	for _, option := range options {
-		nameWidth = max(nameWidth, len(channelFieldOptionLabel(option)))
-		slugWidth = max(slugWidth, len(option.Slug))
-		idWidth = max(idWidth, len(option.ID))
-		posWidth = max(posWidth, len(fmt.Sprintf("%d", option.Position)))
+		nameWidth = max(nameWidth, ansi.StringWidth(channelFieldOptionLabel(option)))
+		slugWidth = max(slugWidth, ansi.StringWidth(option.Slug))
+		idWidth = max(idWidth, ansi.StringWidth(option.ID))
+		posWidth = max(posWidth, ansi.StringWidth(fmt.Sprintf("%d", option.Position)))
 	}
 
 	header := strings.Join([]string{
@@ -420,61 +402,59 @@ func (p *channelFieldPresenter) renderExtraDetails(field api.CustomField, indent
 	return nil
 }
 
+// Field styles come from the shared semantic theme. fieldKey and value keep
+// the terminal's own foreground (near-white hex values disappeared on light
+// backgrounds); flags are words, so color only reinforces them.
 func (p *channelFieldPresenter) fieldKey(value string) string {
-	return p.style(value, "#e2e8f0", true)
+	return p.style(value, "", true)
 }
 
 func (p *channelFieldPresenter) value(value string) string {
-	return p.style(value, "#cbd5e1", false)
+	return value
 }
 
 func (p *channelFieldPresenter) fieldType(value string) string {
-	return p.style(value, "#38bdf8", false)
+	return p.style(value, p.theme.Palette().Path, false)
 }
 
 func (p *channelFieldPresenter) relationTarget(value string) string {
-	return p.style(value, "#22c55e", false)
+	return p.style(value, p.theme.Palette().Success, false)
 }
 
 func (p *channelFieldPresenter) sectionHeader(value string) string {
-	return p.style(value, "#60a5fa", true)
+	return p.style(value, p.theme.Palette().Accent, true)
 }
 
 func (p *channelFieldPresenter) flag(value string) string {
-	color := "#94a3b8"
+	palette := p.theme.Palette()
+	color := palette.Muted
 	switch value {
 	case "required":
-		color = "#f59e0b"
-	case "unique":
-		color = "#fb7185"
-	case "localized":
-		color = "#a78bfa"
-	case "encrypted", "private_storage":
-		color = "#14b8a6"
+		color = palette.Warning
+	case "unique", "localized", "encrypted", "private_storage":
+		color = palette.Accent
 	}
 	return p.style(value, color, true)
 }
 
 func (p *channelFieldPresenter) dim(value string) string {
-	return p.style(value, "#64748b", false)
+	return p.style(value, p.theme.Palette().Muted, false)
 }
 
 func (p *channelFieldPresenter) style(value string, color string, bold bool) string {
-	if !p.useColor || strings.TrimSpace(value) == "" {
+	if strings.TrimSpace(value) == "" {
 		return value
 	}
-	styled := p.termOut.String(value).Foreground(p.termOut.Color(color))
-	if bold {
-		return styled.Bold().String()
-	}
-	return styled.String()
+	return p.theme.Paint(value, color, bold)
 }
 
+// padRight pads to a display width: labels may hold accented letters, CJK or
+// emoji, whose byte length is not their width on screen.
 func (p *channelFieldPresenter) padRight(value string, width int) string {
-	if width <= len(value) {
-		return value
+	if gap := width - ansi.StringWidth(value); gap > 0 {
+		return value + strings.Repeat(" ", gap)
 	}
-	return value + strings.Repeat(" ", width-len(value))
+	return value
 }
 
 func channelFieldDisplayLabel(field api.CustomField) string {

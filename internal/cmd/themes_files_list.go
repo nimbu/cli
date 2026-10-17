@@ -51,9 +51,19 @@ func (c *ThemeFilesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("list theme files: %w", err)
 	}
 
+	// The API returns every file at once and the CLI pages locally, so the
+	// total is always known.
+	meta := allListFooterMeta(len(rows))
 	if !c.All {
+		total := len(rows)
 		rows = paginateThemeFileListRows(rows, c.Page, c.PerPage)
+		page := c.Page
+		if page <= 0 {
+			page = 1
+		}
+		meta = listFooterMeta{Page: page, PerPage: c.PerPage, Returned: len(rows), Total: total, TotalKnown: true}
 	}
+	noteMoreResults(ctx, "files", meta)
 
 	mode := output.FromContext(ctx)
 	if mode.JSON {
@@ -69,7 +79,10 @@ func (c *ThemeFilesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	fields, headers := listOutputColumns(&c.QueryFlags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, rows, fields, headers)
+	if err := output.WriteTable(ctx, rows, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "files", meta)
 }
 
 func fetchThemeFileListRows(ctx context.Context, client *api.Client, theme string, opts []api.RequestOption) ([]themeFileListItem, error) {

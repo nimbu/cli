@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nimbu/cli/internal/output"
+	"github.com/nimbu/cli/internal/themes"
 )
 
 func diffStylesContext(color string) context.Context {
@@ -79,5 +80,38 @@ func TestDiffStylesDisabledWithoutColor(t *testing.T) {
 	}
 	if got := styles.statusLine("changed", "a.liquid"); got != "changed a.liquid" {
 		t.Fatalf("status line should be plain: %q", got)
+	}
+}
+
+func TestWriteThemeDiffPlainKeepsContentDiffOnOneRecord(t *testing.T) {
+	out := &strings.Builder{}
+	ctx := output.WithWriter(context.Background(), &output.Writer{Out: out, Err: &strings.Builder{}, NoTTY: true})
+	entries := []themes.DiffEntry{
+		{Status: "modified", Path: "layouts/default.liquid", Diff: "--- remote/layouts/default.liquid\n+++ local/layouts/default.liquid\n@@ -1 +1 @@\n-\told\n+\tnew\n"},
+		{Status: "missing", Path: "snippets/a.liquid"},
+	}
+
+	if err := writeThemeDiffPlain(ctx, entries, true); err != nil {
+		t.Fatalf("write plain: %v", err)
+	}
+	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	if len(lines) != len(entries) {
+		t.Fatalf("got %d lines, want one per entry:\n%s", len(lines), out.String())
+	}
+	for i, line := range lines {
+		if fields := strings.Split(line, "\t"); len(fields) != 3 {
+			t.Fatalf("line %d has %d fields, want 3: %q", i, len(fields), line)
+		}
+	}
+	if !strings.HasPrefix(lines[0], "modified\tlayouts/default.liquid\t--- remote/") || !strings.Contains(lines[0], `\n-\told\n`) {
+		t.Fatalf("diff field not escaped: %q", lines[0])
+	}
+
+	out.Reset()
+	if err := writeThemeDiffPlain(ctx, entries, false); err != nil {
+		t.Fatalf("write plain: %v", err)
+	}
+	if got := out.String(); got != "modified\tlayouts/default.liquid\nmissing\tsnippets/a.liquid\n" {
+		t.Fatalf("without --content got %q", got)
 	}
 }

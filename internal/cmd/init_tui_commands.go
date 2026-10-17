@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/bootstrap"
@@ -76,24 +76,30 @@ func (m *initTeaModel) isSelected(id string) bool {
 	}
 }
 
+// resolveSourceCmd clones (or locates) the starterskit. The clone runs under
+// the work context, so cancelling the wizard kills git, and its temp dir is
+// removed by work.shutdown however the program ends.
 func (m *initTeaModel) resolveSourceCmd() tea.Cmd {
+	work := m.work
+	cmd := m.cmd
 	return func() tea.Msg {
-		sourceDir, sourceLabel, cleanup, err := m.cmd.resolveSource()
+		if !work.begin() {
+			return nil
+		}
+		defer work.end()
+		sourceDir, sourceLabel, cleanup, err := cmd.resolveSource(work.ctx)
+		work.onShutdown(cleanup)
 		if err != nil {
 			return initTeaErrMsg{err: err}
 		}
-		outputDir, err := m.cmd.resolveOutputDir()
+		outputDir, err := cmd.resolveOutputDir()
 		if err != nil {
-			if cleanup != nil {
-				cleanup()
-			}
 			return initTeaErrMsg{err: err}
 		}
 		return initTeaSourceResolvedMsg{
 			sourceDir:   sourceDir,
 			sourceLabel: sourceLabel,
 			outputDir:   outputDir,
-			cleanup:     cleanup,
 		}
 	}
 }
@@ -111,9 +117,10 @@ func (m *initTeaModel) loadManifestCmd() tea.Cmd {
 }
 
 func (m *initTeaModel) loadSitesCmd() tea.Cmd {
-	ctx := m.ctx
+	ctx := m.work.ctx
+	appCtx := m.ctx
 	return func() tea.Msg {
-		client, err := GetAPIClient(ctx)
+		client, err := GetAPIClient(appCtx)
 		if err != nil {
 			return initTeaErrMsg{err: err}
 		}
@@ -126,9 +133,10 @@ func (m *initTeaModel) loadSitesCmd() tea.Cmd {
 }
 
 func (m *initTeaModel) loadThemesCmd(siteID string) tea.Cmd {
-	ctx := m.ctx
+	ctx := m.work.ctx
+	appCtx := m.ctx
 	return func() tea.Msg {
-		client, err := GetAPIClientWithSite(ctx, siteID)
+		client, err := GetAPIClientWithSite(appCtx, siteID)
 		if err != nil {
 			return initTeaErrMsg{err: err}
 		}
@@ -185,10 +193,19 @@ func (m *initTeaModel) bootstrapOptions() bootstrap.BootstrapOptions {
 	}
 }
 
+// bootstrapCmd writes the project. It is registered with work so a cleanup
+// never removes the source tree while files are still being copied from it.
 func (m *initTeaModel) bootstrapCmd() tea.Cmd {
 	opts := m.bootstrapOptions()
 	sourceLabel := m.sourceLabel
+	work := m.work
+	// Shutting the work down (a forced stop) kills a git step still running.
+	opts.Context = work.ctx
 	return func() tea.Msg {
+		if !work.begin() {
+			return initTeaErrMsg{err: errInitCancelled}
+		}
+		defer work.end()
 		result, err := bootstrap.BootstrapProject(opts)
 		if err != nil {
 			return initTeaErrMsg{err: err}

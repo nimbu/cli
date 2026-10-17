@@ -163,7 +163,7 @@ func rawAPIRequestBody(request APIRequestFlags) (any, error) {
 	var err error
 	switch {
 	case source == "-":
-		data, err = io.ReadAll(os.Stdin)
+		data, err = readStdinAsPrompt(io.ReadAll)
 	case strings.HasPrefix(source, "@"):
 		data, err = os.ReadFile(strings.TrimPrefix(source, "@"))
 	default:
@@ -214,7 +214,7 @@ func writeDownloadResponse(ctx context.Context, reader io.Reader, destination st
 	}
 	if !force {
 		if _, err := os.Stat(destination); err == nil {
-			return fmt.Errorf("output file already exists: %s (use --force to overwrite)", destination)
+			return forceRequiredError(fmt.Sprintf("output file already exists: %s; refusing to overwrite without --force", destination))
 		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("inspect output file: %w", err)
 		}

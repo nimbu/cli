@@ -3,6 +3,7 @@ package devserver
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,6 +18,11 @@ type ChildConfig struct {
 	CWD      string
 	Env      map[string]string
 	ReadyURL string
+
+	// Stdout and Stderr receive the child's output. Nil means the child
+	// inherits nimbu's own stdout/stderr (raw passthrough).
+	Stdout io.Writer
+	Stderr io.Writer
 }
 
 // Process supervises the child development server.
@@ -25,8 +31,12 @@ type Process struct {
 
 	mu      sync.Mutex
 	cmd     *exec.Cmd
+	group   *childGroup
 	exitCh  chan error
 	running bool
+	// exited is set once the direct child is gone while the wait goroutine
+	// still reaps what it left in its group; running stays true until then.
+	exited bool
 }
 
 func NewProcess(config ChildConfig) *Process {
@@ -56,14 +66,29 @@ func (p *Process) Start() error {
 		env = append(env, key+"="+value)
 	}
 	cmd.Env = env
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+
+	output := &childOutput{}
+	stdout, err := output.attach(p.config.Stdout, os.Stdout)
+	if err != nil {
+		return fmt.Errorf("connect child stdout: %w", err)
+	}
+	stderr, err := output.attach(p.config.Stderr, os.Stderr)
+	if err != nil {
+		output.abort()
+		return fmt.Errorf("connect child stderr: %w", err)
+	}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
 	if err := cmd.Start(); err != nil {
+		output.abort()
 		return fmt.Errorf("start child dev server: %w", err)
 	}
+	output.started()
+	group := attachChildGroup(cmd)
 	p.mu.Lock()
 	p.cmd = cmd
+	p.group = group
 	p.running = true
 	exitCh := p.exitCh
 	p.mu.Unlock()
@@ -72,10 +97,18 @@ func (p *Process) Start() error {
 		waitErr := cmd.Wait()
 
 		p.mu.Lock()
-		p.running = false
-		p.cmd = nil
+		p.exited = true
 		p.mu.Unlock()
+		releaseChildGroup(group)
+		// Reaping the group closed every other writer, so this is quick.
+		output.drain(outputDrainDelay)
 
+		p.mu.Lock()
+		p.running = false
+		p.exited = false
+		p.cmd = nil
+		p.group = nil
+		p.mu.Unlock()
 		exitCh <- waitErr
 		close(exitCh)
 	}()
@@ -153,28 +186,79 @@ func (p *Process) WaitReady(ctx context.Context, timeout time.Duration) error {
 	}
 }
 
+// Stop asks the child's process tree to exit and force-kills it after
+// gracePeriod. If the interrupt cannot be delivered at all, it kills at once
+// instead of waiting out the grace period.
 func (p *Process) Stop(gracePeriod time.Duration) error {
 	p.mu.Lock()
 	cmd := p.cmd
+	group := p.group
 	exitCh := p.exitCh
 	running := p.running
+	exited := p.exited
 	p.mu.Unlock()
 
 	if !running || cmd == nil || cmd.Process == nil {
+		return nil
+	}
+	if exited {
+		// The child is gone; its leftovers are being reaped (bounded by
+		// leftoverGracePeriod), so returning now could leave one running.
+		<-exitCh
 		return nil
 	}
 	if gracePeriod <= 0 {
 		gracePeriod = 5 * time.Second
 	}
 
-	_ = interruptChild(cmd)
+	if err := interruptChild(cmd, group); err != nil {
+		_ = killChild(cmd, group)
+		<-exitCh
+		return nil
+	}
 
+	timer := time.NewTimer(gracePeriod)
+	defer timer.Stop()
 	select {
-	case <-time.After(gracePeriod):
-		_ = killChild(cmd)
+	case <-timer.C:
+		_ = killChild(cmd, group)
 		<-exitCh
 	case <-exitCh:
 	}
 
+	return nil
+}
+
+// Kill force-kills the child's whole process tree immediately and waits up to
+// timeout for it to be reaped. It is the second-Ctrl-C path.
+func (p *Process) Kill(timeout time.Duration) error {
+	p.mu.Lock()
+	cmd := p.cmd
+	group := p.group
+	exitCh := p.exitCh
+	running := p.running
+	exited := p.exited
+	p.mu.Unlock()
+
+	if !running || cmd == nil || cmd.Process == nil {
+		return nil
+	}
+	if exited {
+		// Skip the leftovers' grace period; the child's PID may be reused,
+		// so only the group is targeted.
+		killLeftovers(group)
+	} else if err := killChild(cmd, group); err != nil {
+		return fmt.Errorf("kill child dev server: %w", err)
+	}
+	if timeout <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-exitCh:
+	case <-timer.C:
+		return fmt.Errorf("child dev server did not exit within %s after kill", timeout)
+	}
 	return nil
 }

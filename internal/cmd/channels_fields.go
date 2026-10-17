@@ -19,9 +19,9 @@ type ChannelsFieldsCmd struct {
 	List    ChannelsFieldsListCmd    `cmd:"" help:"List channel fields"`
 	Add     ChannelsFieldsAddCmd     `cmd:"" help:"Add a channel field"`
 	Update  ChannelsFieldsUpdateCmd  `cmd:"" help:"Update a channel field"`
-	Delete  ChannelsFieldsDeleteCmd  `cmd:"" help:"Delete a channel field"`
+	Delete  ChannelsFieldsDeleteCmd  `cmd:"" help:"Delete a channel field (requires --force)"`
 	Apply   ChannelsFieldsApplyCmd   `cmd:"" help:"Apply channel fields from JSON"`
-	Replace ChannelsFieldsReplaceCmd `cmd:"" help:"Replace channel fields from JSON"`
+	Replace ChannelsFieldsReplaceCmd `cmd:"" help:"Replace channel fields from JSON (requires --force)"`
 	Diff    ChannelsFieldsDiffCmd    `cmd:"" help:"Diff channel fields against JSON"`
 }
 
@@ -235,8 +235,8 @@ func (c *ChannelsFieldsDiffCmd) Run(ctx context.Context, flags *RootFlags) error
 	if mode.JSON {
 		return output.JSON(ctx, diff)
 	}
-	plainLines := append(renderDiffChanges("add", diff.Added), renderDiffChanges("remove", diff.Removed)...)
-	plainLines = append(plainLines, renderDiffChanges("update", diff.Updated)...)
+	plainLines := append(plainDiffChanges("add", diff.Added), plainDiffChanges("remove", diff.Removed)...)
+	plainLines = append(plainLines, plainDiffChanges("update", diff.Updated)...)
 	humanLines := append([]string{}, renderDiffChanges("+", diff.Added)...)
 	humanLines = append(humanLines, renderDiffChanges("-", diff.Removed)...)
 	humanLines = append(humanLines, renderDiffChanges("~", diff.Updated)...)
@@ -297,6 +297,8 @@ func readCustomFieldsArray(file string) ([]map[string]any, error) {
 	case "":
 		return nil, fmt.Errorf("%w; use --file <path> or --file - with piped stdin", errNoJSONInput)
 	case "-":
+		// The read cannot see the context; one Ctrl-C must still end it.
+		defer beginPrompt()()
 		input = os.Stdin
 	default:
 		f, err := os.Open(file)

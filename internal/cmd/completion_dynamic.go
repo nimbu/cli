@@ -92,6 +92,13 @@ func (c *InternalCompleteCmd) Run(ctx context.Context) error {
 	req.Current = c.Current
 	req.Words = c.Words
 
+	if parser, _, err := newParser(); err == nil {
+		if items, ok := completeEnumValues(parser, req); ok {
+			printCompletionItems(c.Shell, items)
+			return nil
+		}
+	}
+
 	items, err := completeDynamic(ctx, req)
 	if err != nil {
 		completionDebugf("dynamic completion failed: %v", err)
@@ -248,12 +255,23 @@ func completeCommandNames(parser *kong.Kong, req completionRequest) []completion
 	if len(req.Words) > 0 && strings.HasPrefix(req.Words[len(req.Words)-1], "-") && completionFlagConsumesValue(req.Words[len(req.Words)-1]) {
 		return nil
 	}
-	node := completionNodeForPathExact(parser.Model.Node, req.CommandPath)
+	// `nimbu help channels l<TAB>` completes like `nimbu channels l<TAB>`:
+	// help is a pseudo-command that rewriteHelpArgs drops.
+	path := make([]string, 0, len(req.CommandPath))
+	for _, part := range req.CommandPath {
+		if part != helpCommandName {
+			path = append(path, part)
+		}
+	}
+	node := completionNodeForPathExact(parser.Model.Node, path)
 	if node == nil || len(node.Children) == 0 {
 		return nil
 	}
 
 	var items []completionItem
+	if len(path) == len(req.CommandPath) && (node == parser.Model.Node || acceptsHelpWord(node)) {
+		items = append(items, completionItem{Value: helpCommandName, Description: "Show help for a command"})
+	}
 	for _, child := range node.Children {
 		if child.Hidden || child.Name == "" {
 			continue
@@ -274,6 +292,31 @@ func completeCommandNames(parser *kong.Kong, req completionRequest) []completion
 	}
 	sortCompletionItems(items)
 	return filterCompletionItems(items, req.Prefix)
+}
+
+// completeEnumValues completes the value of a flag with a fixed set of values
+// (`--color <TAB>` gives auto, always, never). ok is false when the flag is
+// not an enum, so dynamic completion takes over.
+func completeEnumValues(parser *kong.Kong, req completionRequest) ([]completionItem, bool) {
+	if parser == nil || parser.Model == nil || req.Flag == "" {
+		return nil, false
+	}
+	node := completionNodeForPath(parser.Model.Node, req.CommandPath)
+	for _, group := range node.AllFlags(true) {
+		for _, flag := range group {
+			if flag == nil || flag.Enum == "" || (flag.Name != req.Flag && !completionStringInSlice(flag.Aliases, req.Flag)) {
+				continue
+			}
+			var items []completionItem
+			for _, value := range strings.Split(flag.Enum, ",") {
+				if value = strings.TrimSpace(value); value != "" {
+					items = append(items, completionItem{Value: value})
+				}
+			}
+			return filterCompletionItems(items, req.Prefix), true
+		}
+	}
+	return nil, false
 }
 
 func completionNodeForPath(root *kong.Node, path []string) *kong.Node {
@@ -344,6 +387,7 @@ var completionValueFlags = map[string]bool{
 	"arg":                 true,
 	"backend":             true,
 	"blog":                true,
+	"bundles":             true,
 	"branch":              true,
 	"callback-url":        true,
 	"caption":             true,
@@ -401,6 +445,7 @@ var completionValueFlags = map[string]bool{
 	"metrics":             true,
 	"name":                true,
 	"notification":        true,
+	"on-conflict":         true,
 	"only":                true,
 	"order":               true,
 	"output":              true,
@@ -422,6 +467,7 @@ var completionValueFlags = map[string]bool{
 	"ready-url":           true,
 	"reason":              true,
 	"redirect":            true,
+	"repeatables":         true,
 	"repo":                true,
 	"role":                true,
 	"scopes":              true,
@@ -459,17 +505,6 @@ func completeDynamic(ctx context.Context, req completionRequest) ([]completionIt
 		return nil, nil
 	}
 
-	credential, err := ResolveAuthCredential(ctx)
-	if err != nil {
-		completionDebugf("resolve auth: %v", err)
-		return nil, nil
-	}
-	token := strings.TrimSpace(credential.Token)
-	if token == "" {
-		completionDebugf("resolve auth: empty token")
-		return nil, nil
-	}
-
 	flags, _ := ctx.Value(rootFlagsKey{}).(*RootFlags)
 	apiURL := config.Defaults().APIURL
 	timeout := 30 * time.Second
@@ -486,8 +521,29 @@ func completeDynamic(ctx context.Context, req completionRequest) ([]completionIt
 	if value, ok := completionOriginalFlagValue(req.Words, "apiurl"); ok {
 		apiURL = value
 	}
-
 	currentSite := completionSiteFromContext(ctx, req.Words)
+	// The words being completed are never parsed as root flags, so --env is
+	// resolved here. Like applyEnvironment, it overrides --apiurl and --site.
+	if name, ok := completionOriginalFlagValue(req.Words, "env"); ok {
+		_, _, ref, err := resolveEnvironment(name)
+		if err != nil {
+			completionDebugf("resolve --env %s: %v", name, err)
+			return nil, nil
+		}
+		apiURL, currentSite = ref.BaseURL, ref.Site
+	}
+
+	credential, err := resolveAuthCredentialForBaseURL(ctx, apiURL)
+	if err != nil {
+		completionDebugf("resolve auth: %v", err)
+		return nil, nil
+	}
+	token := strings.TrimSpace(credential.Token)
+	if token == "" {
+		completionDebugf("resolve auth: empty token")
+		return nil, nil
+	}
+
 	scope := completionScope(kind, req.Prefix, currentSite)
 	cacheKey := completionCacheKey(apiURL, token, kind, scope)
 	cache := readCompletionCache()
@@ -531,16 +587,9 @@ func completionSiteFromContext(ctx context.Context, words []string) string {
 	if site, ok := completionOriginalFlagValue(words, "site"); ok {
 		return site
 	}
-	if flags, ok := ctx.Value(rootFlagsKey{}).(*RootFlags); ok && flags != nil && strings.TrimSpace(flags.Site) != "" {
-		return flags.Site
-	}
-	if cfg, ok := ctx.Value(configKey{}).(*config.Config); ok && cfg != nil && strings.TrimSpace(cfg.DefaultSite) != "" {
-		return cfg.DefaultSite
-	}
-	if proj, err := config.ReadProjectConfig(); err == nil && strings.TrimSpace(proj.Site) != "" {
-		return proj.Site
-	}
-	return ""
+	flags, _ := ctx.Value(rootFlagsKey{}).(*RootFlags)
+	cfg, _ := ctx.Value(configKey{}).(*config.Config)
+	return resolveSite(flags, cfg).Site
 }
 
 func completionOriginalFlagValue(words []string, flag string) (string, bool) {

@@ -1,0 +1,40 @@
+Usage: nimbu channels delete --channel=STRING
+
+Delete a channel (requires --force)
+
+Flags:
+      --channel=STRING            Channel ID or slug
+
+Safety:
+      --force                     Skip confirmations for destructive operations
+  -y, --yes                       Confirm prompts and protected environments
+
+Global Flags:
+  -h, --help                      Show context-sensitive help.
+      --env=STRING                Named project environment (overrides site and
+                                  API URL)
+      --site=STRING               Site ID/subdomain (else nimbu.yml, config)
+                                  ($NIMBU_SITE)
+      --json                      Output JSON to stdout ($NIMBU_JSON)
+      --plain                     Output stable TSV to stdout ($NIMBU_PLAIN)
+      --verbose                   Enable verbose logging
+      --debug                     Enable debug logging (HTTP traces)
+      --version                   Print version and exit
+
+Output:
+      --color="auto"              Color output: auto|always|never ($NIMBU_COLOR)
+      --no-progress               Disable live progress UI ($NIMBU_NO_PROGRESS)
+      --wide                      Never truncate table columns to fit
+                                  ($NIMBU_WIDE)
+
+Agent/CI:
+      --no-input                  Never prompt; fail instead (for CI)
+                                  ($NIMBU_NO_INPUT)
+      --readonly                  Disable all write operations ($NIMBU_READONLY)
+      --enable-commands=STRING    Comma-separated allowlist of commands
+                                  ($NIMBU_ENABLE_COMMANDS)
+
+Connection:
+      --apiurl="https://api.nimbu.io"
+                                  API base URL ($NIMBU_API_URL)
+      --timeout=30s               Request timeout ($NIMBU_TIMEOUT)

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/output"
@@ -54,8 +55,10 @@ func auditedListWith(ctx context.Context, clientFor func(context.Context) (*api.
 		return err
 	}
 	var results []json.RawMessage
+	var meta listFooterMeta
 	if all {
 		results, err = api.List[json.RawMessage](ctx, client, path, opts...)
+		meta = allListFooterMeta(len(results))
 	} else {
 		if page == 0 {
 			page = 1
@@ -67,12 +70,25 @@ func auditedListWith(ctx context.Context, clientFor func(context.Context) (*api.
 		response, err = api.ListPage[json.RawMessage](ctx, client, path, page, perPage, opts...)
 		if response != nil {
 			results = response.Data
+			meta = newListFooterMeta(page, perPage, response.Pagination, response.Links, len(results))
 		}
 	}
 	if err != nil {
 		return err
 	}
-	return output.JSON(ctx, results)
+	resource := auditedListNoun(path)
+	noteMoreResults(ctx, resource, meta)
+	if err := output.JSON(ctx, results); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, resource, meta)
+}
+
+// auditedListNoun names the resource for list notices: "/domain_registrations"
+// becomes "domain registrations".
+func auditedListNoun(path string) string {
+	noun := path[strings.LastIndex(path, "/")+1:]
+	return strings.NewReplacer("_", " ", "-", " ").Replace(noun)
 }
 
 func auditedArray(ctx context.Context, path string, query *QueryFlags, extra ...api.RequestOption) error {

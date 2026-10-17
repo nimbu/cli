@@ -2,21 +2,20 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/bootstrap"
-	"github.com/nimbu/cli/internal/config"
 	"github.com/nimbu/cli/internal/output"
 )
 
@@ -48,11 +47,25 @@ const (
 	initTeaStepConfirm        initTeaStep = "confirm"
 )
 
+// initSignal records an external signal the wizard received.
+type initSignal int
+
+const (
+	initSignalNone initSignal = iota
+	initSignalInterrupt
+	initSignalTerminate
+)
+
+// Exit codes for a wizard stopped by a signal (128 + signal number).
+const (
+	initExitInterrupted = 130 // SIGINT / ctrl+c
+	initExitTerminated  = 143 // SIGTERM
+)
+
 type initTeaSourceResolvedMsg struct {
 	sourceDir   string
 	sourceLabel string
 	outputDir   string
-	cleanup     func()
 }
 
 type initTeaManifestLoadedMsg struct {
@@ -75,19 +88,31 @@ type initTeaErrMsg struct {
 	err error
 }
 
+// initTeaHoldMsg replaces a quit or interrupt that arrived while files were
+// being written; the wizard finishes the write first.
+type initTeaHoldMsg struct{}
+
 type initChoiceOption struct {
 	ID    string
 	Label string
 }
 
 type initTeaModel struct {
-	ctx      context.Context
-	cmd      *InitCmd
-	flags    *RootFlags
-	writer   *output.Writer
-	renderer *lipgloss.Renderer
-	palette  []string
-	useColor bool
+	ctx     context.Context
+	cmd     *InitCmd
+	flags   *RootFlags
+	writer  *output.Writer
+	work    *initWork
+	presets initPresets
+
+	// banner is the configured banner theme; rows use its palette for the
+	// current background. showBanner applies ShouldShowBanner.
+	banner     BannerTheme
+	showBanner bool
+	useColor   bool
+	isDark     bool
+	ascii      bool // ASCII-only glyphs (output.ASCIIOnly)
+	theme      initTheme
 
 	width  int
 	height int
@@ -105,7 +130,6 @@ type initTeaModel struct {
 	sourceDir   string
 	sourceLabel string
 	outputDir   string
-	cleanup     func()
 
 	sites  []api.Site
 	themes []api.Theme
@@ -125,55 +149,151 @@ type initTeaModel struct {
 	conflicts   []string            // planned files that already exist in the target
 	overwrite   map[string]struct{} // checked = overwrite; default all conflicts
 	skip        map[string]struct{} // resolved: paths the user declined to overwrite
+
+	// Exit bookkeeping.
+	quitting   bool       // the wizard itself asked to quit
+	signal     initSignal // external SIGINT/SIGTERM seen by the program
+	cancelHeld bool       // a cancel arrived while files were being written
+	// abandonedApply is set by a second cancel while files were being
+	// written: the wizard stops anyway and may leave a partial project.
+	abandonedApply bool
 }
 
 func (c *InitCmd) runInteractiveTTY(ctx context.Context, flags *RootFlags) error {
 	writer := output.WriterFromContext(ctx)
+	model := newInitTeaModel(ctx, c, flags)
+	defer model.work.shutdown()
+
 	program := tea.NewProgram(
-		newInitTeaModel(ctx, c, flags),
+		model,
 		tea.WithContext(ctx),
 		tea.WithInput(os.Stdin),
 		tea.WithOutput(writer.Err),
+		tea.WithColorProfile(initColorProfile(writer)),
+		tea.WithFilter(initTeaFilter),
+		// Bubble Tea's own handler stops listening after the first signal, so
+		// a second SIGINT/SIGTERM during the file write would kill the process
+		// mid-copy with the terminal still in raw mode. The wizard claims every
+		// signal from the root instead (so the root neither cancels ctx, which
+		// would kill the program past the filter, nor force-exits); the filter
+		// holds them while files are written.
+		tea.WithoutSignalHandler(),
 	)
+	stopSignals := forwardProgramSignals(program)
+	defer stopSignals()
 
-	finalModel, err := program.Run()
-	if err != nil {
-		return err
+	finalModel, runErr := program.Run()
+	final, ok := finalModel.(*initTeaModel)
+	if !ok || final == nil {
+		final = model
 	}
+	// Stop clones and wait for running jobs before any cleanup or exit.
+	// Signals stay caught until then so nothing is left half-written. A
+	// write the user stopped anyway is waited for only briefly: it may be
+	// what hangs.
+	if final.abandonedApply {
+		model.work.shutdownWithin(initAbandonWait)
+	} else {
+		model.work.shutdown()
+	}
+	stopSignals()
 
-	model, ok := finalModel.(*initTeaModel)
-	if !ok {
-		return fmt.Errorf("unexpected init ui model type %T", finalModel)
+	return initTeaOutcome(final, runErr)
+}
+
+// initTeaOutcome maps how the program ended to the command result. Only a
+// wizard that reached the done phase on its own succeeds; everything else is a
+// cancellation with a non-zero exit.
+func initTeaOutcome(m *initTeaModel, runErr error) error {
+	switch {
+	case m != nil && m.abandonedApply:
+		code := initExitInterrupted
+		if m.signal == initSignalTerminate {
+			code = initExitTerminated
+		}
+		return &ExitError{Code: code, Err: fmt.Errorf("init stopped while writing files; the project may be partially written to %s", m.destinationPath())}
+	case errors.Is(runErr, tea.ErrInterrupted):
+		return &ExitError{Code: initExitInterrupted, Err: initStoppedError(m)}
+	case errors.Is(runErr, tea.ErrProgramKilled):
+		return fmt.Errorf("%w: %w", errInitCancelled, runErr)
+	case runErr != nil:
+		return runErr
+	case m.err != nil:
+		return m.err
+	case m.signal == initSignalTerminate:
+		return &ExitError{Code: initExitTerminated, Err: initStoppedError(m)}
+	case m.signal == initSignalInterrupt:
+		return &ExitError{Code: initExitInterrupted, Err: initStoppedError(m)}
+	case m.phase != initTeaPhaseDone:
+		return errInitCancelled
 	}
-	if model.cleanup != nil {
-		defer model.cleanup()
-	}
-	if model.err != nil {
-		return model.err
-	}
-	// Bubble Tea v1 inline shutdown erases the last rendered line, so print
-	// the durable footer after Run() returns — reusing the cleared line.
-	connector := renderTimelineConnector(model)
-	footer := renderInitTeaDoneFooter(model)
-	_, _ = fmt.Fprintf(writer.Err, "%s\n%s\n", connector, footer)
 	return nil
+}
+
+func initStoppedError(m *initTeaModel) error {
+	if m != nil && m.phase == initTeaPhaseDone && m.result.Path != "" {
+		return fmt.Errorf("init interrupted after the project was written to %s", m.result.Path)
+	}
+	return errInitCancelled
+}
+
+// initTeaFilter sees Bubble Tea's QuitMsg/InterruptMsg before the program
+// acts on them. SIGTERM arrives as a QuitMsg and SIGINT as an InterruptMsg;
+// both are recorded so the command exits non-zero, and while files are being
+// written the first one is held until the write finishes so the project is
+// never left half-copied. A second one stops anyway: a write that hangs (a
+// stuck git step) must not leave only SIGKILL, with the terminal still raw.
+func initTeaFilter(model tea.Model, msg tea.Msg) tea.Msg {
+	m, ok := model.(*initTeaModel)
+	if !ok || m.quitting {
+		return msg
+	}
+	var sig initSignal
+	switch msg.(type) {
+	case tea.QuitMsg:
+		sig = initSignalTerminate
+	case tea.InterruptMsg:
+		sig = initSignalInterrupt
+	default:
+		return msg
+	}
+	if m.signal == initSignalNone {
+		m.signal = sig
+	}
+	if m.phase == initTeaPhaseApply {
+		if !m.cancelHeld {
+			return initTeaHoldMsg{}
+		}
+		m.abandonApply()
+		return msg
+	}
+	// A quit ends the program gracefully and Bubble Tea renders the model
+	// once more: mark it quitting so that last frame says "Cancelled." instead
+	// of leaving a live prompt in the scrollback.
+	m.quitting = true
+	return msg
+}
+
+// initColorProfile maps the stderr color decision to the program's profile:
+// the wizard draws on stderr, so stdout being piped must not matter.
+func initColorProfile(writer *output.Writer) colorprofile.Profile {
+	if writer == nil {
+		return colorprofile.ASCII
+	}
+	return output.CharmProfile(writer.ErrColorProfile())
 }
 
 func newInitTeaModel(ctx context.Context, cmd *InitCmd, flags *RootFlags) *initTeaModel {
 	writer := output.WriterFromContext(ctx)
-	useColor := output.IsHuman(ctx) && writer.UseColor()
-	model := newInitTeaBaseModel(useColor, initTeaRendererForWriter(writer, useColor))
-	model.ctx = ctx
+	useColor := output.IsHuman(ctx) && writer != nil && writer.ErrUseColor()
+	model := newInitTeaBaseModel(ctx, useColor)
 	model.cmd = cmd
 	model.flags = flags
 	model.writer = writer
-	model.useColor = useColor
-	model.palette = DefaultBannerPalette()
-	if cfg, ok := ctx.Value(configKey{}).(*config.Config); ok && cfg != nil && cfg.BannerTheme != "" {
-		if theme, found := BannerThemeByName(cfg.BannerTheme); found {
-			model.palette = theme.Palette
-		}
-	}
+	model.presets = cmd.presets(flags)
+	model.banner = bannerThemeOrDefault(configuredBannerTheme(ctx))
+	// The block-art banner needs Unicode, like nimbu server's.
+	model.showBanner = ShouldShowBanner(writer) && !model.ascii
 	fixedTarget, fixed, ferr := cmd.resolveFixedTarget()
 	switch {
 	case ferr != nil:
@@ -188,22 +308,24 @@ func newInitTeaModel(ctx context.Context, cmd *InitCmd, flags *RootFlags) *initT
 			model.inPlace = dir
 		}
 	}
+	model.loadingSummary = "Template"
+	model.loadingDetail = "Loading template manifest..."
 	if strings.TrimSpace(cmd.Dir) == "" {
-		model.loadingSummary = "Template"
 		model.loadingDetail = "Cloning repository..."
-	} else {
-		model.loadingSummary = "Template"
-		model.loadingDetail = "Loading template manifest..."
 	}
 	return model
 }
 
 func newInitTeaTestModel(prompt initPromptModel) *initTeaModel {
-	model := newInitTeaBaseModel(false, initTeaRendererForWriter(&output.Writer{Err: io.Discard, Color: "never"}, false))
+	model := newInitTeaBaseModel(context.Background(), false)
+	// Tests pin Unicode glyphs whatever the locale they run under.
+	model.ascii = false
+	model.spinner.Spinner = initSpinner(false)
+	model.applyTheme()
+	model.cmd = &InitCmd{}
 	model.phase = initTeaPhasePrompt
 	model.prompt = prompt
 	model.step = initTeaStepSite
-	model.palette = DefaultBannerPalette()
 	model.outputDir = prompt.OutputDir
 	model.sourceLabel = prompt.Source
 	model.answers.DirectoryName = prompt.DefaultDirectoryName
@@ -211,75 +333,84 @@ func newInitTeaTestModel(prompt initPromptModel) *initTeaModel {
 	return model
 }
 
-func newInitTeaBaseModel(useColor bool, renderer *lipgloss.Renderer) *initTeaModel {
-	spin := spinner.New()
-	spin.Spinner = spinner.Dot
-	spin.Style = initTeaAccentStyle(useColor)
-
+func newInitTeaBaseModel(ctx context.Context, useColor bool) *initTeaModel {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	filterInput := textinput.New()
 	filterInput.Prompt = ""
-	filterInput.Placeholder = "Type to filter"
+	filterInput.Placeholder = "type to filter"
 	filterInput.Focus()
 
 	directoryInput := textinput.New()
 	directoryInput.Prompt = ""
 	directoryInput.Placeholder = "Directory name"
 
-	return &initTeaModel{
-		width:          84,
+	ascii := output.ASCIIOnly()
+	model := &initTeaModel{
+		ctx:            ctx,
+		work:           newInitWork(ctx),
+		presets:        initPresets{OnConflict: initConflictAsk},
+		banner:         bannerThemeOrDefault(""),
+		showBanner:     true,
+		useColor:       useColor,
+		isDark:         true, // most terminals; upgraded once the background reply arrives
+		ascii:          ascii,
+		width:          80,
 		height:         24,
 		phase:          initTeaPhaseLoading,
-		spinner:        spin,
+		spinner:        spinner.New(spinner.WithSpinner(initSpinner(ascii))),
 		filterInput:    filterInput,
 		directoryInput: directoryInput,
-		renderer:       renderer,
 		repeatables:    map[string]struct{}{},
 		bundles:        map[string]struct{}{},
 		overwrite:      map[string]struct{}{},
 	}
-}
-
-func initTeaRendererForWriter(writer *output.Writer, useColor bool) *lipgloss.Renderer {
-	out := io.Discard
-	if writer != nil && writer.Err != nil {
-		out = writer.Err
-	}
-
-	renderer := lipgloss.NewRenderer(out)
-	if !useColor {
-		renderer.SetColorProfile(termenv.Ascii)
-		return renderer
-	}
-
-	switch writer.Color {
-	case "always":
-		renderer.SetColorProfile(termenv.TrueColor)
-	case "never":
-		renderer.SetColorProfile(termenv.Ascii)
-	default:
-		renderer.SetColorProfile(termenv.EnvColorProfile())
-	}
-
-	return renderer
+	model.applyTheme()
+	return model
 }
 
 func (m *initTeaModel) Init() tea.Cmd {
 	if m.err != nil {
 		// A construction-time error (e.g. a file target) — quit immediately so
 		// runInteractiveTTY returns the precise message.
-		return tea.Quit
+		return m.quit()
 	}
-	return tea.Batch(m.spinner.Tick, m.resolveSourceCmd())
+	cmds := []tea.Cmd{m.spinner.Tick, m.resolveSourceCmd()}
+	if m.useColor {
+		// Ask for the background so light terminals get the light palette; the
+		// dark default renders until (and unless) the terminal answers.
+		cmds = append(cmds, tea.RequestBackgroundColor)
+	}
+	return tea.Batch(cmds...)
+}
+
+// quit ends the program on the wizard's own terms (done, error or esc).
+func (m *initTeaModel) quit() tea.Cmd {
+	m.quitting = true
+	return tea.Quit
+}
+
+// initAbandonWait is how long a stopped-anyway write gets to wind down once
+// its context is canceled (which kills a running git step).
+const initAbandonWait = 2 * time.Second
+
+// abandonApply stops the wizard while files are still being written.
+func (m *initTeaModel) abandonApply() {
+	m.abandonedApply = true
+	m.quitting = true
 }
 
 func (m *initTeaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
 	switch typed := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = max(typed.Width, 40)
-		m.height = max(typed.Height, 16)
+		m.width = typed.Width
+		m.height = typed.Height
 		m.resizeInputs()
+		return m, nil
+	case tea.BackgroundColorMsg:
+		m.isDark = typed.IsDark()
+		m.applyTheme()
 		return m, nil
 	case spinner.TickMsg:
 		if m.phase == initTeaPhaseLoading || m.phase == initTeaPhaseApply {
@@ -287,372 +418,141 @@ func (m *initTeaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
 		}
+		return m, nil
+	case initTeaHoldMsg:
+		m.cancelHeld = true
+		return m, nil
 	case initTeaSourceResolvedMsg:
 		m.sourceDir = typed.sourceDir
 		m.sourceLabel = typed.sourceLabel
 		m.outputDir = typed.outputDir
-		m.cleanup = typed.cleanup
 		m.loadingSummary = "Template"
 		m.loadingDetail = "Loading template manifest..."
 		return m, m.loadManifestCmd()
 	case initTeaManifestLoadedMsg:
-		m.manifest = typed.manifest
-		m.prompt.BundleOptions = typed.manifest.Bundles
-		m.prompt.RepeatableOptions = typed.manifest.Repeatables
-		m.appendTranscript("Template", m.templateDisplayName())
-		m.loadingSummary = "Site"
-		m.loadingDetail = "Fetching your sites..."
-		return m, m.loadSitesCmd()
+		return m.onManifestLoaded(typed.manifest)
 	case initTeaSitesLoadedMsg:
-		if len(typed.sites) == 0 {
-			m.err = fmt.Errorf("no accessible sites found")
-			return m, tea.Quit
-		}
-		m.sites = typed.sites
-		m.prompt.Sites = initSiteChoices(typed.sites)
-		m.prompt.Source = m.sourceLabel
-		m.prompt.OutputDir = m.outputDir
-		m.answers = initAnswers{RepeatableMode: "none"}
-		m.enterStep(initTeaStepSite)
-		m.phase = initTeaPhasePrompt
-		return m, nil
+		return m.onSitesLoaded(typed.sites)
 	case initTeaThemesLoadedMsg:
-		if len(typed.themes) == 0 {
-			m.err = fmt.Errorf("no themes found for site %s", m.answers.SiteID)
-			return m, tea.Quit
-		}
-		m.themes = typed.themes
-		m.prompt.Themes = initThemeChoices(typed.themes)
-		if site, ok := findSiteByID(m.sites, m.answers.SiteID); ok {
-			m.prompt.DefaultDirectoryName = "theme-" + parameterize(site.Subdomain)
-		}
-		m.directoryInput.SetValue(m.prompt.DefaultDirectoryName)
-		m.answers.DirectoryName = m.prompt.DefaultDirectoryName
-		if len(typed.themes) == 1 {
-			choice := m.prompt.Themes[0]
-			m.answers.ThemeID = choice.Theme.ID
-			m.appendTranscript("Theme", choice.Label)
-			m.phase = initTeaPhasePrompt
-			m.enterStep(m.stepAfterTheme())
-			return m, nil
-		}
-		m.phase = initTeaPhasePrompt
-		m.enterStep(initTeaStepTheme)
-		return m, nil
+		return m.onThemesLoaded(typed.themes)
 	case initTeaBootstrapDoneMsg:
 		m.result = typed.result
 		m.phase = initTeaPhaseDone
-		return m, tea.Quit
+		return m, m.quit()
 	case initTeaErrMsg:
 		m.err = typed.err
-		return m, tea.Quit
+		return m, m.quit()
+	case tea.ResumeMsg:
+		// Back from Ctrl-Z: the window may have been resized meanwhile.
+		return m, tea.RequestWindowSize
+	case tea.PasteMsg:
+		return m.handlePaste(typed)
+	case tea.KeyPressMsg:
+		return m.handleKey(typed)
 	}
+	return m, nil
+}
 
-	if key, ok := msg.(tea.KeyMsg); ok {
-		switch m.phase {
-		case initTeaPhaseLoading, initTeaPhaseApply:
-			if key.String() == "ctrl+c" || key.String() == "esc" {
-				m.err = fmt.Errorf("init cancelled")
-				return m, tea.Quit
+func (m *initTeaModel) View() tea.View {
+	return tea.NewView(renderInitTea(m))
+}
+
+func (m *initTeaModel) onManifestLoaded(manifest bootstrap.Manifest) (tea.Model, tea.Cmd) {
+	m.manifest = manifest
+	m.prompt.BundleOptions = manifest.Bundles
+	m.prompt.RepeatableOptions = manifest.Repeatables
+	if m.presets.Repeatables != "" {
+		if _, err := parseInitRepeatables(m.presets.Repeatables, manifest.Repeatables); err != nil {
+			m.err = &ExitError{Code: ExitUsage, Err: err}
+			return m, m.quit()
+		}
+	}
+	if m.presets.Bundles != "" {
+		if _, err := parseInitBundles(m.presets.Bundles, manifest.Bundles); err != nil {
+			m.err = &ExitError{Code: ExitUsage, Err: err}
+			return m, m.quit()
+		}
+	}
+	m.appendTranscript("Template", m.templateDisplayName())
+	m.loadingSummary = "Site"
+	m.loadingDetail = "Fetching your sites..."
+	return m, m.loadSitesCmd()
+}
+
+func (m *initTeaModel) onSitesLoaded(sites []api.Site) (tea.Model, tea.Cmd) {
+	if len(sites) == 0 {
+		m.err = fmt.Errorf("no accessible sites found")
+		return m, m.quit()
+	}
+	m.sites = sites
+	m.prompt.Sites = initSiteChoices(sites)
+	m.prompt.Source = m.sourceLabel
+	m.prompt.OutputDir = m.outputDir
+	m.answers = initAnswers{RepeatableMode: "none"}
+	if m.presets.Site != "" {
+		site, err := matchInitSite(sites, m.presets.Site)
+		if err != nil {
+			m.err = &ExitError{Code: ExitUsage, Err: err}
+			return m, m.quit()
+		}
+		for _, choice := range m.prompt.Sites {
+			if choice.Site.ID == site.ID {
+				return m.selectSite(initChoiceOption{ID: site.ID, Label: choice.Label})
 			}
-			return m, nil
-		case initTeaPhasePrompt:
-			return m.handlePromptKey(key)
 		}
 	}
-
-	return m, tea.Batch(cmds...)
-}
-
-func (m *initTeaModel) View() string {
-	return renderInitTea(m)
-}
-
-func (m *initTeaModel) handlePromptKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch m.step {
-	case initTeaStepDirectory:
-		return m.handleDirectoryKey(key)
-	case initTeaStepConfirm:
-		return m.handleConfirmKey(key)
-	default:
-		return m.handleListKey(key)
-	}
-}
-
-func (m *initTeaModel) handleDirectoryKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch key.String() {
-	case "ctrl+c", "esc":
-		m.err = fmt.Errorf("init cancelled")
-		return m, tea.Quit
-	case "enter":
-		value := strings.TrimSpace(m.directoryInput.Value())
-		if value == "" {
-			value = m.prompt.DefaultDirectoryName
+	m.enterStep(initTeaStepSite)
+	// NIMBU_SITE alone preselects its site but still asks.
+	if m.presets.DefaultSite != "" {
+		if site, err := matchInitSite(sites, m.presets.DefaultSite); err == nil {
+			for idx, option := range m.filteredOptions() {
+				if option.ID == site.ID {
+					m.cursor = idx
+				}
+			}
 		}
-		m.answers.DirectoryName = value
-		m.directoryInput.SetValue(value)
-		m.appendTranscript("Directory", value)
-		m.enterStep(m.nextStepAfterDirectory())
-	default:
-		var cmd tea.Cmd
-		m.directoryInput, cmd = m.directoryInput.Update(key)
-		m.answers.DirectoryName = m.directoryInput.Value()
-		return m, cmd
 	}
 	return m, nil
 }
 
-func (m *initTeaModel) handleConfirmKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch key.String() {
-	case "ctrl+c", "esc":
-		m.err = fmt.Errorf("init cancelled")
-		return m, tea.Quit
-	case "enter":
-		m.phase = initTeaPhaseApply
-		m.loadingSummary = "Creating project"
-		m.loadingDetail = "Creating your project..."
-		return m, tea.Batch(m.spinner.Tick, m.bootstrapCmd())
+func (m *initTeaModel) onThemesLoaded(themes []api.Theme) (tea.Model, tea.Cmd) {
+	if len(themes) == 0 {
+		m.err = fmt.Errorf("no themes found for site %s", m.answers.SiteID)
+		return m, m.quit()
 	}
-	return m, nil
-}
+	m.themes = themes
+	m.prompt.Themes = initThemeChoices(themes)
+	if site, ok := findSiteByID(m.sites, m.answers.SiteID); ok {
+		m.prompt.DefaultDirectoryName = "theme-" + parameterize(site.Subdomain)
+	}
+	m.directoryInput.SetValue(m.prompt.DefaultDirectoryName)
+	m.answers.DirectoryName = m.prompt.DefaultDirectoryName
 
-func (m *initTeaModel) isFilterableStep() bool {
-	return m.step == initTeaStepSite || m.step == initTeaStepTheme || m.step == initTeaStepRepeatables
-}
-
-func (m *initTeaModel) handleListKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	filterable := m.isFilterableStep()
-
-	switch key.String() {
-	case "ctrl+c", "esc":
-		m.err = fmt.Errorf("init cancelled")
-		return m, tea.Quit
-	case "up":
-		m.moveCursor(-1)
-		return m, nil
-	case "down":
-		m.moveCursor(1)
-		return m, nil
-	case "k":
-		if !filterable {
-			m.moveCursor(-1)
-			return m, nil
+	preset := -1
+	switch {
+	case m.presets.Theme != "":
+		theme, err := matchInitTheme(themes, m.presets.Theme)
+		if err != nil {
+			m.err = &ExitError{Code: ExitUsage, Err: err}
+			return m, m.quit()
 		}
-	case "j":
-		if !filterable {
-			m.moveCursor(1)
-			return m, nil
+		for idx, choice := range m.prompt.Themes {
+			if choice.Theme.ID == theme.ID {
+				preset = idx
+			}
 		}
-	case " ":
-		if m.isMultiSelectStep() {
-			m.toggleCurrentOption()
-			return m, nil
-		}
-	case "enter":
-		return m.confirmCurrentSelection()
+	case len(themes) == 1:
+		preset = 0
 	}
-
-	// Delegate remaining keys to filter input
-	if filterable {
-		var cmd tea.Cmd
-		m.filterInput, cmd = m.filterInput.Update(key)
-		m.clampCursor()
-		return m, cmd
-	}
-	return m, nil
-}
-
-func (m *initTeaModel) confirmCurrentSelection() (tea.Model, tea.Cmd) {
-	options := m.filteredOptions()
-	if len(options) == 0 {
-		return m, nil
-	}
-	current := options[m.cursor]
-
-	switch m.step {
-	case initTeaStepSite:
-		m.answers.SiteID = current.ID
-		m.appendTranscript("Site", current.Label)
-		m.phase = initTeaPhaseLoading
-		m.loadingSummary = "Theme"
-		m.loadingDetail = "Fetching themes for your site..."
-		return m, tea.Batch(m.spinner.Tick, m.loadThemesCmd(current.ID))
-	case initTeaStepTheme:
-		m.answers.ThemeID = current.ID
-		m.appendTranscript("Theme", current.Label)
+	if preset >= 0 {
+		choice := m.prompt.Themes[preset]
+		m.answers.ThemeID = choice.Theme.ID
+		m.appendTranscript("Theme", choice.Label)
 		m.enterStep(m.stepAfterTheme())
-	case initTeaStepRepeatableMode:
-		m.answers.RepeatableMode = current.ID
-		switch current.ID {
-		case "all":
-			m.answers.RepeatableIDs = repeatableIDsForWizard(m.prompt.RepeatableOptions)
-			m.appendTranscript("Repeatables", "all")
-			m.enterStep(m.nextStepAfterRepeatables())
-		case "select":
-			m.enterStep(initTeaStepRepeatables)
-		default:
-			m.answers.RepeatableIDs = nil
-			m.repeatables = map[string]struct{}{}
-			m.appendTranscript("Repeatables", "none")
-			m.enterStep(m.nextStepAfterRepeatables())
-		}
-	case initTeaStepRepeatables:
-		m.answers.RepeatableIDs = sortedSelection(m.repeatables)
-		m.appendTranscript("Repeatables", joinSelectionsOrNone(m.answers.RepeatableIDs))
-		m.enterStep(m.nextStepAfterRepeatables())
-	case initTeaStepBundles:
-		m.answers.BundleIDs = sortedSelection(m.bundles)
-		m.appendTranscript("Bundles", joinSelectionsOrNone(m.answers.BundleIDs))
-		m.enterStep(m.confirmStep())
-	case initTeaStepOverwrite:
-		m.resolveOverwriteSelection()
-		m.enterStep(initTeaStepConfirm)
+		return m, nil
 	}
-
+	m.enterStep(initTeaStepTheme)
 	return m, nil
-}
-
-// stepAfterTheme skips the directory-name prompt when a positional target was
-// given — the destination path is already fixed.
-func (m *initTeaModel) stepAfterTheme() initTeaStep {
-	if strings.TrimSpace(m.fixedTarget) != "" {
-		return m.nextStepAfterDirectory()
-	}
-	return initTeaStepDirectory
-}
-
-// confirmStep routes to the overwrite checklist when initializing in place and
-// planned files already exist; otherwise straight to the final confirmation.
-// PlanPaths failures are deferred to bootstrap, which surfaces them as an error.
-func (m *initTeaModel) confirmStep() initTeaStep {
-	if !m.inPlace {
-		return initTeaStepConfirm
-	}
-	conflicts, err := planConflicts(m.bootstrapOptions(), m.fixedTarget)
-	if err != nil || len(conflicts) == 0 {
-		return initTeaStepConfirm
-	}
-	m.conflicts = conflicts
-	m.overwrite = make(map[string]struct{}, len(conflicts))
-	for _, rel := range conflicts {
-		m.overwrite[rel] = struct{}{} // default: overwrite all
-	}
-	return initTeaStepOverwrite
-}
-
-// resolveOverwriteSelection converts the checklist selection into the skip set
-// (conflicts left unchecked are kept as-is).
-func (m *initTeaModel) resolveOverwriteSelection() {
-	skip := make(map[string]struct{})
-	for _, rel := range m.conflicts {
-		if _, overwrite := m.overwrite[rel]; !overwrite {
-			skip[rel] = struct{}{}
-		}
-	}
-	m.skip = skip
-	m.appendTranscript("Overwrite", fmt.Sprintf("%d replaced, %d kept", len(m.conflicts)-len(skip), len(skip)))
-}
-
-func (m *initTeaModel) moveCursor(delta int) {
-	options := m.filteredOptions()
-	if len(options) == 0 {
-		m.cursor = 0
-		return
-	}
-	m.cursor += delta
-	if m.cursor < 0 {
-		m.cursor = len(options) - 1
-	}
-	if m.cursor >= len(options) {
-		m.cursor = 0
-	}
-}
-
-func (m *initTeaModel) clampCursor() {
-	options := m.filteredOptions()
-	if len(options) == 0 {
-		m.cursor = 0
-		return
-	}
-	if m.cursor >= len(options) {
-		m.cursor = len(options) - 1
-	}
-	if m.cursor < 0 {
-		m.cursor = 0
-	}
-}
-
-func (m *initTeaModel) toggleCurrentOption() {
-	options := m.filteredOptions()
-	if len(options) == 0 {
-		return
-	}
-	id := options[m.cursor].ID
-	target := m.selectionTarget()
-	if _, ok := target[id]; ok {
-		delete(target, id)
-		return
-	}
-	target[id] = struct{}{}
-}
-
-func (m *initTeaModel) selectionTarget() map[string]struct{} {
-	switch m.step {
-	case initTeaStepRepeatables:
-		return m.repeatables
-	case initTeaStepBundles:
-		return m.bundles
-	case initTeaStepOverwrite:
-		return m.overwrite
-	default:
-		return map[string]struct{}{}
-	}
-}
-
-func (m *initTeaModel) isMultiSelectStep() bool {
-	return m.step == initTeaStepRepeatables || m.step == initTeaStepBundles || m.step == initTeaStepOverwrite
-}
-
-func (m *initTeaModel) enterStep(step initTeaStep) {
-	m.phase = initTeaPhasePrompt
-	m.step = step
-	m.cursor = 0
-	m.filterInput.SetValue("")
-	m.filterInput.CursorEnd()
-	m.filterInput.Focus()
-	m.resizeInputs()
-	if step == initTeaStepDirectory {
-		m.directoryInput.SetValue(defaultString(m.answers.DirectoryName, m.prompt.DefaultDirectoryName))
-		m.directoryInput.CursorEnd()
-		m.directoryInput.Focus()
-	}
-	if step == initTeaStepConfirm && len(m.prompt.BundleOptions) == 0 {
-		m.answers.BundleIDs = nil
-	}
-}
-
-func (m *initTeaModel) nextStepAfterDirectory() initTeaStep {
-	if len(m.prompt.RepeatableOptions) > 0 {
-		return initTeaStepRepeatableMode
-	}
-	if len(m.prompt.BundleOptions) > 0 {
-		return initTeaStepBundles
-	}
-	return m.confirmStep()
-}
-
-func (m *initTeaModel) nextStepAfterRepeatables() initTeaStep {
-	if len(m.prompt.BundleOptions) > 0 {
-		return initTeaStepBundles
-	}
-	return m.confirmStep()
-}
-
-func (m *initTeaModel) resizeInputs() {
-	bodyWidth := initTeaBodyWidth(m.width)
-	fieldWidth := max(bodyWidth-14, 12)
-	m.filterInput.Width = fieldWidth
-	m.directoryInput.Width = fieldWidth
 }
 
 func (m *initTeaModel) appendTranscript(label, value string) {

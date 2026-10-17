@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/nimbu/cli/internal/output"
 	"github.com/nimbu/cli/internal/realtime"
 )
@@ -19,28 +17,28 @@ import (
 // In --json mode stdout carries nothing but raw server event envelopes, one per
 // line; every control and status line goes to stderr.
 type watchPrinter struct {
-	ctx      context.Context
-	writer   *output.Writer
-	mode     output.Mode
-	verbose  bool
-	useColor bool
-	channel  string
-	filters  []string
-	where    string
+	ctx     context.Context
+	writer  *output.Writer
+	mode    output.Mode
+	verbose bool
+	theme   output.Theme // stdout's theme: event lines go to stdout
+	channel string
+	filters []string
+	where   string
 }
 
 func newWatchPrinter(ctx context.Context, channel string, filters []string, where string) *watchPrinter {
 	writer := output.WriterFromContext(ctx)
 	flags := rootFlagsFromContext(ctx, nil)
 	return &watchPrinter{
-		ctx:      ctx,
-		writer:   writer,
-		mode:     output.FromContext(ctx),
-		verbose:  flags.Verbose || flags.Debug,
-		useColor: writer.UseColor(),
-		channel:  channel,
-		filters:  filters,
-		where:    where,
+		ctx:     ctx,
+		writer:  writer,
+		mode:    output.FromContext(ctx),
+		verbose: flags.Verbose || flags.Debug,
+		theme:   writer.OutTheme(),
+		channel: channel,
+		filters: filters,
+		where:   where,
 	}
 }
 
@@ -75,7 +73,7 @@ func (p *watchPrinter) OnEvent(ev realtime.Event) {
 	case p.mode.JSON:
 		_, _ = fmt.Fprintln(p.writer.Out, watchEventJSONLine(ev))
 	case p.mode.Plain:
-		_, _ = fmt.Fprintf(p.writer.Out, "%s\t%s\t%s\t%s\n",
+		_ = output.WritePlain(p.writer.Out,
 			watchEventTime(ev).Format("15:04:05"), ev.Event, ev.ID, watchEventTitle(ev))
 	default:
 		_, _ = fmt.Fprintln(p.writer.Out, p.humanEventLine(ev))
@@ -87,7 +85,7 @@ func (p *watchPrinter) humanEventLine(ev realtime.Event) string {
 	label := p.colorEvent(fmt.Sprintf("%-8s", ev.Event), ev.Event)
 
 	if ev.Event == "resync" {
-		return fmt.Sprintf("%s  %s  —  re-read the channel with: %s", stamp, label, p.resyncHint())
+		return fmt.Sprintf("%s  %s  %s  re-read the channel with: %s", stamp, label, p.writer.Glyphs().Dash, p.resyncHint())
 	}
 	if title := watchEventTitle(ev); title != "" {
 		return fmt.Sprintf("%s  %s  %s  %s", stamp, label, ev.ID, title)
@@ -107,24 +105,22 @@ func (p *watchPrinter) resyncHint() string {
 	return strings.Join(parts, " ")
 }
 
+// colorEvent colors the event word through the shared theme for stdout's
+// color profile; the word itself carries the meaning.
 func (p *watchPrinter) colorEvent(padded, event string) string {
-	if !p.useColor {
-		return padded
-	}
-	style := lipgloss.NewStyle()
+	theme := p.theme
 	switch event {
 	case "added":
-		style = style.Foreground(lipgloss.Color("#22c55e"))
+		return theme.Success(padded)
 	case "changed":
-		style = style.Foreground(lipgloss.Color("#f59e0b"))
+		return theme.Warning(padded)
 	case "removed":
-		style = style.Foreground(lipgloss.Color("#ef4444"))
+		return theme.Error(padded)
 	case "resync":
-		style = style.Faint(true)
+		return theme.Faint(padded)
 	default:
 		return padded
 	}
-	return style.Render(padded)
 }
 
 // watchEventJSONLine returns the server envelope as a single compact line.

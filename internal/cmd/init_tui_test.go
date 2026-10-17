@@ -5,7 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/bootstrap"
@@ -26,7 +27,7 @@ func TestInitTeaViewShowsVisibleSiteFilter(t *testing.T) {
 	model.step = initTeaStepSite
 	model.filterInput.SetValue("zorg")
 
-	view := model.View()
+	view := initView(model)
 
 	for _, needle := range []string{"Search", "zorg", "Zorgpoort"} {
 		if !strings.Contains(view, needle) {
@@ -54,7 +55,7 @@ func TestInitTeaViewKeepsTranscriptVisibleAcrossSteps(t *testing.T) {
 	}
 	model.directoryInput.SetValue("theme-demo-shop")
 
-	view := model.View()
+	view := initView(model)
 
 	for _, needle := range []string{"Site", "Demo Shop", "Theme", "Storefront", "theme-demo-shop"} {
 		if !strings.Contains(view, needle) {
@@ -76,7 +77,7 @@ func TestInitTeaRepeatablesModeOmitsSearchAndUsesCopyPrompt(t *testing.T) {
 	model.phase = initTeaPhasePrompt
 	model.step = initTeaStepRepeatableMode
 
-	view := model.View()
+	view := initView(model)
 
 	if !strings.Contains(view, "Repeatables: which to copy?") {
 		t.Fatalf("expected updated repeatables mode prompt, got:\n%s", view)
@@ -106,11 +107,10 @@ func TestInitTeaConfirmStepHighlightsFinalAction(t *testing.T) {
 	model.answers.RepeatableIDs = []string{"header"}
 	model.answers.BundleIDs = []string{"blog-articles"}
 
-	view := model.View()
+	view := initView(model)
 
-	if !strings.Contains(view, "Enter create project, Esc cancel") ||
-		!strings.Contains(view, "\x1b[1;38;2;96;165;250mEnter create project, Esc cancel\x1b[0m") ||
-		!strings.Contains(view, "│\x1b[0m \n") {
+	if !strings.Contains(view, model.theme.active("enter create project · esc cancel")) ||
+		!strings.Contains(view, "\n"+renderTimelineConnector(model)+"\n"+renderTimelineConnector(model)+" "+model.theme.active("enter create project · esc cancel")) {
 		t.Fatalf("expected blank spacer and emphasized final action line, got:\n%s", view)
 	}
 }
@@ -124,7 +124,7 @@ func TestInitTeaConfirmStepShowsHumanReadableTheme(t *testing.T) {
 	model.step = initTeaStepConfirm
 	model.answers.ThemeID = "theme-1"
 
-	view := model.View()
+	view := initView(model)
 
 	// Confirm screen shows the friendly label, never the raw selection ID.
 	if !strings.Contains(view, "storefront") {
@@ -208,10 +208,11 @@ func TestThemeConfigValueFallbackChain(t *testing.T) {
 func TestInitTeaIntroUsesDimCornerAndBrightText(t *testing.T) {
 	view := renderInitTeaViewForTheme(t, "")
 
-	if !strings.Contains(view, "\x1b[38;2;147;163;184m┌\x1b[0m") {
+	theme := newInitTheme(true, true)
+	if !strings.Contains(view, theme.muted("┌")) {
 		t.Fatalf("expected intro corner to use dim rail color, got:\n%s", view)
 	}
-	if !strings.Contains(view, "\x1b[1;38;2;226;232;240mLet's setup a new project.\x1b[0m") {
+	if !strings.Contains(view, theme.value("Let's set up a new project.")) {
 		t.Fatalf("expected intro text to stay bright, got:\n%s", view)
 	}
 }
@@ -236,9 +237,9 @@ func TestInitTeaSelectedRepeatableMarkerUsesBlueAccent(t *testing.T) {
 	}
 	model.repeatables["header"] = struct{}{}
 
-	view := model.View()
+	view := initView(model)
 
-	if !strings.Contains(view, "› \x1b[1;38;2;96;165;250m●\x1b[0m Header") {
+	if !strings.Contains(view, model.theme.active("●")+" "+model.theme.value("Header")) {
 		t.Fatalf("expected selected repeatable marker to use blue accent color, got:\n%s", view)
 	}
 }
@@ -255,7 +256,7 @@ func TestInitTeaBundlesStepOmitsSearch(t *testing.T) {
 	model.phase = initTeaPhasePrompt
 	model.step = initTeaStepBundles
 
-	view := model.View()
+	view := initView(model)
 
 	if strings.Contains(view, "Search:") {
 		t.Fatalf("expected functional areas step to omit search line, got:\n%s", view)
@@ -282,9 +283,9 @@ func TestInitTeaSelectedBundleMarkerUsesBlueAccent(t *testing.T) {
 	}
 	model.bundles["customer-auth"] = struct{}{}
 
-	view := model.View()
+	view := initView(model)
 
-	if !strings.Contains(view, "› \x1b[1;38;2;96;165;250m●\x1b[0m Customer login with password reset") {
+	if !strings.Contains(view, model.theme.active("●")+" "+model.theme.value("Customer login with password reset")) {
 		t.Fatalf("expected selected bundle marker to use blue accent color, got:\n%s", view)
 	}
 }
@@ -306,7 +307,7 @@ func TestInitTeaViewUsesTimelineLayoutInsteadOfPanels(t *testing.T) {
 		{Label: "Repository", Value: "cloned"},
 	}
 
-	view := model.View()
+	view := initView(model)
 
 	for _, needle := range []string{"│", "◇", "●", "Site: choose a site"} {
 		if !strings.Contains(view, needle) {
@@ -331,7 +332,7 @@ func TestInitTeaViewShowsLoadingState(t *testing.T) {
 	model.loadingSummary = "Template"
 	model.loadingDetail = "Cloning repository..."
 
-	view := model.View()
+	view := initView(model)
 
 	for _, needle := range []string{"Template", "Cloning repository...", "nimbu"} {
 		if !strings.Contains(strings.ToLower(view), strings.ToLower(needle)) {
@@ -341,10 +342,10 @@ func TestInitTeaViewShowsLoadingState(t *testing.T) {
 	if strings.Contains(view, "\n init \n") {
 		t.Fatalf("expected standalone init chip to be removed, got:\n%s", view)
 	}
-	if !strings.Contains(view, "Let's setup a new project.") {
+	if !strings.Contains(view, "Let's set up a new project.") {
 		t.Fatalf("expected intro line below banner, got:\n%s", view)
 	}
-	if !strings.Contains(view, "┌ Let's setup a new project.\n│\n") {
+	if !strings.Contains(view, "┌ Let's set up a new project.\n│\n") {
 		t.Fatalf("expected intro line to hand off into the timeline rail, got:\n%s", view)
 	}
 	if !strings.Contains(view, model.spinner.View()) {
@@ -371,10 +372,10 @@ func TestInitTeaViewRespectsNarrowWidth(t *testing.T) {
 	model.step = initTeaStepSite
 	model.filterInput.SetValue("doel")
 
-	view := model.View()
+	view := initView(model)
 
 	for _, line := range strings.Split(view, "\n") {
-		if len([]rune(line)) > model.width {
+		if lipgloss.Width(line) > model.width {
 			t.Fatalf("line exceeds width %d: %q\nfull view:\n%s", model.width, line, view)
 		}
 	}
@@ -393,7 +394,7 @@ func TestInitTeaLoadingViewUsesTranscriptStyle(t *testing.T) {
 		{Text: "Found 41 themes"},
 	}
 
-	view := model.View()
+	view := initView(model)
 
 	for _, needle := range []string{"◇", "Template: Loading template manifest...", model.spinner.View()} {
 		if !strings.Contains(view, needle) {
@@ -418,7 +419,6 @@ func TestInitTeaPreflightCollapsesIntoOneSummaryRow(t *testing.T) {
 		sourceDir:   "/tmp/source",
 		sourceLabel: "zenjoy/theme-starterskit@vite-go-cli",
 		outputDir:   "/tmp/out",
-		cleanup:     func() {},
 	})
 	model.Update(initTeaManifestLoadedMsg{manifest: bootstrap.Manifest{Name: "Starterskit"}})
 	if got := len(model.transcript); got != 1 {
@@ -440,8 +440,8 @@ func TestInitTeaPreflightCollapsesIntoOneSummaryRow(t *testing.T) {
 	if strings.Contains(model.transcript[0].Text, "Source") || strings.Contains(model.transcript[0].Text, "manifest") {
 		t.Fatalf("expected no detailed preflight substeps in final transcript, got %#v", model.transcript[0])
 	}
-	if strings.Contains(model.View(), "Found 1 sites") {
-		t.Fatalf("expected site count to stay out of transcript once selection begins, got:\n%s", model.View())
+	if strings.Contains(initView(model), "Found 1 sites") {
+		t.Fatalf("expected site count to stay out of transcript once selection begins, got:\n%s", initView(model))
 	}
 }
 
@@ -455,8 +455,8 @@ func TestInitTeaManifestLoadedShowsActiveSiteFetchingRow(t *testing.T) {
 	updated, _ := model.Update(initTeaManifestLoadedMsg{manifest: bootstrap.Manifest{Name: "Starterskit"}})
 	model = updated.(*initTeaModel)
 
-	view := model.View()
-	for _, needle := range []string{"Let's setup a new project.", "Template: Starterskit", "Site: Fetching your sites..."} {
+	view := initView(model)
+	for _, needle := range []string{"Let's set up a new project.", "Template: Starterskit", "Site: Fetching your sites..."} {
 		if !strings.Contains(view, needle) {
 			t.Fatalf("expected view to contain %q, got:\n%s", needle, view)
 		}
@@ -506,8 +506,8 @@ func TestInitTeaSingleThemeAutoSelectsAndSkipsThemeStep(t *testing.T) {
 	if got := model.transcript[len(model.transcript)-1]; got.Label != "Theme" || !strings.Contains(got.Value, "Storefront") {
 		t.Fatalf("expected theme transcript row, got %#v", got)
 	}
-	if strings.Contains(model.View(), "Found 1 themes") {
-		t.Fatalf("expected theme count to stay out of transcript when auto-selecting, got:\n%s", model.View())
+	if strings.Contains(initView(model), "Found 1 themes") {
+		t.Fatalf("expected theme count to stay out of transcript when auto-selecting, got:\n%s", initView(model))
 	}
 }
 
@@ -540,7 +540,7 @@ func TestInitTeaSitePromptUsesFieldLabelCopy(t *testing.T) {
 	model.phase = initTeaPhasePrompt
 	model.step = initTeaStepSite
 
-	view := model.View()
+	view := initView(model)
 
 	if !strings.Contains(view, "Site: choose a site") {
 		t.Fatalf("expected field-style site prompt, got:\n%s", view)
@@ -569,7 +569,7 @@ func TestInitTeaTranscriptUsesDimLabelAndBrightValue(t *testing.T) {
 	model.transcript = []initTranscriptEntry{{Label: "Site", Value: "Demo Shop (demo-shop)"}}
 	model.directoryInput.SetValue("theme-demo-shop")
 
-	view = model.View()
+	view = initView(model)
 	if !strings.Contains(view, "Site") || !strings.Contains(view, "Demo Shop") {
 		t.Fatalf("expected transcript content in view, got:\n%s", view)
 	}
@@ -603,10 +603,10 @@ func TestInitTeaFilterableStepPassesJKToFilterInput(t *testing.T) {
 	model.step = initTeaStepSite
 
 	// Typing "j" should go to filter, not move cursor
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	updated, _ := model.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	model = updated.(*initTeaModel)
 
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	updated, _ = model.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
 	model = updated.(*initTeaModel)
 
 	if got := model.filterInput.Value(); got != "jk" {
@@ -618,7 +618,7 @@ func TestInitTeaFilterableStepPassesJKToFilterInput(t *testing.T) {
 
 	// Arrow down should still navigate (clear filter first so both options are visible)
 	model.filterInput.SetValue("")
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	model = updated.(*initTeaModel)
 
 	if model.cursor != 1 {
@@ -635,7 +635,7 @@ func TestInitTeaNonFilterableStepUsesJKForNavigation(t *testing.T) {
 	model.step = initTeaStepRepeatableMode
 
 	// "j" should move cursor down in non-filterable step
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	updated, _ := model.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	model = updated.(*initTeaModel)
 
 	if model.cursor != 1 {
@@ -643,7 +643,7 @@ func TestInitTeaNonFilterableStepUsesJKForNavigation(t *testing.T) {
 	}
 
 	// "k" should move cursor back up
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	updated, _ = model.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
 	model = updated.(*initTeaModel)
 
 	if model.cursor != 0 {
@@ -663,16 +663,15 @@ func TestInitTeaDonePhaseShowsFooter(t *testing.T) {
 		{Label: "Directory", Value: "theme-zenjoy"},
 	}
 
-	// Footer is rendered outside the TUI (in runInteractiveTTY) to guarantee
-	// visibility after Bubble Tea exits. Verify it renders correctly.
-	footer := renderInitTeaDoneFooter(model)
+	// The footer is the last frame Bubble Tea leaves in the scrollback.
+	footer := strings.Join(renderInitTeaDoneFooter(model, model.width), "\n")
 	for _, needle := range []string{"Done!", "To start working, run:", "cd theme-zenjoy"} {
 		if !strings.Contains(footer, needle) {
 			t.Fatalf("expected done footer containing %q, got:\n%s", needle, footer)
 		}
 	}
 
-	view := model.View()
+	view := initView(model)
 	if strings.Contains(view, "Creating project") {
 		t.Fatalf("done phase should not show loading spinner, got:\n%s", view)
 	}
@@ -692,11 +691,65 @@ func renderInitTeaViewForTheme(t *testing.T, theme string) string {
 	})
 	ctx = context.WithValue(ctx, configKey{}, &cfg)
 
+	forceBannerTerminal(t, true)
 	model := newInitTeaModel(ctx, &InitCmd{Dir: "."}, &RootFlags{})
 	model.width = 120
-	model.height = 24
+	model.height = 40
 	model.phase = initTeaPhaseLoading
 	model.loadingSummary = "Template"
 	model.loadingDetail = "Loading template manifest..."
-	return model.View()
+	return initView(model)
+}
+
+func initView(model *initTeaModel) string {
+	return model.View().Content
+}
+
+// The wizard banner follows tea.BackgroundColorMsg: a light terminal gets the
+// configured theme's light palette, not the dark one.
+func TestInitTeaBannerUsesLightPaletteOnLightBackground(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	view := renderInitTeaViewForTheme(t, "sakura")
+	theme, _ := BannerThemeByName("sakura")
+	if !strings.Contains(view, rgbSGR(theme.Palette[0])) {
+		t.Fatalf("dark default should draw the dark palette:\n%q", view)
+	}
+
+	cfg := config.Defaults()
+	cfg.BannerTheme = "sakura"
+	ctx := output.WithMode(context.Background(), output.Mode{})
+	ctx = output.WithWriter(ctx, &output.Writer{Out: &strings.Builder{}, Err: &strings.Builder{}, Color: "always"})
+	ctx = context.WithValue(ctx, configKey{}, &cfg)
+	forceBannerTerminal(t, true)
+	model := newInitTeaModel(ctx, &InitCmd{Dir: "."}, &RootFlags{})
+	model.width, model.height = 120, 40
+	model.Update(teaBackground(false))
+	light := initView(model)
+	if !strings.Contains(light, rgbSGR(theme.Light[0])) {
+		t.Fatalf("light background should draw the light palette %v:\n%q", theme.Light, light)
+	}
+	if strings.Contains(light, rgbSGR(theme.Palette[0])) {
+		t.Fatal("light background still draws the dark palette")
+	}
+}
+
+// The wizard shares the one banner rule: in CI the big banner is skipped
+// even when the terminal has room for it.
+func TestInitTeaHidesBannerInCI(t *testing.T) {
+	ctx := output.WithMode(context.Background(), output.Mode{})
+	ctx = output.WithWriter(ctx, &output.Writer{Out: &strings.Builder{}, Err: &strings.Builder{}, Color: "never"})
+	forceBannerTerminal(t, true)
+	t.Setenv("CI", "true")
+	model := newInitTeaModel(ctx, &InitCmd{Dir: "."}, &RootFlags{})
+	model.width, model.height = 120, 40
+	if view := initView(model); strings.Contains(view, "██╗") {
+		t.Fatalf("banner shown in CI:\n%s", view)
+	}
+
+	t.Setenv("CI", "")
+	model = newInitTeaModel(ctx, &InitCmd{Dir: "."}, &RootFlags{})
+	model.width, model.height = 120, 40
+	if view := initView(model); !strings.Contains(view, "██╗") {
+		t.Fatalf("banner missing on a roomy terminal outside CI:\n%s", view)
+	}
 }

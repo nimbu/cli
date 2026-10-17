@@ -11,6 +11,10 @@ import (
 )
 
 func readThemeContent(file string, inline string) ([]byte, error) {
+	if file == "" && (inline == "" || inline == "-") {
+		// Content comes from stdin; one Ctrl-C must end the read.
+		defer beginPrompt()()
+	}
 	return readThemeContentFromReader(file, inline, os.Stdin)
 }
 

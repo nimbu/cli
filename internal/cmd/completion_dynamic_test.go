@@ -14,6 +14,7 @@ import (
 
 	"github.com/alecthomas/kong"
 
+	"github.com/nimbu/cli/internal/apps"
 	"github.com/nimbu/cli/internal/auth"
 	"github.com/nimbu/cli/internal/config"
 )
@@ -220,6 +221,56 @@ func TestCompleteDynamicUsesOriginalCommandSiteAndAPIURL(t *testing.T) {
 	}
 	if got := completionValues(items); strings.Join(got, ",") != "blog" {
 		t.Fatalf("values = %#v", got)
+	}
+}
+
+func TestCompleteDynamicResolvesEnvFromCommandWords(t *testing.T) {
+	ctx := completionTestContext(t)
+	var defaultHits atomic.Int32
+	defaultServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defaultHits.Add(1)
+		_, _ = w.Write([]byte(`[{"id":"c0","slug":"wrong","name":"Wrong"}]`))
+	}))
+	t.Cleanup(defaultServer.Close)
+	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Nimbu-Site"); got != "stagesite" {
+			t.Errorf("site header = %q, want stagesite", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer staging-token" {
+			t.Errorf("authorization = %q, want the staging host's token", got)
+		}
+		_, _ = w.Write([]byte(`[{"id":"c1","slug":"blog","name":"Blog"}]`))
+	}))
+	t.Cleanup(envServer.Close)
+
+	withFakeAuthStoresByHost(t, map[string]*fakeAuthStore{
+		"api.nimbu.io":                    {credential: auth.Credential{Token: "default-token"}},
+		apps.NormalizeHost(envServer.URL): {credential: auth.Credential{Token: "staging-token"}},
+	})
+	dir := t.TempDir()
+	yml := "site: projsite\nenvironments:\n  staging: {host: " + envServer.URL + ", site: stagesite}\n"
+	if err := os.WriteFile(filepath.Join(dir, "nimbu.yml"), []byte(yml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	flags := ctx.Value(rootFlagsKey{}).(*RootFlags)
+	flags.APIURL = defaultServer.URL
+
+	items, err := completeDynamic(ctx, completionRequest{
+		Shell:       "bash",
+		Words:       []string{"nimbu", "--env", "staging", "--site", "other", "channels", "get"},
+		CommandPath: []string{"channels", "get"},
+		Flag:        "channel",
+	})
+	if err != nil {
+		t.Fatalf("completeDynamic: %v", err)
+	}
+	if got := completionValues(items); strings.Join(got, ",") != "blog" {
+		t.Fatalf("values = %#v", got)
+	}
+	if hits := defaultHits.Load(); hits != 0 {
+		t.Fatalf("default API host got %d requests, want 0", hits)
 	}
 }
 
@@ -535,8 +586,79 @@ func TestGeneratedCompletionsContainDynamicHooks(t *testing.T) {
 		if !strings.Contains(out, "__complete") {
 			t.Fatalf("%s completion missing dynamic hook", name)
 		}
-		if !strings.Contains(out, "--from") || !strings.Contains(out, "--to") || !strings.Contains(out, "--site") || !strings.Contains(out, "--channel") || !strings.Contains(out, "--theme") {
-			t.Fatalf("%s completion missing dynamic flags", name)
+		// Every flag value goes to __complete, not only the registry kinds:
+		// enums such as --color are answered there too.
+		if !strings.Contains(out, `--*=*`) {
+			t.Fatalf("%s completion does not route --flag=value to __complete", name)
+		}
+	}
+	if !strings.Contains(fish, "not contains -- $tokens[-1] --account") || !strings.Contains(fish, " --color ") {
+		t.Fatal("fish must not offer command names where a flag value goes")
+	}
+	if strings.Contains(fish, `-n "__fish_use_subcommand"`) {
+		t.Fatal("fish root commands must use __fish_nimbu_use_subcommand")
+	}
+}
+
+// Regression: `help` was missing from completion, and `nimbu help ch<TAB>`
+// completed nothing.
+func TestCompleteCommandNamesKnowsHelp(t *testing.T) {
+	parser, _, err := newParser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	complete := func(prefix string, path ...string) []string {
+		return completionValues(completeCommandNames(parser, completionRequest{
+			Words:       append([]string{"nimbu"}, path...),
+			CommandPath: path,
+			Prefix:      prefix,
+		}))
+	}
+	if got := complete("he"); !containsString(got, "help") {
+		t.Fatalf("root completions miss help: %#v", got)
+	}
+	if got := complete("", "channels"); !containsString(got, "help") || !containsString(got, "list") {
+		t.Fatalf("group completions miss help: %#v", got)
+	}
+	if got := complete("ch", "help"); !containsString(got, "channels") || containsString(got, "help") {
+		t.Fatalf("help ch: %#v", got)
+	}
+	if got := complete("l", "help", "channels"); !containsString(got, "list") {
+		t.Fatalf("help channels l: %#v", got)
+	}
+	if got := complete("l", "channels", "help"); !containsString(got, "list") {
+		t.Fatalf("channels help l: %#v", got)
+	}
+	if got := complete("", "channels", "list"); len(got) != 0 {
+		t.Fatalf("leaf should not offer help: %#v", got)
+	}
+}
+
+// Regression: `nimbu --color <TAB>` completed nothing (and fish offered
+// command names, building `nimbu --color api`).
+func TestInternalCompleteEnumFlagValues(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	for _, tc := range []struct {
+		current string
+		words   []string
+		want    string
+	}{
+		{"", []string{"nimbu", "--color"}, "auto always never"},
+		{"a", []string{"nimbu", "--color"}, "auto always"},
+		{"--color=n", []string{"nimbu", "pages", "list"}, "never"},
+		{"", []string{"nimbu", "init", "--on-conflict"}, "ask overwrite keep"},
+	} {
+		args := append([]string{"__complete", "--shell", "bash", "--current=" + tc.current, "--"}, tc.words...)
+		code, stdout, stderr := captureExecute(t, args)
+		if code != 0 || stderr != "" {
+			t.Fatalf("%v: exit %d stderr=%q", tc.words, code, stderr)
+		}
+		if got := strings.Join(strings.Fields(stdout), " "); got != tc.want {
+			t.Fatalf("%v %q: got %q, want %q", tc.words, tc.current, got, tc.want)
 		}
 	}
 }

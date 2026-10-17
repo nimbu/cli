@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/nimbu/cli/internal/apps"
 	"github.com/nimbu/cli/internal/output"
@@ -51,7 +52,7 @@ func (c *AppsCodePullCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	if mode.Plain {
 		for _, action := range result.Written {
-			if _, err := output.Fprintln(ctx, action.Local); err != nil {
+			if err := output.Plain(ctx, filepath.ToSlash(action.Local)); err != nil {
 				return err
 			}
 		}

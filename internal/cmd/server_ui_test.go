@@ -6,8 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nimbu/cli/internal/api"
+	"github.com/nimbu/cli/internal/config"
 	"github.com/nimbu/cli/internal/output"
 )
 
@@ -16,6 +20,7 @@ func TestServerPresenterPrintSummary(t *testing.T) {
 	ctx := output.WithMode(context.Background(), output.Mode{})
 	ctx = output.WithWriter(ctx, &output.Writer{Out: &buf, Err: &buf, Color: "never"})
 
+	forceBannerTerminal(t, true)
 	presenter := newServerPresenter(ctx, false)
 	presenter.PrintBanner()
 	presenter.PrintSummary(serverSummary{
@@ -148,6 +153,7 @@ func TestServerPresenterPrintSummaryShowsShortcutHint(t *testing.T) {
 		SiteLabel: "demo",
 	}
 	summary.Shortcuts = serverShortcutLinksFromSummary(summary)
+	summary.Shortcuts.Active = true
 	presenter.PrintSummary(summary)
 
 	got := buf.String()
@@ -157,7 +163,7 @@ func TestServerPresenterPrintSummaryShowsShortcutHint(t *testing.T) {
 	if strings.Contains(got, "live site:") {
 		t.Fatalf("did not expect separate live site line, got: %s", got)
 	}
-	if !strings.Contains(got, "[o] open dev  [l] open live  [b] open admin") {
+	if !strings.Contains(got, "[o] open dev  [l] open live  [b] open admin  [enter] mark  [?] help  [q] quit") {
 		t.Fatalf("expected shortcut hint in output, got: %s", got)
 	}
 }
@@ -174,6 +180,7 @@ func TestServerPresenterPrintSummaryKeepsLiveSiteForCustomHost(t *testing.T) {
 		SiteHost: "preview.custom.example.com",
 	}
 	summary.Shortcuts = serverShortcutLinksFromSummary(summary)
+	summary.Shortcuts.Active = true
 	presenter.PrintSummary(summary)
 
 	got := buf.String()
@@ -199,13 +206,14 @@ func TestServerPresenterPrintSummaryHidesDevShortcutWithoutReadyURL(t *testing.T
 		SiteHost: "demo.nimbu.io",
 	}
 	summary.Shortcuts = serverShortcutLinksFromSummary(summary)
+	summary.Shortcuts.Active = true
 	presenter.PrintSummary(summary)
 
 	got := buf.String()
 	if strings.Contains(got, "[o] open dev") {
 		t.Fatalf("did not expect dev shortcut in output, got: %s", got)
 	}
-	if !strings.Contains(got, "[l] open live  [b] open admin") {
+	if !strings.Contains(got, "[l] open live  [b] open admin  [enter] mark") {
 		t.Fatalf("expected live/admin shortcuts in output, got: %s", got)
 	}
 }
@@ -230,7 +238,7 @@ func TestServerPresenterDisabledForMachineModes(t *testing.T) {
 			presenter := newServerPresenter(ctx, tc.events)
 			presenter.PrintBanner()
 			presenter.PrintSummary(serverSummary{SiteHost: "acme.nimbu.io", ProxyURL: "http://127.0.0.1:4568"})
-			presenter.PrintShutdownNotice()
+			presenter.PrintStopping("", "")
 			presenter.PrintGoodbye()
 
 			if buf.Len() != 0 {
@@ -296,5 +304,192 @@ func TestDisplayPathFromRoot(t *testing.T) {
 	outside := filepath.FromSlash("/outside/project")
 	if got := displayPathFromRoot(root, outside); got != outside {
 		t.Fatalf("expected absolute fallback, got %q", got)
+	}
+}
+
+func TestFormatServerChildCommandTruncatesByCellWidth(t *testing.T) {
+	short := formatServerChildCommand("yarn", []string{"dev"})
+	if short != "yarn dev" {
+		t.Fatalf("short command = %q", short)
+	}
+
+	// 'é' is two bytes; a byte cut at 85 would split it into invalid UTF-8.
+	args := []string{strings.Repeat("é", 120)}
+	got := formatServerChildCommand("node", args)
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncated command is not valid UTF-8: %q", got)
+	}
+	if w := ansi.StringWidth(got); w != 88 {
+		t.Fatalf("width = %d, want 88: %q", w, got)
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Fatalf("expected ellipsis tail, got %q", got)
+	}
+
+	// Wide runes take two cells each; the result must still fit 88 columns.
+	wide := formatServerChildCommand("node", []string{strings.Repeat("界", 80)})
+	if w := ansi.StringWidth(wide); w > 88 {
+		t.Fatalf("wide width = %d, want <= 88: %q", w, wide)
+	}
+	if !utf8.ValidString(wide) {
+		t.Fatalf("wide command is not valid UTF-8: %q", wide)
+	}
+}
+
+// fakeBannerBackground answers the background lookup without a terminal.
+func fakeBannerBackground(t *testing.T, dark bool) {
+	t.Helper()
+	orig := lookupBannerBackground
+	lookupBannerBackground = func(*output.Writer) bool { return dark }
+	t.Cleanup(func() { lookupBannerBackground = orig })
+}
+
+func serverColorContext(t *testing.T, buf *bytes.Buffer, theme string) context.Context {
+	t.Helper()
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("COLORTERM", "truecolor")
+	cfg := config.Defaults()
+	cfg.BannerTheme = theme
+	ctx := output.WithMode(context.Background(), output.Mode{})
+	ctx = output.WithWriter(ctx, &output.Writer{Out: buf, Err: buf, Color: "always"})
+	return context.WithValue(ctx, configKey{}, &cfg)
+}
+
+// The line-path banner follows the background: a light terminal gets the
+// theme's light palette and the light chrome palette.
+func TestServerPresenterBannerUsesLightPaletteOnLightBackground(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := serverColorContext(t, &buf, "sakura")
+	forceBannerTerminal(t, true)
+	fakeBannerBackground(t, false)
+
+	newServerPresenter(ctx, false).PrintBanner()
+	theme, _ := BannerThemeByName("sakura")
+	got := buf.String()
+	if !strings.Contains(got, rgbSGR(theme.Light[0])) {
+		t.Fatalf("banner does not use the light palette %v:\n%q", theme.Light, got)
+	}
+	if strings.Contains(got, rgbSGR(theme.Palette[0])) {
+		t.Fatal("banner still uses the dark palette on a light background")
+	}
+
+	presenter := newServerPresenter(ctx, false)
+	presenter.PrintBanner()
+	buf.Reset()
+	presenter.PrintStopping("", "")
+	if !strings.Contains(buf.String(), rgbSGR(output.PaletteFor(false).Muted)) {
+		t.Fatalf("chrome does not use the light muted color: %q", buf.String())
+	}
+}
+
+// Building the presenter never asks the terminal anything: nimbu server
+// builds it before checking the site and login, and a terminal that never
+// answers would stall even a command that is about to fail. The query waits
+// for PrintBanner.
+func TestServerPresenterDefersBackgroundQueryToBanner(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := serverColorContext(t, &buf, "sakura")
+	forceBannerTerminal(t, true)
+	queried := 0
+	orig := lookupBannerBackground
+	lookupBannerBackground = func(*output.Writer) bool {
+		queried++
+		return false
+	}
+	t.Cleanup(func() { lookupBannerBackground = orig })
+
+	presenter := newServerPresenter(ctx, false)
+	if queried != 0 {
+		t.Fatalf("background queried %d times while building the presenter", queried)
+	}
+	presenter.PrintBanner()
+	if queried == 0 {
+		t.Fatal("PrintBanner did not resolve the background")
+	}
+}
+
+// Without the banner (not a terminal, CI) nothing queries the background.
+func TestServerPresenterSkipsBackgroundQueryWithoutBanner(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := serverColorContext(t, &buf, "sakura")
+	forceBannerTerminal(t, false)
+	orig := lookupBannerBackground
+	lookupBannerBackground = func(*output.Writer) bool {
+		t.Fatal("background queried without a banner")
+		return true
+	}
+	t.Cleanup(func() { lookupBannerBackground = orig })
+	newServerPresenter(ctx, false).PrintBanner()
+}
+
+// Values keep the terminal's foreground (a near-white hex vanished on light
+// backgrounds), and on a 256-color terminal no 24-bit sequence is emitted.
+func TestServerPresenterChromeFollowsProfileAndKeepsTextColor(t *testing.T) {
+	skipColorDepthOnWindows(t)
+	var buf bytes.Buffer
+	ctx := serverColorContext(t, &buf, "rainbow")
+	t.Setenv("COLORTERM", "")
+	forceBannerTerminal(t, true)
+	fakeBannerBackground(t, true)
+
+	presenter := newServerPresenter(ctx, false)
+	presenter.PrintBanner()
+	presenter.PrintSummary(serverSummary{
+		APIHost:  "staging-api.nimbu.io",
+		ProxyURL: "http://127.0.0.1:4568",
+		ReadyURL: "http://127.0.0.1:3456",
+		SiteHost: "demo.nimbu.io",
+	})
+	presenter.PrintReady("http://localhost:4568")
+	got := buf.String()
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatalf("expected colored chrome, got %q", got)
+	}
+	if strings.Contains(got, "38;2;") {
+		t.Fatalf("256-color terminal got 24-bit sequences: %q", got)
+	}
+	if !strings.Contains(got, " staging-api.nimbu.io\n") {
+		t.Fatalf("summary value should be uncolored, got %q", got)
+	}
+}
+
+// rgbSGR is the 24-bit foreground parameter for hex, without the terminator
+// (termenv may append bold to the same sequence).
+func rgbSGR(hex string) string {
+	return strings.TrimSuffix(truecolorFG(hex), "m")
+}
+
+// Regression: on a terminal narrower than the frame (init --no-input, nimbu
+// server at 40 columns) every banner row wrapped into fragments.
+func TestServerPresenterBannerFitsNarrowTerminal(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := output.WithMode(context.Background(), output.Mode{})
+	ctx = output.WithWriter(ctx, &output.Writer{Out: &buf, Err: &buf, Color: "never"})
+	forceBannerTerminal(t, true)
+
+	orig := bannerStderrWidth
+	t.Cleanup(func() { bannerStderrWidth = orig })
+
+	bannerStderrWidth = func(*output.Writer) int { return 40 }
+	newServerPresenter(ctx, false).PrintBanner()
+	narrow := buf.String()
+	if strings.Contains(narrow, "██") || strings.Contains(narrow, "+--") {
+		t.Fatalf("40 columns must not get the framed banner, got:\n%s", narrow)
+	}
+	if !strings.Contains(narrow, "nimbu ") || strings.Count(strings.TrimSpace(narrow), "\n") != 0 {
+		t.Fatalf("want a one-line title, got %q", narrow)
+	}
+	for _, line := range strings.Split(narrow, "\n") {
+		if w := utf8.RuneCountInString(line); w > 40 {
+			t.Fatalf("line wider than the terminal (%d): %q", w, line)
+		}
+	}
+
+	buf.Reset()
+	bannerStderrWidth = func(*output.Writer) int { return 80 }
+	newServerPresenter(ctx, false).PrintBanner()
+	if !strings.Contains(buf.String(), "██╗") {
+		t.Fatalf("80 columns keeps the framed banner, got:\n%s", buf.String())
 	}
 }

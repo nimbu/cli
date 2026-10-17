@@ -13,11 +13,18 @@ import (
 )
 
 type InitCmd struct {
-	Directory string `arg:"" optional:"" help:"Target directory (use '.' for the current directory); created if it does not exist. Overrides --output-dir and skips the directory-name prompt."`
-	Repo      string `help:"GitHub repo shorthand for the starterskit" default:"zenjoy/theme-starterskit"`
-	Branch    string `help:"Branch to bootstrap from" default:"main"`
-	Dir       string `help:"Use a local starterskit directory instead of cloning"`
-	OutputDir string `help:"Parent directory for the new project"`
+	Directory   string `arg:"" optional:"" help:"Target directory (use '.' for the current directory); created if it does not exist. Overrides --output-dir and skips the directory-name prompt."`
+	Repo        string `help:"GitHub repo shorthand for the starterskit" default:"zenjoy/theme-starterskit"`
+	Branch      string `help:"Branch to bootstrap from" default:"main"`
+	Dir         string `help:"Use a local starterskit directory instead of cloning"`
+	OutputDir   string `help:"Parent directory for the new project"`
+	Theme       string `help:"Theme to scaffold for (ID, short name or name); asked when omitted, required with --no-input. Pick the site with --site."`
+	Repeatables string `help:"Repeatables to copy: none, all, or comma-separated ids; asked when omitted (default none with --no-input)" placeholder:"none|all|IDS"`
+	Bundles     string `help:"Bundles to include: none or comma-separated ids; asked when omitted (default none with --no-input)" placeholder:"none|IDS"`
+	OnConflict  string `name:"on-conflict" help:"In-place init: what to do with files that already exist (ask, overwrite, keep)" enum:"ask,overwrite,keep" default:"ask"`
+
+	// siteFromEnv: --site was not on the command line, NIMBU_SITE filled it.
+	siteFromEnv bool
 }
 
 type initResult struct {
@@ -49,14 +56,22 @@ type initAnswers struct {
 	Confirmed      bool
 }
 
+// initPrompter asks the line-mode (non-TTY) questions one at a time. Each
+// question is only asked when no flag answered it.
 type initPrompter interface {
-	Run(initPromptModel) (initAnswers, error)
+	ChooseSite(choices []initSiteChoice) (int, error)
+	ChooseTheme(choices []initThemeChoice) (int, error)
+	DirectoryName(defaultName string) (string, error)
+	Repeatables(options []bootstrap.Repeatable) ([]string, error)
+	Bundles(options []bootstrap.Bundle) ([]string, error)
+	Confirm(source, outputPath string) (bool, error)
 	// ResolveConflicts asks which of the conflicting (already-existing) files
 	// may be overwritten. It returns the set of source-relative paths the user
 	// declined to overwrite (kept as-is).
 	ResolveConflicts(conflicts []string) (map[string]struct{}, error)
 }
 
+// initPromptModel feeds the TTY wizard's prompts.
 type initPromptModel struct {
 	Sites                []initSiteChoice
 	Themes               []initThemeChoice
@@ -75,14 +90,33 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err := requireWrite(flags, "bootstrap project"); err != nil {
 		return err
 	}
-	if flags != nil && flags.NoInput {
-		return fmt.Errorf("init is interactive only; remove --no-input")
-	}
+	noInput := flags != nil && flags.NoInput
 	writer := output.WriterFromContext(ctx)
-	if output.IsHuman(ctx) && writer != nil && writer.ErrIsTTY() && stdinIsTerminal() {
+	if initWizardUsable(ctx, writer, noInput) {
 		return c.runInteractiveTTY(ctx, flags)
 	}
+	presets := c.presets(flags).nonInteractive()
+	if noInput {
+		if missing := presets.missingForNoInput(); len(missing) > 0 {
+			return &ExitError{Code: ExitUsage, Err: initNoInputError(missing)}
+		}
+	}
+	return c.runLines(ctx, presets, noInput)
+}
 
+// initWizardUsable reports whether the full-screen wizard can run: a human
+// output mode, stdin and stderr terminals, and a terminal with cursor control
+// (TERM=dumb gets the line prompts instead). --no-input never prompts.
+func initWizardUsable(ctx context.Context, writer *output.Writer, noInput bool) bool {
+	if noInput || !output.IsHuman(ctx) || writer == nil || output.DumbTerminal() {
+		return false
+	}
+	return writer.ErrIsTTY() && stdinIsTerminal()
+}
+
+// runLines is the non-TTY path: flags answer what they can, the line prompter
+// asks the rest, and with --no-input nothing is asked at all.
+func (c *InitCmd) runLines(ctx context.Context, presets initPresets, noInput bool) error {
 	// Resolve and validate the positional target up front so an invalid target
 	// fails before any starterskit clone.
 	fixedTarget, fixed, err := c.resolveFixedTarget()
@@ -94,6 +128,7 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
+	// The presenter applies the shared banner rule (ShouldShowBanner).
 	newServerPresenter(ctx, false).PrintBanner()
 
 	progress := output.ProgressFromContext(ctx)
@@ -102,10 +137,21 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if strings.TrimSpace(c.Dir) == "" {
 		cloneTask = progress.Phase("Cloning starterskit")
 	}
-	sourceDir, sourceLabel, cleanup, err := c.resolveSource()
+	// Ctrl-C/SIGTERM while cloning cancel ctx (the root handler owns the
+	// signals), which stops the clone (in its own process group); its temp
+	// dir is removed instead of being orphaned.
+	sourceDir, sourceLabel, cleanup, err := c.resolveSource(ctx)
+	cloneInterrupted := interrupted(ctx)
+	if err == nil && cloneInterrupted {
+		cleanup()
+		err = errInitCancelled
+	}
 	if err != nil {
 		if cloneTask != nil {
 			cloneTask.Fail(err)
+		}
+		if cloneInterrupted {
+			return &ExitError{Code: initExitInterrupted, Err: errInitCancelled}
 		}
 		return err
 	}
@@ -121,6 +167,19 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	manifestTask.Done("done")
+
+	// Validate flag answers against the manifest before any API call.
+	var repeatableIDs, bundleIDs []string
+	if presets.Repeatables != "" {
+		if repeatableIDs, err = parseInitRepeatables(presets.Repeatables, manifest.Repeatables); err != nil {
+			return &ExitError{Code: ExitUsage, Err: err}
+		}
+	}
+	if presets.Bundles != "" {
+		if bundleIDs, err = parseInitBundles(presets.Bundles, manifest.Bundles); err != nil {
+			return &ExitError{Code: ExitUsage, Err: err}
+		}
+	}
 
 	outputDir, err := c.resolveOutputDir()
 	if err != nil {
@@ -140,24 +199,18 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	prompter := newInitPrompter(ctx)
-	promptModel := initPromptModel{
-		Sites:                initSiteChoices(sites),
-		BundleOptions:        manifest.Bundles,
-		RepeatableOptions:    manifest.Repeatables,
-		OutputDir:            outputDir,
-		Source:               sourceLabel,
-		DefaultDirectoryName: "theme-" + parameterize(sites[0].Subdomain),
-		FixedTarget:          fixedTarget,
-	}
 
-	answers, err := prompter.Run(promptModel)
-	if err != nil {
-		return err
-	}
-
-	selectedSite, ok := findSiteByID(sites, answers.SiteID)
-	if !ok {
-		return fmt.Errorf("selected site %q not found", answers.SiteID)
+	var selectedSite api.Site
+	if presets.Site != "" {
+		if selectedSite, err = matchInitSite(sites, presets.Site); err != nil {
+			return &ExitError{Code: ExitUsage, Err: err}
+		}
+	} else {
+		idx, err := prompter.ChooseSite(initSiteChoices(sites))
+		if err != nil {
+			return err
+		}
+		selectedSite = sites[idx]
 	}
 
 	themeClient, err := GetAPIClientWithSite(ctx, selectedSite.ID)
@@ -172,25 +225,52 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("no themes found for site %s", selectedSite.ID)
 	}
 
-	promptModel.Sites = initSiteChoices([]api.Site{selectedSite})
-	promptModel.Themes = initThemeChoices(themes)
-	promptModel.DefaultDirectoryName = "theme-" + parameterize(selectedSite.Subdomain)
-	answers, err = prompter.Run(promptModel)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(answers.DirectoryName) == "" {
-		answers.DirectoryName = promptModel.DefaultDirectoryName
-	}
-
-	selectedTheme, ok := findThemeByID(themes, answers.ThemeID)
-	if !ok {
-		return fmt.Errorf("selected theme %q not found", answers.ThemeID)
+	var selectedTheme api.Theme
+	switch {
+	case presets.Theme != "":
+		if selectedTheme, err = matchInitTheme(themes, presets.Theme); err != nil {
+			return &ExitError{Code: ExitUsage, Err: err}
+		}
+	case len(themes) == 1:
+		selectedTheme = themes[0]
+	default:
+		idx, err := prompter.ChooseTheme(initThemeChoices(themes))
+		if err != nil {
+			return err
+		}
+		selectedTheme = themes[idx]
 	}
 
 	finalPath := fixedTarget
 	if !fixed {
-		finalPath = filepath.Join(outputDir, answers.DirectoryName)
+		name := "theme-" + parameterize(selectedSite.Subdomain)
+		if !noInput {
+			if name, err = prompter.DirectoryName(name); err != nil {
+				return err
+			}
+		}
+		finalPath = filepath.Join(outputDir, name)
+	}
+
+	if presets.Repeatables == "" && !noInput && len(manifest.Repeatables) > 0 {
+		if repeatableIDs, err = prompter.Repeatables(manifest.Repeatables); err != nil {
+			return err
+		}
+	}
+	if presets.Bundles == "" && !noInput && len(manifest.Bundles) > 0 {
+		if bundleIDs, err = prompter.Bundles(manifest.Bundles); err != nil {
+			return err
+		}
+	}
+
+	if !noInput {
+		confirmed, err := prompter.Confirm(sourceLabel, finalPath)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			return errInitCancelled
+		}
 	}
 
 	opts := bootstrap.BootstrapOptions{
@@ -199,9 +279,11 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 		DestinationDir: finalPath,
 		Site:           siteConfigValue(selectedSite),
 		Theme:          themeConfigValue(selectedTheme),
-		BundleIDs:      answers.BundleIDs,
-		RepeatableIDs:  answers.RepeatableIDs,
+		BundleIDs:      bundleIDs,
+		RepeatableIDs:  repeatableIDs,
 		AllowExisting:  inPlace,
+		// Ctrl-C/SIGTERM cancel ctx, which kills a git step still running.
+		Context: ctx,
 	}
 	if inPlace {
 		conflicts, err := planConflicts(opts, finalPath)
@@ -209,15 +291,25 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 			return err
 		}
 		if len(conflicts) > 0 {
-			skip, err := prompter.ResolveConflicts(conflicts)
-			if err != nil {
-				return err
+			switch {
+			case presets.OnConflict != initConflictAsk:
+				opts.SkipPaths = conflictSkipSet(presets.OnConflict, conflicts)
+			case noInput:
+				return &ExitError{Code: ExitUsage, Err: fmt.Errorf("%d file(s) already exist in %s (%s); pass --on-conflict overwrite or --on-conflict keep", len(conflicts), finalPath, summarizeConflicts(conflicts))}
+			default:
+				skip, err := prompter.ResolveConflicts(conflicts)
+				if err != nil {
+					return err
+				}
+				opts.SkipPaths = skip
 			}
-			opts.SkipPaths = skip
 		}
 	}
 
 	result, err := bootstrap.BootstrapProject(opts)
+	if interrupted(ctx) {
+		return &ExitError{Code: initExitInterrupted, Err: fmt.Errorf("init interrupted; the project may be partially written to %s", finalPath)}
+	}
 	if err != nil {
 		return err
 	}
@@ -232,7 +324,16 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 	})
 }
 
-func (c *InitCmd) resolveSource() (string, string, func(), error) {
+// summarizeConflicts lists the first few conflicting paths for an error message.
+func summarizeConflicts(conflicts []string) string {
+	const shown = 3
+	if len(conflicts) <= shown {
+		return strings.Join(conflicts, ", ")
+	}
+	return fmt.Sprintf("%s, and %d more", strings.Join(conflicts[:shown], ", "), len(conflicts)-shown)
+}
+
+func (c *InitCmd) resolveSource(ctx context.Context) (string, string, func(), error) {
 	if strings.TrimSpace(c.Dir) != "" {
 		dir, err := filepath.Abs(c.Dir)
 		if err != nil {
@@ -250,7 +351,7 @@ func (c *InitCmd) resolveSource() (string, string, func(), error) {
 	}
 	cleanup := func() { _ = os.RemoveAll(tempDir) }
 	sourceDir := filepath.Join(tempDir, "source")
-	if err := cloneStarterRepo(sourceDir, c.Repo, c.Branch); err != nil {
+	if err := cloneStarterRepo(ctx, sourceDir, c.Repo, c.Branch); err != nil {
 		cleanup()
 		return "", "", nil, err
 	}

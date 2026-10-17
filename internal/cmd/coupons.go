@@ -6,6 +6,6 @@ type CouponsCmd struct {
 	Get    CouponsGetCmd    `cmd:"" help:"Get coupon details"`
 	Create CouponsCreateCmd `cmd:"" help:"Create coupon from JSON"`
 	Update CouponsUpdateCmd `cmd:"" help:"Update coupon"`
-	Delete CouponsDeleteCmd `cmd:"" help:"Delete coupon"`
+	Delete CouponsDeleteCmd `cmd:"" help:"Delete coupon (requires --force)"`
 	Count  CouponsCountCmd  `cmd:"" help:"Count coupons"`
 }

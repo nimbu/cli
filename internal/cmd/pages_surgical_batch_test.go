@@ -283,6 +283,7 @@ func TestPagesBatchHelpDocumentsOpsAndExample(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("NIMBU_COLOR", "never")
+	t.Setenv("COLUMNS", "80") // help wraps to the terminal; pin the width the needles were written for
 
 	code, stdout, stderr := captureExecute(t, []string{"pages", "batch", "--help"})
 	if code != 0 {

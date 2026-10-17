@@ -180,6 +180,11 @@ dev:
 
 CLI flags (`--cmd`, `--proxy-port`, `--no-watch`, `--draft`, etc.) override nimbu.yml values.
 
+### Running and stopping
+
+- The first Ctrl-C or SIGTERM (or `q` in a terminal) stops the proxy and the child gracefully, then exits 0. A second Ctrl-C force-kills the child's whole process tree, background jobs included, so nothing keeps holding the port.
+- In an interactive terminal the child's output is piped through nimbu with a `dev │` prefix, and the child gets `FORCE_COLOR` to keep its colors unless you set `FORCE_COLOR`/`NO_COLOR` yourself. Dev servers that behave differently on a TTY see a pipe there. Piped, `--json` or `--plain` runs pass child output through raw.
+
 ### Draft preview (`--draft`)
 
 `nimbu server --draft <page>` (repeatable) requests a draft preview token for each listed page at startup and injects `?preview=` on matching local URLs (the page fullpath, locale prefixes such as `/en/…`, and `translations.*.fullpath`). Child paths are not matched. The simulator already honours `?preview=<token>` when the browser URL carries it. Startup fails if page drafts are disabled or the page has no draft.

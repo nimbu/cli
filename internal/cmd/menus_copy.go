@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 
@@ -40,7 +41,7 @@ func (c *MenusCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	overwrite := flags != nil && flags.Force
+	overwrite := confirmedByFlag(flags)
 	if !overwrite && c.Slug != "" && c.Slug != "*" {
 		var existing api.MenuDocument
 		path := "/menus/" + url.PathEscape(c.Slug)
@@ -61,7 +62,7 @@ func (c *MenusCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	result, err := migrate.CopyMenus(ctx, fromClient, toClient, fromRef, toRef, c.Slug, overwrite, nil, false)
 	if err != nil {
-		return finishCopyTimelineError(tl, err)
+		return finishCopyTimelineError(tl, menuCopyError(err, toRef.Site))
 	}
 	finishCopyTimeline(tl, "Menus", fmt.Sprintf("%d synced", len(result.Items)))
 	if tl != nil {
@@ -73,7 +74,7 @@ func (c *MenusCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	for _, item := range result.Items {
 		if mode.Plain {
-			if _, err := output.Fprintf(ctx, "%s\t%s\n", item.Action, item.Slug); err != nil {
+			if err := output.Plain(ctx, item.Action, item.Slug); err != nil {
 				return err
 			}
 			continue
@@ -83,4 +84,15 @@ func (c *MenusCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 		}
 	}
 	return nil
+}
+
+// menuCopyError types the refusal to replace an existing menu as
+// cli.confirmation_required, like every other --force guard.
+func menuCopyError(err error, target string) error {
+	var exists *migrate.ExistingMenuError
+	if errors.As(err, &exists) {
+		return confirmationRequiredError(
+			fmt.Sprintf("menu %s already exists on %s; refusing to overwrite without --force", exists.Slug, target), "--force")
+	}
+	return err
 }

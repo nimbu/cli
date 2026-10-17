@@ -5,7 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/nimbu/cli/internal/api"
@@ -31,18 +34,22 @@ func TestPhase1ListFooterSnapshots(t *testing.T) {
 	} {
 		fmt.Fprintf(&sb, "## mode=%s\n", mode.name)
 		for _, resource := range resources {
-			buf := &bytes.Buffer{}
-			ctx := output.WithWriter(context.Background(), &output.Writer{Out: buf, Err: buf, Mode: mode.cfg})
+			stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+			ctx := output.WithWriter(context.Background(), &output.Writer{Out: stdout, Err: stderr, Mode: mode.cfg})
 			ctx = output.WithMode(ctx, mode.cfg)
 			meta := listFooterMeta{Page: 1, PerPage: 25, Returned: 25, Total: 100, TotalKnown: true}
+			noteMoreResults(ctx, resource, meta)
 			if err := writeListFooter(ctx, resource, meta); err != nil {
 				t.Fatalf("write footer: %v", err)
 			}
-			line := strings.TrimSpace(buf.String())
+			if stdout.Len() != 0 {
+				t.Fatalf("footer must never reach stdout, got %q", stdout.String())
+			}
+			line := strings.TrimSpace(stderr.String())
 			if line == "" {
 				line = "<empty>"
 			}
-			fmt.Fprintf(&sb, "%s => %s\n", resource, line)
+			fmt.Fprintf(&sb, "%s => stderr: %s\n", resource, line)
 		}
 		sb.WriteString("\n")
 	}
@@ -58,7 +65,13 @@ func TestPhase1ErrorContractSnapshots(t *testing.T) {
 		{name: "api_not_found", err: &api.Error{StatusCode: 404, Message: "not found", Code: "object_not_found"}},
 		{name: "api_rate_limited", err: &api.Error{StatusCode: 429, Message: "rate limited"}},
 		{name: "scope_missing", err: &scopeMissingError{Required: []string{"read_products"}, Sample: "Example: nimbu auth scopes"}},
-		{name: "validation_local", err: fmt.Errorf("site required")},
+		{name: "validation_local", err: fmt.Errorf("--file required")},
+		{name: "site_required", err: siteRequiredError(errProjectHasNoSite)},
+		{name: "confirmation_required", err: requireForce(&RootFlags{}, "channel news")},
+		{name: "network_refused", err: &api.Error{Message: "dial tcp: connection refused", Err: &url.Error{Op: "Get", URL: "https://api.test/sites", Err: &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}}}},
+		{name: "network_timeout", err: &api.Error{Message: "deadline", Err: &url.Error{Op: "Get", URL: "https://api.test/sites", Err: context.DeadlineExceeded}}},
+		{name: "local_text_mentions_timeout", err: fmt.Errorf("parse timeout: connection setting unknown")},
+		{name: "interrupted", err: &interruptedError{err: fmt.Errorf("push theme: upload failed")}},
 	}
 
 	var sb strings.Builder

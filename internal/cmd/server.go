@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/signal"
 	"time"
 
 	"golang.org/x/term"
@@ -13,6 +12,7 @@ import (
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/devproxy"
 	"github.com/nimbu/cli/internal/devserver"
+	"github.com/nimbu/cli/internal/output"
 )
 
 // ServerCmd starts the local simulator proxy and child dev server.
@@ -41,7 +41,12 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 	for _, warning := range warnings {
 		_, _ = fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
 	}
+	writer := output.WriterFromContext(ctx)
 	presenter := newServerPresenter(ctx, c.EventsJSON)
+	streams := newServerStreams(writer, presenter.Enabled())
+	// Deferred first so it runs last: flush child lines after the child exited.
+	defer streams.Close()
+	presenter.SetOutput(streams.err)
 
 	site, err := RequireSite(ctx, "")
 	if err != nil {
@@ -63,6 +68,7 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		APIURL:            client.BaseURL,
 		Debug:             flags.Debug,
 		DevToken:          runtimeCfg.DevToken,
+		Diagnostics:       streams.err,
 		EventsJSON:        c.EventsJSON,
 		ExcludeRules:      runtimeCfg.RouteExclude,
 		Host:              runtimeCfg.ProxyHost,
@@ -70,9 +76,10 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		MaxBodyBytes:      int64(runtimeCfg.MaxBodyMB) << 20,
 		Port:              runtimeCfg.ProxyPort,
 		QuietRequests:     runtimeCfg.QuietRequests,
+		RequestLog:        streams.out,
 		Site:              site,
 		TemplateRoot:      runtimeCfg.TemplateRoot,
-		UseColor:          presenter.UseColor(),
+		UseColor:          streams.requestLogColor,
 		UserAgent:         "nimbu-go-cli",
 		Watch:             runtimeCfg.Watch,
 		WatchScanInterval: runtimeCfg.WatchScanInterval,
@@ -87,7 +94,12 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err := proxy.Start(); err != nil {
 		return err
 	}
-	defer stopDevProxy(proxy)
+	forced := false
+	defer func() {
+		if !forced {
+			stopDevProxy(proxy)
+		}
+	}()
 
 	proxyURL, err := url.Parse(proxy.URL())
 	if err != nil {
@@ -95,6 +107,7 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	childEnv := buildServerChildEnv(runtimeCfg, proxyURL, proxy.URL(), site)
+	applyServerChildColorEnv(childEnv, streams.childForceColor, os.Getenv)
 
 	summary := serverSummary{
 		APIHost:      serverAPIHost(client.BaseURL),
@@ -108,20 +121,40 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		summary.ChildCWD = cwd
 	}
 
-	interactiveShortcuts := presenter.Enabled() && term.IsTerminal(int(os.Stdin.Fd()))
+	// From here on the server owns every stop signal: the root handler
+	// forwards SIGINT/SIGTERM instead of canceling ctx or force-exiting, so the
+	// first one stops gracefully and the second forces the stop below, each
+	// counted once. Claimed before shortcut mode so no signal can reach the
+	// root's force exit while the terminal is in no-echo input mode.
+	sigCh, releaseSignals := claimInterrupts(serverShutdownSignals()...)
+	defer releaseSignals()
+	if err := ctx.Err(); err != nil {
+		// Interrupted before the claim (during login or proxy start).
+		return err
+	}
+
+	stdinTTY := term.IsTerminal(int(os.Stdin.Fd()))
+	interactiveShortcuts := presenter.Enabled() && stdinTTY
 	shortcutLinks := serverShortcutLinksFromSummary(summary)
 	var shortcutListener *serverShortcutListener
-	if interactiveShortcuts && shortcutLinks.Hint() != "" {
+	if interactiveShortcuts {
 		shortcutListener, err = newServerShortcutListener()
 		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "warning: shortcut input unavailable: %s\n", err)
+			_, _ = fmt.Fprintf(streams.err, "warning: shortcut input unavailable: %s\n", err)
 		} else {
 			defer func() {
 				if closeErr := shortcutListener.Close(); closeErr != nil {
-					_, _ = fmt.Fprintf(os.Stderr, "warning: restore shortcut input: %s\n", closeErr)
+					_, _ = fmt.Fprintf(streams.err, "warning: restore shortcut input: %s\n", closeErr)
 				}
 			}()
+			// A forced exit skips the Close above; give the terminal back
+			// its echo and line mode anyway.
+			defer registerTerminalRestore(func() { _ = shortcutListener.Close() })()
+			// Panics on this goroutine unwind through the Close above; panics
+			// on goroutines nimbu starts are covered by RestoreOnPanic.
+			defer watchServerSuspend(shortcutListener)()
 			summary.Shortcuts = shortcutLinks
+			summary.Shortcuts.Active = true
 		}
 	}
 
@@ -135,11 +168,9 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		CWD:      runtimeCfg.ChildCWD,
 		Env:      childEnv,
 		ReadyURL: runtimeCfg.ReadyURL,
+		Stdout:   streams.childOut,
+		Stderr:   streams.childErr,
 	})
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, serverShutdownSignals()...)
-	defer signal.Stop(sigCh)
 
 	if err := child.Start(); err != nil {
 		return err
@@ -147,12 +178,18 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 	defer func() {
 		_ = child.Stop(5 * time.Second)
 	}()
+	if shortcutListener != nil {
+		ignoreServerBackgroundReads()
+	}
 
+	// The goroutine owns its channel value: the loop below sets readyCh to nil
+	// once consumed, which must not race with the send.
 	readyCh := make(chan error, 1)
-	go func() {
-		readyCh <- child.WaitReady(ctx, runtimeCfg.ReadyTimeout)
-		close(readyCh)
-	}()
+	go func(ready chan<- error) {
+		defer shortcutListener.RestoreOnPanic()
+		ready <- child.WaitReady(ctx, runtimeCfg.ReadyTimeout)
+		close(ready)
+	}(readyCh)
 
 	shortcutReady := false
 	var childExitCh <-chan error
@@ -162,36 +199,87 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 		shortcutEvents = shortcutListener.Events()
 		shortcutErrors = shortcutListener.Errors()
 	}
+	proxyErrors := proxy.Errors()
 
-	shutdown := func(signalName string) error {
-		if presenter.Enabled() {
-			presenter.PrintShutdownNotice()
-		} else if signalName != "" {
-			_, _ = fmt.Fprintf(os.Stderr, "received signal: %s\n", signalName)
-		}
+	stop := &serverStop{graceful: func() {
 		_ = child.Stop(5 * time.Second)
 		stopDevProxy(proxy)
-		presenter.PrintGoodbye()
-		return nil
+	}}
+	// failErr is the error Run returns once a failure-driven stop finished.
+	var failErr error
+	// fail stops in the background, like a stop request, so Ctrl-C can still
+	// force the stop while the child gets its grace period.
+	fail := func(err error) {
+		failErr = err
+		stop.Begin(shortcutListener)
 	}
+	// forceStop kills the child and the proxy and gives the terminal back.
+	forceStop := func(stopErr error) error {
+		forced = true
+		presenter.PrintForceStop()
+		_ = child.Kill(2 * time.Second)
+		_ = proxy.Close()
+		if closeErr := shortcutListener.Close(); closeErr != nil {
+			_, _ = fmt.Fprintf(streams.err, "warning: restore shortcut input: %s\n", closeErr)
+		}
+		if failErr != nil {
+			// Forced while cleaning up after a failure: the cause matters more.
+			return failErr
+		}
+		return stopErr
+	}
+	// requestStop handles Ctrl-C, SIGTERM/SIGHUP and 'q'. The first request
+	// stops gracefully in the background; a second one forces the stop.
+	requestStop := func(sig os.Signal) error {
+		if stop.Begin(shortcutListener) {
+			presenter.PrintStopping(serverSignalName(sig), serverForceHint(sig, stdinTTY))
+			return nil
+		}
+		return forceStop(errServerForceStopped)
+	}
+	stdoutClosed := streams.stdoutClosed
 
 	for {
 		select {
 		case sig := <-sigCh:
-			return shutdown(sig.String())
+			switch {
+			case isServerPipeSignal(sig):
+				// The failed write reports EPIPE; stdoutClosed acts on it.
+				continue
+			case isServerQuitSignal(sig):
+				return forceStop(errServerQuit)
+			}
+			if err := requestStop(sig); err != nil {
+				return err
+			}
+		case <-stdoutClosed:
+			// Whoever read the output is gone (`nimbu server | head`). Stop
+			// gracefully; later failed writes are no second stop request.
+			stdoutClosed = nil
+			if !stop.Stopping() {
+				stop.Begin(shortcutListener)
+				presenter.PrintStopping("stdout closed", serverForceHint(nil, stdinTTY))
+			}
+		case <-stop.Done():
+			if failErr != nil {
+				return failErr
+			}
+			presenter.PrintGoodbye()
+			return nil
 		case err, ok := <-readyCh:
-			if !ok {
-				readyCh = nil
+			readyCh = nil
+			if !ok || stop.Stopping() {
 				continue
 			}
-			readyCh = nil
 			if err != nil {
-				_ = child.Stop(5 * time.Second)
-				return err
+				fail(err)
+				continue
 			}
 			shortcutReady = true
 			childExitCh = child.ExitCh()
-			if !presenter.Enabled() {
+			if presenter.Enabled() {
+				presenter.PrintReady(serverReadyTarget(summary))
+			} else {
 				_, _ = fmt.Fprintf(os.Stderr, "proxy ready: %s\n", proxy.URL())
 				if runtimeCfg.ReadyURL != "" {
 					_, _ = fmt.Fprintf(os.Stderr, "dev server ready: %s\n", runtimeCfg.ReadyURL)
@@ -203,26 +291,16 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 				continue
 			}
 			decision := decideServerShortcut(key, shortcutReady, shortcutLinks)
-			if decision.Action == serverShortcutNone {
-				continue
-			}
-			if decision.Action == serverShortcutLogMarker {
-				if err := writeServerShortcutLogMarker(os.Stdout); err != nil {
-					presenter.PrintShortcutError(fmt.Sprintf("write log marker: %v", err))
+			if decision.Action == serverShortcutQuit {
+				if err := requestStop(nil); err != nil {
+					return err
 				}
 				continue
 			}
-			if decision.Pending {
-				presenter.PrintShortcutPending()
+			if stop.Stopping() {
 				continue
 			}
-			label, target, ok := shortcutLinks.target(decision.Action)
-			if !ok {
-				continue
-			}
-			if err := openServerBrowserURL(target, nil); err != nil {
-				presenter.PrintShortcutError(fmt.Sprintf("open %s: %v", label, err))
-			}
+			c.handleShortcut(decision, shortcutLinks, presenter, streams)
 		case err, ok := <-shortcutErrors:
 			if !ok {
 				shortcutErrors = nil
@@ -231,24 +309,62 @@ func (c *ServerCmd) Run(ctx context.Context, flags *RootFlags) error {
 			if err != nil {
 				presenter.PrintShortcutError(fmt.Sprintf("shortcut input disabled: %v", err))
 			}
-		case err, ok := <-proxy.Errors():
-			if !ok || err == nil {
+		case err, ok := <-proxyErrors:
+			if !ok {
+				proxyErrors = nil
 				continue
 			}
-			_ = child.Stop(5 * time.Second)
-			return fmt.Errorf("proxy server crashed: %w", err)
+			if err == nil || stop.Stopping() {
+				continue
+			}
+			fail(fmt.Errorf("proxy server crashed: %w", err))
 		case err, ok := <-childExitCh:
-			if !ok {
-				stopDevProxy(proxy)
-				return fmt.Errorf("child dev server exited")
+			childExitCh = nil
+			if stop.Stopping() {
+				continue
 			}
-			stopDevProxy(proxy)
-			if err != nil {
-				return fmt.Errorf("child dev server exited: %w", err)
+			if ok && err != nil {
+				fail(fmt.Errorf("child dev server exited: %w", err))
+				continue
 			}
-			return fmt.Errorf("child dev server exited")
+			fail(fmt.Errorf("child dev server exited"))
 		}
 	}
+}
+
+func (c *ServerCmd) handleShortcut(decision serverShortcutDecision, links serverShortcutLinks, presenter *serverPresenter, streams *serverStreams) {
+	switch decision.Action {
+	case serverShortcutNone, serverShortcutQuit:
+		return
+	case serverShortcutLogMarker:
+		if err := writeServerShortcutLogMarker(streams.out); err != nil {
+			presenter.PrintShortcutError(fmt.Sprintf("write log marker: %v", err))
+		}
+		return
+	case serverShortcutHelp:
+		presenter.PrintShortcutHelp(links)
+		return
+	}
+	if decision.Pending {
+		presenter.PrintShortcutPending()
+		return
+	}
+	label, target, ok := links.target(decision.Action)
+	if !ok {
+		return
+	}
+	if err := openServerBrowserURL(target, nil); err != nil {
+		presenter.PrintShortcutError(fmt.Sprintf("open %s: %v", label, err))
+	}
+}
+
+// serverReadyTarget is the URL to browse once everything answers: the child
+// dev server when it has a readiness URL, otherwise the proxy.
+func serverReadyTarget(summary serverSummary) string {
+	if target := displayServerURL(summary.ReadyURL); target != "" {
+		return target
+	}
+	return displayServerURL(summary.ProxyURL)
 }
 
 func stopDevProxy(proxy *devproxy.Server) {

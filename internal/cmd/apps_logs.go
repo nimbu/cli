@@ -7,13 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
-	"os/signal"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/apps"
@@ -77,9 +73,8 @@ func (c *AppsLogsCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 func (c *AppsLogsCmd) tail(ctx context.Context, client *api.Client, appKey string, opts api.AppLogOptions) error {
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
-	defer stop()
-
+	// Ctrl-C ends the tail through ctx: the root handler cancels it on the
+	// first signal (exit 0 below) and force-exits on a second one.
 	logs, err := api.ListAppLogs(ctx, client, appKey, opts)
 	if err != nil {
 		if contextCanceled(ctx, err) {
@@ -203,7 +198,7 @@ func writeAppLog(ctx context.Context, log api.AppLog) error {
 	timestamp := appLogTimestamp(log).Format("2006-01-02 15:04:05.000")
 	level := strings.ToUpper(strings.TrimSpace(log.Level))
 	paddedLevel := fmt.Sprintf("%-5s", level)
-	paddedLevel = colorAppLogLevel(paddedLevel, level, output.WriterFromContext(ctx).UseColor())
+	paddedLevel = colorAppLogLevel(paddedLevel, level, output.WriterFromContext(ctx))
 	message := renderAppLogData(log.Data)
 	_, err := output.Fprintf(ctx, "%s %s %s\n", timestamp, paddedLevel, message)
 	return err
@@ -318,15 +313,15 @@ func formatAppLogSince(value float64) string {
 	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
-func colorAppLogLevel(paddedLevel, level string, useColor bool) string {
-	if !useColor {
-		return paddedLevel
-	}
+// colorAppLogLevel colors warning and error levels through the shared theme,
+// downsampled to stdout's color profile; the level word carries the meaning.
+func colorAppLogLevel(paddedLevel, level string, writer *output.Writer) string {
+	theme := writer.OutTheme()
 	switch level {
 	case "ERROR", "FATAL":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444")).Bold(true).Render(paddedLevel)
+		return theme.Error(paddedLevel)
 	case "WARN":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b")).Bold(true).Render(paddedLevel)
+		return theme.Warning(paddedLevel)
 	default:
 		return paddedLevel
 	}

@@ -48,7 +48,7 @@ func (c *NotificationsPushCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 	if mode.Plain {
 		for _, action := range result.Actions {
-			if _, err := output.Fprintf(ctx, "%s\t%s\n", action.Action, action.Slug); err != nil {
+			if err := output.Plain(ctx, action.Action, action.Slug); err != nil {
 				return err
 			}
 		}

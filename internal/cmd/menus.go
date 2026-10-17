@@ -6,7 +6,7 @@ type MenusCmd struct {
 	Get    MenusGetCmd    `cmd:"" help:"Get menu details"`
 	Create MenusCreateCmd `cmd:"" help:"Create menu from JSON"`
 	Update MenusUpdateCmd `cmd:"" help:"Update menu"`
-	Delete MenusDeleteCmd `cmd:"" help:"Delete menu"`
+	Delete MenusDeleteCmd `cmd:"" help:"Delete menu (requires --force)"`
 	Count  MenusCountCmd  `cmd:"" help:"Count menus"`
-	Copy   MenusCopyCmd   `cmd:"" help:"Copy menus between sites"`
+	Copy   MenusCopyCmd   `cmd:"" help:"Copy menus between sites (--force overwrites an existing menu)"`
 }

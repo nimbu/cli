@@ -5,106 +5,101 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/bootstrap"
+	"github.com/nimbu/cli/internal/output"
 )
 
+// errInitCancelled is returned when the user backs out of init.
+var errInitCancelled = errors.New("init cancelled")
+
 func newInitPrompter(ctx context.Context) initPrompter {
-	return lineInitPrompter{reader: bufio.NewReader(os.Stdin)}
+	var out io.Writer = os.Stderr
+	if writer := output.WriterFromContext(ctx); writer != nil && writer.Err != nil {
+		out = writer.Err
+	}
+	return lineInitPrompter{reader: bufio.NewReader(os.Stdin), out: out}
 }
 
 type lineInitPrompter struct {
 	reader *bufio.Reader
+	out    io.Writer
 }
 
-func (p lineInitPrompter) Run(model initPromptModel) (initAnswers, error) {
-	answers := initAnswers{}
-	if len(model.Themes) == 0 {
-		for idx, choice := range model.Sites {
-			fmt.Fprintf(os.Stderr, "[%d] %s\n", idx+1, choice.Label)
-		}
-		siteIndex, err := promptChoiceWithReader(p.reader, "Site [1]: ", len(model.Sites))
-		if err != nil {
-			return initAnswers{}, err
-		}
-		answers.SiteID = model.Sites[siteIndex].Site.ID
-		return answers, nil
+func (p lineInitPrompter) w() io.Writer {
+	if p.out == nil {
+		return os.Stderr
 	}
+	return p.out
+}
 
-	for idx, choice := range model.Themes {
-		fmt.Fprintf(os.Stderr, "[%d] %s\n", idx+1, choice.Label)
+func (p lineInitPrompter) ChooseSite(choices []initSiteChoice) (int, error) {
+	for idx, choice := range choices {
+		_, _ = fmt.Fprintf(p.w(), "[%d] %s\n", idx+1, choice.Label)
 	}
-	themeIndex, err := promptChoiceWithReader(p.reader, "Theme [1]: ", len(model.Themes))
+	return promptChoiceWithReader(p.reader, "Site [1]: ", len(choices))
+}
+
+func (p lineInitPrompter) ChooseTheme(choices []initThemeChoice) (int, error) {
+	for idx, choice := range choices {
+		_, _ = fmt.Fprintf(p.w(), "[%d] %s\n", idx+1, choice.Label)
+	}
+	return promptChoiceWithReader(p.reader, "Theme [1]: ", len(choices))
+}
+
+func (p lineInitPrompter) DirectoryName(defaultName string) (string, error) {
+	dir, err := promptWithReader(p.reader, fmt.Sprintf("Directory name [%s]: ", defaultName))
 	if err != nil {
-		return initAnswers{}, err
+		return "", err
 	}
-	answers.ThemeID = model.Themes[themeIndex].Theme.ID
-
-	if strings.TrimSpace(model.FixedTarget) == "" {
-		dir, err := promptWithReader(p.reader, fmt.Sprintf("Directory name [%s]: ", model.DefaultDirectoryName))
-		if err != nil {
-			return initAnswers{}, err
-		}
-		if strings.TrimSpace(dir) == "" {
-			dir = model.DefaultDirectoryName
-		}
-		answers.DirectoryName = dir
-	} else {
-		answers.DirectoryName = filepath.Base(model.FixedTarget)
+	if strings.TrimSpace(dir) == "" {
+		return defaultName, nil
 	}
+	return strings.TrimSpace(dir), nil
+}
 
-	repeatableMode, err := promptWithReader(p.reader, "Repeatables [none|all|select] [none]: ")
+func (p lineInitPrompter) Repeatables(options []bootstrap.Repeatable) ([]string, error) {
+	mode, err := promptWithReader(p.reader, "Repeatables [none|all|select] [none]: ")
 	if err != nil {
-		return initAnswers{}, err
+		return nil, err
 	}
-	repeatableMode = strings.TrimSpace(strings.ToLower(repeatableMode))
-	if repeatableMode == "" {
-		repeatableMode = "none"
-	}
-	answers.RepeatableMode = repeatableMode
-
-	if len(model.BundleOptions) > 0 {
-		fmt.Fprintf(os.Stderr, "Bundles: %s\n", joinBundleIDs(model.BundleOptions))
-		bundleValue, err := promptWithReader(p.reader, "Bundle ids (comma-separated, blank for none): ")
+	switch strings.TrimSpace(strings.ToLower(mode)) {
+	case "", "none":
+		return nil, nil
+	case "all":
+		return repeatableIDsForPrompt(options), nil
+	case "select":
+		_, _ = fmt.Fprintf(p.w(), "Repeatables: %s\n", joinRepeatableIDs(options))
+		value, err := promptWithReader(p.reader, "Repeatable ids (comma-separated): ")
 		if err != nil {
-			return initAnswers{}, err
+			return nil, err
 		}
-		answers.BundleIDs = splitCSVValues(bundleValue)
+		return parseInitRepeatables(value, options)
+	default:
+		return nil, fmt.Errorf("invalid repeatables choice %q: use none, all or select", strings.TrimSpace(mode))
 	}
+}
 
-	if answers.RepeatableMode == "all" {
-		answers.RepeatableIDs = repeatableIDsForPrompt(model.RepeatableOptions)
-	}
-	if answers.RepeatableMode == "select" {
-		fmt.Fprintf(os.Stderr, "Repeatables: %s\n", joinRepeatableIDs(model.RepeatableOptions))
-		repeatableValue, err := promptWithReader(p.reader, "Repeatable ids (comma-separated): ")
-		if err != nil {
-			return initAnswers{}, err
-		}
-		answers.RepeatableIDs = splitCSVValues(repeatableValue)
-	}
-
-	outputPath := filepath.Join(model.OutputDir, answers.DirectoryName)
-	if strings.TrimSpace(model.FixedTarget) != "" {
-		outputPath = model.FixedTarget
-	}
-	fmt.Fprintf(os.Stderr, "Source: %s\nOutput: %s\n", model.Source, outputPath)
-	confirmed, err := promptConfirmWithReader(p.reader, "Create project")
+func (p lineInitPrompter) Bundles(options []bootstrap.Bundle) ([]string, error) {
+	_, _ = fmt.Fprintf(p.w(), "Bundles: %s\n", joinBundleIDs(options))
+	value, err := promptWithReader(p.reader, "Bundle ids (comma-separated, blank for none): ")
 	if err != nil {
-		return initAnswers{}, err
+		return nil, err
 	}
-	if !confirmed {
-		return initAnswers{}, errors.New("init cancelled")
-	}
-	answers.Confirmed = true
-	return answers, nil
+	return parseInitBundles(value, options)
+}
+
+func (p lineInitPrompter) Confirm(source, outputPath string) (bool, error) {
+	_, _ = fmt.Fprintf(p.w(), "Source: %s\nOutput: %s\n", source, outputPath)
+	return promptConfirmWithReader(p.reader, "Create project")
 }
 
 // ResolveConflicts asks per file whether to overwrite an existing file, in the
@@ -113,7 +108,7 @@ func (p lineInitPrompter) Run(model initPromptModel) (initAnswers, error) {
 func (p lineInitPrompter) ResolveConflicts(conflicts []string) (map[string]struct{}, error) {
 	skip := make(map[string]struct{})
 	overwriteAll := false
-	fmt.Fprintf(os.Stderr, "%d file(s) already exist in the target directory.\n", len(conflicts))
+	_, _ = fmt.Fprintf(p.w(), "%d file(s) already exist in the target directory.\n", len(conflicts))
 	for _, rel := range conflicts {
 		if overwriteAll {
 			continue
@@ -134,13 +129,14 @@ func (p lineInitPrompter) ResolveConflicts(conflicts []string) (map[string]struc
 	return skip, nil
 }
 
-func cloneStarterRepo(destDir, repo, branch string) error {
-	return cloneStarterRepoWithRunner(defaultInitCloneRunner(), destDir, repo, branch)
+func cloneStarterRepo(ctx context.Context, destDir, repo, branch string) error {
+	return cloneStarterRepoWithRunner(ctx, defaultInitCloneRunner(), destDir, repo, branch)
 }
 
 type initCloneRunner struct {
 	lookPath func(string) (string, error)
-	run      func(name string, args []string, env []string) error
+	run      func(ctx context.Context, name string, args []string, env []string) error
+	getenv   func(string) string
 }
 
 type initCloneAttempt struct {
@@ -151,50 +147,67 @@ type initCloneAttempt struct {
 func defaultInitCloneRunner() initCloneRunner {
 	return initCloneRunner{
 		lookPath: exec.LookPath,
-		run: func(name string, args []string, env []string) error {
-			cmd := exec.Command(name, args...)
+		run: func(ctx context.Context, name string, args []string, env []string) error {
+			// CommandContext kills git/gh when the wizard is cancelled, so a
+			// clone never outlives the command that started it.
+			cmd := exec.CommandContext(ctx, name, args...)
+			initCloneProcess(cmd)
+			// Give git a moment to clean up after the cancel signal, then
+			// kill it and stop waiting on pipes its helpers may hold open.
+			cmd.WaitDelay = 2 * time.Second
 			if len(env) > 0 {
 				cmd.Env = append(os.Environ(), env...)
 			}
 			if output, err := cmd.CombinedOutput(); err != nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return ctxErr
+				}
 				return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
 			}
 			return nil
 		},
+		getenv: os.Getenv,
 	}
 }
 
-func cloneStarterRepoWithRunner(runner initCloneRunner, destDir, repo, branch string) error {
+func cloneStarterRepoWithRunner(ctx context.Context, runner initCloneRunner, destDir, repo, branch string) error {
 	if _, err := runner.lookPath("git"); err != nil {
 		return fmt.Errorf("git is required for init")
 	}
 
 	repoKind := classifyStarterRepo(repo)
-	attempts := initCloneAttemptsForRepo(runner, destDir, repo, branch, repoKind)
+	attempts := initCloneAttemptsForRepo(ctx, runner, destDir, repo, branch, repoKind)
 	var failures []string
 
 	for _, attempt := range attempts {
-		if err := attempt.run(); err == nil {
+		err := attempt.run()
+		if err == nil {
 			return nil
-		} else {
-			failures = append(failures, attempt.name+": "+err.Error())
 		}
 		_ = os.RemoveAll(destDir)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			// Cancelled: stop here instead of trying the next transport.
+			return fmt.Errorf("clone starterskit %s@%s: %w", repo, branch, ctxErr)
+		}
+		failures = append(failures, attempt.name+": "+err.Error())
 	}
 
 	return fmt.Errorf("clone starterskit %s@%s failed; use --dir, run 'gh auth login', or configure GitHub SSH (%s)", repo, branch, strings.Join(failures, "; "))
 }
 
-func initCloneAttemptsForRepo(runner initCloneRunner, destDir, repo, branch string, repoKind starterRepoKind) []initCloneAttempt {
+func initCloneAttemptsForRepo(ctx context.Context, runner initCloneRunner, destDir, repo, branch string, repoKind starterRepoKind) []initCloneAttempt {
 	attempts := make([]initCloneAttempt, 0, 3)
+	// Every attempt runs non-interactively: the wizard owns the terminal, so a
+	// credential or host-key prompt from git, gh or ssh would hang under it.
+	env := initCloneEnv(runner.getenv)
 
 	if repoKind == starterRepoGitHubShorthand {
 		if _, err := runner.lookPath("gh"); err == nil {
-			if err := runner.run("gh", []string{"auth", "status"}, nil); err == nil {
+			if err := runner.run(ctx, "gh", []string{"auth", "status"}, env); err == nil {
 				attempts = append(attempts, initCloneAttempt{
 					name: "gh",
 					run: func() error {
-						return runner.run("gh", []string{"repo", "clone", repo, destDir, "--", "--depth", "1", "--branch", branch}, nil)
+						return runner.run(ctx, "gh", []string{"repo", "clone", repo, destDir, "--", "--depth", "1", "--branch", branch}, env)
 					},
 				})
 			}
@@ -202,30 +215,30 @@ func initCloneAttemptsForRepo(runner initCloneRunner, destDir, repo, branch stri
 
 		sshURL, httpsURL := starterRepoGitHubURLs(repo)
 		attempts = append(attempts,
-			initGitCloneAttempt(runner, "ssh", sshURL, branch, destDir, nil),
-			initGitCloneAttempt(runner, "https", httpsURL, branch, destDir, initHTTPSCloneEnv()),
+			initGitCloneAttempt(ctx, runner, "ssh", sshURL, branch, destDir, env),
+			initGitCloneAttempt(ctx, runner, "https", httpsURL, branch, destDir, env),
 		)
 		return attempts
 	}
 
 	switch repoKind {
 	case starterRepoHTTPS:
-		attempts = append(attempts, initGitCloneAttempt(runner, "https", repo, branch, destDir, initHTTPSCloneEnv()))
+		attempts = append(attempts, initGitCloneAttempt(ctx, runner, "https", repo, branch, destDir, env))
 	case starterRepoSSH:
-		attempts = append(attempts, initGitCloneAttempt(runner, "ssh", repo, branch, destDir, nil))
+		attempts = append(attempts, initGitCloneAttempt(ctx, runner, "ssh", repo, branch, destDir, env))
 	default:
-		attempts = append(attempts, initGitCloneAttempt(runner, "git", repo, branch, destDir, nil))
+		attempts = append(attempts, initGitCloneAttempt(ctx, runner, "git", repo, branch, destDir, env))
 	}
 
 	return attempts
 }
 
-func initGitCloneAttempt(runner initCloneRunner, name, repoURL, branch, destDir string, env []string) initCloneAttempt {
+func initGitCloneAttempt(ctx context.Context, runner initCloneRunner, name, repoURL, branch, destDir string, env []string) initCloneAttempt {
 	args := []string{"clone", "--depth", "1", "--branch", branch, repoURL, destDir}
 	return initCloneAttempt{
 		name: name,
 		run: func() error {
-			return runner.run("git", args, env)
+			return runner.run(ctx, "git", args, env)
 		},
 	}
 }
@@ -258,11 +271,31 @@ func starterRepoGitHubURLs(repo string) (sshURL string, httpsURL string) {
 	return "git@github.com:" + trimmed + ".git", "https://github.com/" + trimmed + ".git"
 }
 
-func initHTTPSCloneEnv() []string {
-	return []string{
+// initCloneEnv disables every interactive prompt a clone could raise: git's
+// credential prompt, Git Credential Manager's UI, and ssh's passphrase or
+// host-key questions (BatchMode). An existing GIT_SSH_COMMAND is kept and gets
+// BatchMode appended; a legacy GIT_SSH wrapper is left alone because
+// GIT_SSH_COMMAND would silently override it.
+func initCloneEnv(getenv func(string) string) []string {
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	env := []string{
 		"GIT_TERMINAL_PROMPT=0",
 		"GCM_INTERACTIVE=never",
+		"GH_PROMPT_DISABLED=1",
 	}
+	sshCommand := strings.TrimSpace(getenv("GIT_SSH_COMMAND"))
+	switch {
+	case sshCommand != "":
+		if !strings.Contains(sshCommand, "BatchMode") {
+			sshCommand += " -o BatchMode=yes"
+		}
+		env = append(env, "GIT_SSH_COMMAND="+sshCommand)
+	case strings.TrimSpace(getenv("GIT_SSH")) == "":
+		env = append(env, "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
+	}
+	return env
 }
 
 func initSiteChoices(sites []api.Site) []initSiteChoice {

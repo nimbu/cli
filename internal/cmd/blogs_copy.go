@@ -57,7 +57,7 @@ func (c *BlogsCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 			if item.Slug != "" {
 				label = item.Blog + "/" + item.Slug
 			}
-			if _, err := output.Fprintf(ctx, "%s\t%s\t%s\n", item.Action, item.Kind, label); err != nil {
+			if err := output.Plain(ctx, item.Action, item.Kind, label); err != nil {
 				return err
 			}
 		}
