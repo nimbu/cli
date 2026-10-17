@@ -216,3 +216,27 @@ func TestServerForceColorLevel(t *testing.T) {
 		}
 	}
 }
+
+// Regression: under NIMBU_ASCII=1 (or TERM=dumb, or a non-UTF-8 locale) the
+// ready line switched to "ok" but the stop line kept a Unicode ellipsis, the
+// child prefix kept "│" and the banner kept its block art.
+func TestServerPresenterASCIIGlyphs(t *testing.T) {
+	t.Setenv("NIMBU_ASCII", "1")
+	var buf bytes.Buffer
+	ctx := output.WithMode(context.Background(), output.Mode{})
+	ctx = output.WithWriter(ctx, &output.Writer{Out: &buf, Err: &buf, Color: "never"})
+
+	forceBannerTerminal(t, true)
+	presenter := newServerPresenter(ctx, false)
+	presenter.PrintBanner()
+	presenter.PrintReady("http://localhost:3456")
+	presenter.PrintStopping("interrupt", serverForceHint(os.Interrupt, true))
+
+	want := "  ok ready http://localhost:3456\nStopping... (Ctrl-C again to force)\n"
+	if got := buf.String(); got != want {
+		t.Fatalf("ASCII notices = %q, want %q", got, want)
+	}
+	if got := serverChildPrefix(); got != "dev | " {
+		t.Fatalf("ASCII child prefix = %q, want %q", got, "dev | ")
+	}
+}

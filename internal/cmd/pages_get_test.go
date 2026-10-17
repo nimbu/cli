@@ -399,3 +399,21 @@ func TestPagesGetCompactKeepsDownloadedAttachmentPath(t *testing.T) {
 		t.Fatalf("compaction should still drop noise keys: %#v", file)
 	}
 }
+
+// Regression: the outline preview marker ignored the ASCII glyph set.
+func TestPageOutlinePreviewTruncationMarkerFollowsGlyphSet(t *testing.T) {
+	long := strings.Repeat("word ", 60)
+
+	t.Setenv("NIMBU_ASCII", "1")
+	got := pageOutlinePreview(long)
+	if !strings.HasSuffix(got, "...") || strings.Contains(got, "…") {
+		t.Fatalf("ASCII preview = %q, want a trailing \"...\"", got)
+	}
+
+	t.Setenv("NIMBU_ASCII", "0")
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("LC_ALL", "en_US.UTF-8")
+	if got := pageOutlinePreview(long); !strings.HasSuffix(got, "…") {
+		t.Fatalf("Unicode preview = %q, want a trailing \"…\"", got)
+	}
+}

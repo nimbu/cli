@@ -65,7 +65,8 @@ type serverSummarySegment struct {
 
 // newServerPresenter builds the human chrome for nimbu server and the line
 // path of nimbu init. All of it goes to stderr, so stderr decides color and
-// ShouldShowBanner decides the banner. Building it never touches the terminal:
+// ShouldShowBanner decides the banner (never in ASCII-only output, where the
+// block art would not render). Building it never touches the terminal:
 // the background is queried in PrintBanner, only when the banner shows on a
 // color terminal (see ResolveBannerPalette), so a command that fails before its
 // banner (no site, not logged in) never waits on that query.
@@ -86,7 +87,7 @@ func newServerPresenter(ctx context.Context, eventsJSON bool) *serverPresenter {
 	// the default for an unknown background.
 	return &serverPresenter{
 		enabled:     enabled,
-		showBanner:  enabled && ShouldShowBanner(writer),
+		showBanner:  enabled && ShouldShowBanner(writer) && !output.ASCIIOnly(),
 		out:         out,
 		theme:       output.NewThemeFor(profile, true),
 		profile:     profile,
@@ -207,7 +208,7 @@ func (p *serverPresenter) PrintStopping(signalName, forceHint string) {
 		}
 		return
 	}
-	_, _ = fmt.Fprintln(p.out, p.dim("Stopping…"+suffix))
+	_, _ = fmt.Fprintln(p.out, p.dim("Stopping"+output.GlyphSet(output.ASCIIOnly()).Ellipsis+suffix))
 }
 
 // PrintForceStop acknowledges the second stop request.

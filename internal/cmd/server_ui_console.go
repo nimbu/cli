@@ -10,8 +10,11 @@ import (
 	"github.com/nimbu/cli/internal/output"
 )
 
-// serverChildPrefix marks child dev server lines in interactive sessions.
-const serverChildPrefix = "dev │ "
+// serverChildPrefix marks child dev server lines in interactive sessions:
+// "dev │ ", or "dev | " when output is ASCII-only.
+func serverChildPrefix() string {
+	return "dev " + output.GlyphSet(output.ASCIIOnly()).Rail + " "
+}
 
 // serverStreams are the writers nimbu server uses for its own lines and for
 // the child dev server.
@@ -83,7 +86,7 @@ func (s *serverStreams) Close() {
 }
 
 func styledServerChildPrefix(profile termenv.Profile) string {
-	return profile.String(serverChildPrefix).Faint().String()
+	return profile.String(serverChildPrefix()).Faint().String()
 }
 
 // serverForceColorLevel maps nimbu's color decision to the FORCE_COLOR level
