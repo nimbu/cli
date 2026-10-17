@@ -41,6 +41,10 @@ itself; `auth.not_logged_in` (exit 3) means it ended — ask the user to run
 For CI, set the `NIMBU_TOKEN` env var to an API token to skip the keychain,
 or store one with `nimbu auth login --token - < token-file` (`-` reads stdin,
 keeping the token out of shell history).
+`auth.keyring_unavailable` (exit 3) means macOS has no default keychain, usually
+because `HOME` points at a scratch directory. Do not retry or create a keychain:
+run with the real `HOME`, or set `NIMBU_KEYRING_BACKEND=file` plus
+`NIMBU_KEYRING_PASSWORD` for a throwaway credential store.
 
 ## Site Resolution
 
@@ -530,7 +534,7 @@ A 422 `invalid editable` / `invalid slug` on `pages update`/`create` carries a h
 ### Canonical Error Codes
 
 `auth.not_logged_in`, `auth.unauthorized`, `auth.forbidden`, `auth.scope_missing`,
-`resource.not_found`, `resource.conflict`, `request.invalid`, `request.validation`,
+`auth.keyring_unavailable`, `resource.not_found`, `resource.conflict`, `request.invalid`, `request.validation`,
 `rate_limit.exceeded`, `network.timeout`, `network.failure`, `server.error`,
 `cli.usage.invalid_args`, `cli.usage.site_required`, `cli.confirmation_required`
 (pass the flag the hint names, usually `--force`), `cli.readonly` (exit 2), `cli.interrupted`.

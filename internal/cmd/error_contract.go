@@ -43,6 +43,7 @@ const (
 	errorSiteRequired         canonicalErrorCode = "cli.usage.site_required"
 	errorConfirmationRequired canonicalErrorCode = "cli.confirmation_required"
 	errorInterrupted          canonicalErrorCode = "cli.interrupted"
+	errorKeyringUnavailable   canonicalErrorCode = "auth.keyring_unavailable"
 )
 
 type errorEnvelope struct {
@@ -342,6 +343,13 @@ func classifyError(err error) errorDescriptor {
 			desc.Retryable = true
 			desc.Hint = "server-side failure; retry may succeed"
 		}
+		return desc
+	}
+
+	if errors.Is(err, auth.ErrNoDefaultKeychain) {
+		desc.Code = errorKeyringUnavailable
+		desc.ExitCode = ExitAuth
+		desc.Hint = "store credentials in an encrypted file instead: NIMBU_KEYRING_BACKEND=file (plus NIMBU_KEYRING_PASSWORD when there is no terminal), or pass an API token in NIMBU_TOKEN"
 		return desc
 	}
 

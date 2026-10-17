@@ -182,6 +182,10 @@ func openKeyring() (keyring.Keyring, error) {
 		return nil, err
 	}
 
+	if err := checkDefaultKeychain(runtime.GOOS, backend); err != nil {
+		return nil, err
+	}
+
 	// On Linux with "auto" backend and no D-Bus session, force file backend
 	dbusAddr := os.Getenv("DBUS_SESSION_BUS_ADDRESS")
 	if runtime.GOOS == "linux" && backend == "auto" && dbusAddr == "" {

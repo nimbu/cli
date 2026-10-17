@@ -475,7 +475,7 @@ unless `NIMBU_THEME=light` is set or `COLORFGBG` reports a light background;
 | 0 | Success |
 | 1 | General error |
 | 2 | Usage error: bad flags, no site (`cli.usage.site_required`), a confirmation nobody could give (`cli.confirmation_required`), or a write refused by `--readonly`/`NIMBU_READONLY` (`cli.readonly`) |
-| 3 | Not logged in / authentication failed |
+| 3 | Not logged in / authentication failed, or no usable credential store (`auth.keyring_unavailable`) |
 | 4 | Forbidden or missing scope |
 | 5 | Not found |
 | 6 | Validation error |
@@ -712,6 +712,20 @@ nimbu auth logout                         # Revoke the session on the server and
 - Password login (`nimbu auth login --email you@example.com`) still works for
   now, but is deprecated and prints a warning.
 
+### macOS Keychain
+
+- **After an upgrade** macOS asks once whether `nimbu` may use its Keychain
+  item. Release builds are not code-signed, so macOS treats every new version
+  as a different app. Click **Always Allow** and it stays quiet until the next
+  upgrade. To skip the Keychain altogether, store credentials in an encrypted
+  file: `nimbu auth keyring set --backend file` (or `NIMBU_KEYRING_BACKEND=file`).
+  The file backend asks for its password on a terminal, or reads it from
+  `NIMBU_KEYRING_PASSWORD`.
+- **No default keychain** (a scratch `HOME`, some CI images): commands that need
+  credentials fail with `auth.keyring_unavailable` (exit code 3) instead of
+  waiting on a macOS dialog. Use the file backend or `NIMBU_TOKEN` there.
+  `auth login` checks this before it opens the browser.
+
 ## Configuration
 
 ### Site Selection
@@ -732,6 +746,8 @@ prints the site and which source chose it.
 ```bash
 NIMBU_SITE           # Default site ID
 NIMBU_TOKEN          # API token (overrides the keychain; never refreshed)
+NIMBU_KEYRING_BACKEND  # auto | keychain | file | secret-service | kwallet | wincred
+NIMBU_KEYRING_PASSWORD # Password for the file backend when there is no terminal
 NIMBU_API_URL        # API endpoint (default: https://api.nimbu.io)
 NIMBU_JSON           # Default JSON output (1/true)
 NIMBU_PLAIN          # Default TSV output (1/true)
@@ -1035,6 +1051,17 @@ make lint     # Run linter
 make test     # Run tests
 make ci       # Full CI check
 ```
+
+On macOS every rebuilt binary is a new app to the Keychain, so a build that
+reads your stored login asks for access again. Either click **Always Allow**
+each time, point dev runs at the file backend (`NIMBU_KEYRING_BACKEND=file`),
+or sign each build with the same identity so macOS recognizes it:
+`codesign -f -s "<your signing identity>" -i io.nimbu.cli bin/nimbu`. Any
+code-signing certificate works, including a self-signed one from Keychain
+Access (Certificate Assistant, Create a Certificate, type Code Signing). When
+you test with a scratch `HOME`, also set `NIMBU_KEYRING_BACKEND=file` and
+`NIMBU_KEYRING_PASSWORD`; otherwise commands fail with
+`auth.keyring_unavailable`.
 
 ## License
 
