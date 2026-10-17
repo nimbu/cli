@@ -18,8 +18,12 @@ type childGroup struct {
 	pgid int
 }
 
+// configureChildProcess starts the child in its own process group, so a stop
+// can signal everything it started (see releaseChildGroup). The trade-off: a
+// signal to nimbu's group no longer reaches the child, so childProcAttr adds
+// parent-death handling where the platform has it.
 func configureChildProcess(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = childProcAttr()
 }
 
 func attachChildGroup(cmd *exec.Cmd) *childGroup {

@@ -782,6 +782,11 @@ Runtime notes:
   server, live site or admin, `Enter` prints a blank line to mark a spot in
   the log, `?` or `h` shows the keys, `q` quits. Ctrl-C stops gracefully; a
   second Ctrl-C force-stops the child and exits 130.
+- The child runs in its own process group, so nimbu can stop everything it
+  started. Stop nimbu with SIGINT, SIGTERM or SIGHUP and it takes the child
+  down with it. A SIGKILL (`timeout -s KILL`, a hard CI cancel) cannot be
+  caught: on Linux the kernel then sends the child SIGTERM, but on macOS the
+  child keeps running. Clean it up with `kill -- -<child pid>`.
 - Proxy request lines are on by default: `2026-03-04T13:06:32.802Z GET / (200)`
 - Use `--quiet-requests` to hide request lines.
 - Child should proxy simulator requests to `NIMBU_PROXY_URL`.
