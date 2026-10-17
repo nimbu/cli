@@ -250,7 +250,7 @@ func (c *DomainsMakePrimaryCmd) Run(ctx context.Context, flags *RootFlags) error
 	if err := requireWrite(flags, "make domain primary"); err != nil {
 		return err
 	}
-	if err := requireForce(flags, "domain "+c.Domain); err != nil {
+	if err := requireForceAction(flags, "make domain "+c.Domain+" primary"); err != nil {
 		return err
 	}
 	site, err := RequireSite(ctx, "")

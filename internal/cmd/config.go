@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/nimbu/cli/internal/config"
 	"github.com/nimbu/cli/internal/output"
@@ -44,22 +43,22 @@ func (c *ConfigListCmd) Run(ctx context.Context) error {
 		return output.JSON(ctx, data)
 	}
 
+	rows := make([]configListRow, 0, len(configListKeys))
+	for _, k := range configListKeys {
+		rows = append(rows, configListRow{Key: k, Value: data[k]})
+	}
 	if mode.Plain {
-		for k, v := range data {
-			if _, err := output.Fprintf(ctx, "%s\t%s\n", k, v); err != nil {
-				return err
-			}
-		}
-		return nil
+		return output.PlainFromSlice(ctx, rows, []string{"key", "value"})
 	}
+	return output.WriteTable(ctx, rows, []string{"key", "value"}, []string{"KEY", "VALUE"})
+}
 
-	w := output.WriterFromContext(ctx)
-	tw := tabwriter.NewWriter(w.Out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "KEY\tVALUE")
-	for _, k := range []string{"default_site", "api_url", "timeout", "keyring_backend", "banner_theme"} {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\n", k, data[k])
-	}
-	return tw.Flush()
+// configListKeys fixes the row order of `config list` (map order is random).
+var configListKeys = []string{"default_site", "api_url", "timeout", "keyring_backend", "banner_theme"}
+
+type configListRow struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 // ConfigGetCmd gets a config value.

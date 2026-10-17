@@ -13,6 +13,9 @@ const helpCommandName = "help"
 // rewriteHelpArgs turns help requests Kong would reject into --help:
 //
 //   - `nimbu help [<command>...]` becomes `nimbu [<command>...] --help`
+//   - "help" as a word inside a command group (`nimbu channels help`,
+//     `nimbu channels help list`) is the same request; `nimbu help help`
+//     prints root help, which documents `nimbu help <command>`
 //   - a bare command group (`nimbu channels`) gets --help, so it prints the
 //     group's help and exits 0 instead of a usage error, like git and gh.
 //
@@ -23,8 +26,7 @@ func rewriteHelpArgs(app *kong.Application, args []string) []string {
 	node := app.Node
 	scope := flagScope{}
 	scope.add(node)
-	helpIndex := -1
-	matched := 0
+	helpWords := map[int]bool{}
 	unmatched := false
 
 	for i := 0; i < len(args); i++ {
@@ -45,27 +47,30 @@ func rewriteHelpArgs(app *kong.Application, args []string) []string {
 			}
 			continue
 		}
-		if node == app.Node && matched == 0 && helpIndex < 0 && arg == helpCommandName {
-			helpIndex = i
+		child := findChildCommand(node, arg)
+		if child == nil && arg == helpCommandName && (node == app.Node || isCommandGroup(node)) {
+			// Only where no positional can take the word: a group or the root.
+			helpWords[i] = true
 			continue
 		}
-		child := findChildCommand(node, arg)
 		if child == nil {
 			unmatched = true
 			break
 		}
 		node = child
 		scope.add(node)
-		matched++
 	}
 
 	out := args
-	if helpIndex >= 0 {
+	if len(helpWords) > 0 {
 		out = make([]string, 0, len(args))
-		out = append(out, args[:helpIndex]...)
-		out = append(out, args[helpIndex+1:]...)
+		for i, arg := range args {
+			if !helpWords[i] {
+				out = append(out, arg)
+			}
+		}
 	}
-	if helpIndex >= 0 || (!unmatched && isCommandGroup(node)) {
+	if len(helpWords) > 0 || (!unmatched && isCommandGroup(node)) {
 		if !hasHelpFlag(out) {
 			out = append(append([]string{}, out...), "--help")
 		}

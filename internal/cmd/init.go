@@ -22,6 +22,9 @@ type InitCmd struct {
 	Repeatables string `help:"Repeatables to copy: none, all, or comma-separated ids; asked when omitted (default none with --no-input)" placeholder:"none|all|IDS"`
 	Bundles     string `help:"Bundles to include: none or comma-separated ids; asked when omitted (default none with --no-input)" placeholder:"none|IDS"`
 	OnConflict  string `name:"on-conflict" help:"In-place init: what to do with files that already exist (ask, overwrite, keep)" enum:"ask,overwrite,keep" default:"ask"`
+
+	// siteFromEnv: --site was not on the command line, NIMBU_SITE filled it.
+	siteFromEnv bool
 }
 
 type initResult struct {
@@ -88,15 +91,15 @@ func (c *InitCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	noInput := flags != nil && flags.NoInput
-	presets := c.presets(flags)
+	writer := output.WriterFromContext(ctx)
+	if !noInput && output.IsHuman(ctx) && writer != nil && writer.ErrIsTTY() && stdinIsTerminal() {
+		return c.runInteractiveTTY(ctx, flags)
+	}
+	presets := c.presets(flags).nonInteractive()
 	if noInput {
 		if missing := presets.missingForNoInput(); len(missing) > 0 {
 			return &ExitError{Code: ExitUsage, Err: initNoInputError(missing)}
 		}
-	}
-	writer := output.WriterFromContext(ctx)
-	if !noInput && output.IsHuman(ctx) && writer != nil && writer.ErrIsTTY() && stdinIsTerminal() {
-		return c.runInteractiveTTY(ctx, flags)
 	}
 	return c.runLines(ctx, presets, noInput)
 }

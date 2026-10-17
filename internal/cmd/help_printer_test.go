@@ -339,6 +339,28 @@ func TestBareGroupAndHelpCommandPrintHelp(t *testing.T) {
 	}
 }
 
+// Regression: `nimbu channels help` and `nimbu help help` exited 2 with
+// "unexpected argument help".
+func TestHelpWordInsideGroupPrintsHelp(t *testing.T) {
+	pinHelpEnv(t)
+	if got, want := helpOutput(t, "channels", "help"), helpOutput(t, "channels", "--help"); got != want {
+		t.Fatalf("channels help differs from channels --help:\n%s", got)
+	}
+	if got, want := helpOutput(t, "channels", "help", "list"), helpOutput(t, "channels", "list", "--help"); got != want {
+		t.Fatalf("channels help list differs from channels list --help:\n%s", got)
+	}
+	root := helpOutput(t, "--help")
+	if got := helpOutput(t, "help", "help"); got != root || !strings.Contains(got, `nimbu help <command>`) {
+		t.Fatalf("help help should print root help naming `nimbu help <command>`:\n%s", got)
+	}
+	for _, args := range [][]string{{"channels", "help"}, {"help", "help"}} {
+		code, _, stderr := captureExecute(t, args)
+		if code != 0 {
+			t.Fatalf("%v: exit %d stderr=%q", args, code, stderr)
+		}
+	}
+}
+
 func TestRewriteHelpArgs(t *testing.T) {
 	parser, _, err := newParser()
 	if err != nil {
@@ -368,6 +390,15 @@ func TestRewriteHelpArgs(t *testing.T) {
 		{[]string{"channels", "--site"}, []string{"channels", "--site"}},
 		{[]string{"help", "channels", "--site"}, []string{"channels", "--site", "--help"}},
 		{[]string{"translations", "get", "help"}, []string{"translations", "get", "help"}},
+		// "help" as a word inside a group, and `help help`.
+		{[]string{"help", "help"}, []string{"--help"}},
+		{[]string{"channels", "help"}, []string{"channels", "--help"}},
+		{[]string{"channels", "entries", "help"}, []string{"channels", "entries", "--help"}},
+		{[]string{"channels", "help", "list"}, []string{"channels", "list", "--help"}},
+		{[]string{"help", "channels", "help"}, []string{"channels", "--help"}},
+		{[]string{"--site", "demo", "channels", "help"}, []string{"--site", "demo", "channels", "--help"}},
+		{[]string{"channels", "list", "help"}, []string{"channels", "list", "help"}}, // leaf: Kong decides
+		{[]string{"api", "help"}, []string{"api", "help"}},                           // default subcommand takes args
 		{[]string{}, []string{}},
 	}
 	for _, tc := range cases {

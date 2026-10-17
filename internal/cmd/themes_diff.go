@@ -51,7 +51,7 @@ func (c *ThemeDiffCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	if mode.Plain {
 		for _, item := range result.Entries {
-			if _, err := output.Fprintf(ctx, "%s\t%s\n", item.Status, item.Path); err != nil {
+			if err := output.Plain(ctx, item.Status, item.Path); err != nil {
 				return err
 			}
 			if item.Diff != "" {

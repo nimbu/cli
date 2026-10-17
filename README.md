@@ -67,8 +67,14 @@ nimbu auth login
 # List your sites
 nimbu sites list
 
-# Bootstrap a local theme project
+# Bootstrap a local theme project (interactive wizard)
 nimbu init
+
+# ...or answer every step up front (CI, scripts, agents)
+nimbu init --no-input --site my-site --theme default my-theme
+
+# Help for any command or group
+nimbu help channels entries
 
 # Work with a specific site
 nimbu channels list --site my-site
@@ -105,6 +111,22 @@ nimbu sites settings --site staging --json
 ```
 
 ## Upgrade Notes
+
+Behavior changes that can affect scripts:
+
+- stdout carries results only. List footers ("Showing 25 of 100 ..."),
+  warnings and update notices go to stderr. With `--json` or `--plain`, an
+  incomplete listing adds one stderr line such as
+  `nimbu: showing 25 of 327 products; pass --all or --page 2`; stdout keeps
+  its shape.
+- `--plain` escapes fields (see [Output and Exit Codes](#output-and-exit-codes)).
+- Prompts never block a pipe: without a terminal on stdin, with `CI` set, or
+  with `--no-input`, a confirmation fails with `cli.confirmation_required`
+  (exit 2) instead of waiting. Pass `--force` or `--yes`.
+- Ctrl-C and SIGTERM exit 130.
+- In the `nimbu init` wizard, `NIMBU_SITE` preselects the site but no longer
+  skips the question; `--site` or `--env` on the command line still does.
+  With `--no-input`, `NIMBU_SITE` answers it.
 
 `pages update --file` now merges by default. Use `--replace` with a file payload when existing automation depends on omission removing page content.
 
@@ -375,12 +397,54 @@ nimbu server     Run local simulator proxy with child dev server
 nimbu config     Manage configuration
 nimbu realtime   Realtime grants and live queries
 nimbu api        Raw API access
-nimbu completion Generate shell completions
+nimbu completion Generate shell completions (bash, zsh, fish)
 ```
+
+`nimbu help <command>`, `nimbu <command> --help` and `nimbu <group> help`
+print the same help; a bare group such as `nimbu channels` lists its
+subcommands. Default help hides output, agent and connection flags; add
+`--help-all` to see them. Commands that can stop for a confirmation list
+`--force`, `--yes` and `--dry-run` under **Safety**.
+
+Load completions with `eval "$(nimbu completion zsh)"` in `~/.zshrc` (or
+`bash`/`fish`; `--shell zsh` still works).
 
 Completion debug output is normally hidden by shell wrappers. Set
 `NIMBU_COMPLETION_DEBUG=1` and inspect the `completion-debug.log` file in the
 Nimbu data directory when debugging dynamic completions.
+
+## Output and Exit Codes
+
+`--json` prints the bare JSON value on stdout. `--plain` prints one
+tab-separated record per line. Inside a field, a backslash becomes `\\`, a
+tab `\t`, a line feed `\n` and a carriage return `\r`, so every record stays
+on one line with a fixed field count; decode by replacing those four
+sequences left to right.
+
+Colors follow, highest first: `--color always|never` (or `NIMBU_COLOR`),
+`NO_COLOR`, `TERM=dumb`, `FORCE_COLOR=0`, then whether the stream is a
+terminal. `FORCE_COLOR=1` and `CLICOLOR_FORCE` are ignored on purpose: Node
+tooling exports them shell-wide, and honoring them would leak escape codes
+into pipes and agent logs. Use `--color always` to force color.
+`NIMBU_ASCII=1` (also `TERM=dumb` or a non-UTF-8 locale) swaps symbols such as
+`✓` and `…` for ASCII.
+
+| Exit | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | Usage error: bad flags, no site (`cli.usage.site_required`), or a confirmation nobody could give (`cli.confirmation_required`) |
+| 3 | Not logged in / authentication failed |
+| 4 | Forbidden or missing scope |
+| 5 | Not found |
+| 6 | Validation error |
+| 7 | Rate limited (retryable) |
+| 8 | Network error (retryable) |
+| 130 | Interrupted (Ctrl-C or SIGTERM); a second Ctrl-C exits at once |
+| 143 | The `nimbu init` wizard was stopped with SIGTERM |
+
+With `--json`, errors (usage errors too) are a JSON envelope on stderr with
+`code`, `hint`, `exit_code` and `retryable`.
 
 ## Admin Workflow Commands
 
@@ -631,6 +695,7 @@ NIMBU_NO_INPUT       # Disable prompts for CI
 NIMBU_READONLY       # Disable write operations
 NIMBU_ENABLE_COMMANDS # Command allowlist (comma-separated)
 NIMBU_COLOR          # auto | always | never
+NIMBU_ASCII          # 1: ASCII symbols only
 ```
 
 An empty variable (`NIMBU_JSON=`) counts as unset.
@@ -713,6 +778,10 @@ sync:
 Runtime notes:
 
 - Child stdout/stderr is passed through unchanged.
+- In a terminal, keys act on the running server: `o`/`l`/`b` open the dev
+  server, live site or admin, `Enter` prints a blank line to mark a spot in
+  the log, `?` or `h` shows the keys, `q` quits. Ctrl-C stops gracefully; a
+  second Ctrl-C force-stops the child and exits 130.
 - Proxy request lines are on by default: `2026-03-04T13:06:32.802Z GET / (200)`
 - Use `--quiet-requests` to hide request lines.
 - Child should proxy simulator requests to `NIMBU_PROXY_URL`.

@@ -38,7 +38,9 @@ nimbu auth scopes         # List granted scopes
 Login needs a human in a browser; agents cannot complete it. The session refreshes
 itself; `auth.not_logged_in` (exit 3) means it ended — ask the user to run
 `nimbu auth login`. Never use or suggest password login (`--email`/`--password`).
-For CI, set the `NIMBU_TOKEN` env var to an API token to skip the keychain.
+For CI, set the `NIMBU_TOKEN` env var to an API token to skip the keychain,
+or store one with `nimbu auth login --token - < token-file` (`-` reads stdin,
+keeping the token out of shell history).
 
 ## Site Resolution
 
@@ -72,7 +74,13 @@ In `--json` mode, **stdout is the bare JSON value** — nothing else:
 - A list command prints a JSON **array**.
 - A single-resource command (`get`, `create`, `update`) prints a JSON **object**.
 
-Progress UI, applied-count lines, warnings, and the structured error envelope all go to **stderr**, never stdout. So `nimbu ... --json 2>/dev/null | jq` always gets clean, parseable JSON, and you can watch stderr separately for warnings (e.g. the `pages update --replace` dropped-editables warning).
+Progress UI, applied-count lines, warnings, list footers, and the structured error envelope all go to **stderr**, never stdout. So `nimbu ... --json 2>/dev/null | jq` always gets clean, parseable JSON, and you can watch stderr separately for warnings (e.g. the `pages update --replace` dropped-editables warning).
+
+An incomplete listing (more pages remain) adds one stderr line in `--json`/`--plain` mode, e.g. `nimbu: showing 25 of 327 products; pass --all or --page 2`. The last page stays silent.
+
+`--plain` escapes each field: backslash → `\\`, tab → `\t`, line feed → `\n`, carriage return → `\r`. Every record is one line with a fixed field count; decode by replacing those four sequences left to right.
+
+Color: `--color always|never` (or `NIMBU_COLOR`) wins, then `NO_COLOR`, `TERM=dumb`, `FORCE_COLOR=0`, then TTY detection. `FORCE_COLOR=1`/`CLICOLOR_FORCE` are ignored (often exported shell-wide; they would leak ANSI into pipes). `NIMBU_ASCII=1` swaps Unicode symbols for ASCII.
 
 ## Global Flags
 
@@ -91,6 +99,9 @@ Progress UI, applied-count lines, warnings, and the structured error envelope al
 | `--no-progress` | Disable live progress UI |
 | `--verbose` | Verbose logging |
 | `--debug` | HTTP request/response traces |
+| `--color auto\|always\|never` | Color policy (`NIMBU_COLOR`) |
+
+Help: `nimbu help <command>`, `nimbu <command> --help` and `nimbu <group> help` are equivalent; `--help-all` also lists the hidden output, agent and connection flags. Commands that can stop for a confirmation list `--force`/`--yes`/`--dry-run` under **Safety** in their help.
 
 ## Localized Content
 
@@ -139,7 +150,9 @@ Use these to constrain agent access:
 - `NIMBU_NO_INPUT=1` — never prompt; fail instead (CI/agent mode)
 - `NIMBU_COMPLETION_DEBUG=1` — writes dynamic completion diagnostics to `completion-debug.log` in the Nimbu data directory
 - `--dry-run` — surgical page verbs, `pages update`, `pages batch`, and copy/sync/theme commands; resolve or print without writing
-- `--force` — required for delete commands (including `pages delete-block` and `pages draft discard`)
+- `--force` — required for delete commands (including `pages delete-block` and `pages draft discard`); also answers overwrite prompts (themes push/sync conflicts, apps push deletions, menus/customizations copy)
+- `--yes` / `-y` — same as `--force`, and the only flag that confirms a protected environment (`schema apply`, `release`)
+- Without a terminal on stdin, with `CI` set, or with `--no-input`, a confirmation never waits: it fails with `cli.confirmation_required` (exit 2) and the hint names the flag
 
 ## CLI Grammar
 
@@ -235,15 +248,15 @@ nimbu pages update --page about --file payload.json
 |---------|-------------|-------|
 | `sites` | list, get, current, count, settings, copy | Site management + full-site copy |
 | `auth` | login, logout, status, scopes, token, keyring | Credential management |
-| `server` | *(run directly)* | Local simulator proxy + child dev server; `--draft <page>` injects preview tokens |
-| `init` | *(run directly)* | Bootstrap theme project with TUI |
+| `server` | *(run directly)* | Local simulator proxy + child dev server; `--draft <page>` injects preview tokens. Keys: `o`/`l`/`b` open dev/live/admin, `Enter` marks the log, `?`/`h` help, `q` quit; second Ctrl-C force-stops |
+| `init` | *(run directly)* | Bootstrap theme project with TUI. Agents: `nimbu init --no-input --site <site> --theme <theme> [dir]`, optional `--repeatables none\|all\|IDS`, `--bundles none\|IDS`, `--on-conflict overwrite\|keep`. In the TUI, `NIMBU_SITE` only preselects the site |
 | `config` | list, get, set, unset, banner, path | CLI configuration |
 | `functions` | run | Execute cloud functions |
 | `realtime` | grant | Mint a single-use realtime grant for custom websocket clients |
 | `jobs` | list, run | Inspect and execute cloud jobs |
 | `api` | get, post, put, patch, delete | Raw escape hatch: `nimbu api get /path`; legacy `--method/--path` remains valid |
 | `commands` | *(run directly)* | Export the machine-readable CLI contract |
-| `completion` | --shell bash/zsh/fish | Shell completions |
+| `completion` | bash, zsh, fish (positional; `--shell` still works) | Shell completions: `eval "$(nimbu completion zsh)"` |
 
 ### Raw API and downloads
 
@@ -503,14 +516,15 @@ A 422 `invalid editable` / `invalid slug` on `pages update`/`create` carries a h
 |------|---------|
 | 0 | Success |
 | 1 | General error |
-| 2 | Usage / invalid arguments |
+| 2 | Usage / invalid arguments, no site (`cli.usage.site_required`), confirmation needed (`cli.confirmation_required`) |
 | 3 | Authentication failure |
 | 4 | Authorization / scope failure |
 | 5 | Resource not found |
 | 6 | Validation error |
 | 7 | Rate limit exceeded (retryable) |
 | 8 | Network error (retryable) |
-| 130 | Interrupted (Ctrl-C / SIGTERM) |
+| 130 | Interrupted (Ctrl-C / SIGTERM); a second Ctrl-C exits at once |
+| 143 | `nimbu init` wizard stopped by SIGTERM |
 
 ### Canonical Error Codes
 

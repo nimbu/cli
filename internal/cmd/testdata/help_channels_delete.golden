@@ -7,6 +7,7 @@ Flags:
 
 Safety:
       --force             Skip confirmations for destructive operations
+  -y, --yes               Same as --force; also confirms protected environments
 
 Global Flags:
   -h, --help              Show context-sensitive help.

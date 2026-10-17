@@ -93,7 +93,7 @@ func writeChannelCopyResult(ctx context.Context, result migrate.ChannelCopyResul
 	}
 	if mode.Plain {
 		for _, item := range result.Items {
-			if _, err := output.Fprintf(ctx, "%s\t%s\t%s\n", item.Action, item.Source, item.Target); err != nil {
+			if err := output.Plain(ctx, item.Action, item.Source, item.Target); err != nil {
 				return err
 			}
 		}

@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
+
+	"github.com/alecthomas/kong"
 
 	"github.com/nimbu/cli/internal/api"
 	"github.com/nimbu/cli/internal/bootstrap"
@@ -18,11 +21,37 @@ const (
 // initPresets are the wizard answers given up front as flags. An empty field
 // means "not given": the wizard asks, or --no-input fails naming the flag.
 type initPresets struct {
-	Site        string
+	// Site is an explicit --site on the command line (or the site of --env);
+	// it answers the site step.
+	Site string
+	// DefaultSite is a site that only came from NIMBU_SITE (direnv and
+	// friends export it for every command). The TTY wizard preselects it but
+	// still asks; non-interactive runs use it as the answer.
+	DefaultSite string
 	Theme       string
 	Repeatables string
 	Bundles     string
 	OnConflict  string
+}
+
+// AfterApply records whether the site came only from NIMBU_SITE. Kong lists
+// flags given on the command line in the parse path; NIMBU_SITE fills the
+// flag without a path entry.
+func (c *InitCmd) AfterApply(kctx *kong.Context) error {
+	c.siteFromEnv = strings.TrimSpace(os.Getenv("NIMBU_SITE")) != "" && !siteFlagOnCommandLine(kctx)
+	return nil
+}
+
+func siteFlagOnCommandLine(kctx *kong.Context) bool {
+	if kctx == nil {
+		return false
+	}
+	for _, p := range kctx.Path {
+		if p.Flag != nil && p.Flag.Name == "site" && !p.Resolved {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *InitCmd) presets(flags *RootFlags) initPresets {
@@ -33,10 +62,24 @@ func (c *InitCmd) presets(flags *RootFlags) initPresets {
 		OnConflict:  strings.ToLower(strings.TrimSpace(c.OnConflict)),
 	}
 	if flags != nil {
-		p.Site = strings.TrimSpace(flags.Site)
+		site := strings.TrimSpace(flags.Site)
+		if c.siteFromEnv && flags.Environment == "" {
+			p.DefaultSite = site
+		} else {
+			p.Site = site
+		}
 	}
 	if p.OnConflict == "" {
 		p.OnConflict = initConflictAsk
+	}
+	return p
+}
+
+// nonInteractive is the presets for runs without the TTY wizard: nobody can
+// be shown a preselected choice, so NIMBU_SITE answers the site step.
+func (p initPresets) nonInteractive() initPresets {
+	if p.Site == "" {
+		p.Site = p.DefaultSite
 	}
 	return p
 }

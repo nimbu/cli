@@ -63,7 +63,7 @@ func (c *PagesCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	for _, item := range result.Items {
 		if mode.Plain {
-			if _, err := output.Fprintf(ctx, "%s\t%s\n", item.Action, item.Fullpath); err != nil {
+			if err := output.Plain(ctx, item.Action, item.Fullpath); err != nil {
 				return err
 			}
 			continue
