@@ -28,7 +28,8 @@ type Palette struct {
 }
 
 // darkPalette is tuned for dark terminal backgrounds. It is also the default
-// when the background is unknown: line output never queries the terminal.
+// when the background is unknown: line output never queries the terminal
+// (see lineBackgroundIsDark for the cheap signals it does read).
 var darkPalette = Palette{
 	Success: "#22c55e",
 	Warning: "#f59e0b",
@@ -81,10 +82,11 @@ type Theme struct {
 	palette Palette
 }
 
-// NewTheme builds a theme for a termenv profile with the default (dark)
-// palette; termenv.Ascii disables color.
+// NewTheme builds a theme for a termenv profile with the line-output palette:
+// light when NIMBU_THEME=light or COLORFGBG reports a light background, dark
+// otherwise; termenv.Ascii disables color.
 func NewTheme(profile termenv.Profile) Theme {
-	return NewThemeFor(profile, true)
+	return NewThemeFor(profile, lineBackgroundIsDark())
 }
 
 // NewThemeFor builds a theme for a profile and a known terminal background.

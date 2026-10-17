@@ -439,7 +439,9 @@ terminal. `FORCE_COLOR=1` and `CLICOLOR_FORCE` are ignored on purpose: Node
 tooling exports them shell-wide, and honoring them would leak escape codes
 into pipes and agent logs. Use `--color always` to force color.
 `NIMBU_ASCII=1` (also `TERM=dumb` or a non-UTF-8 locale) swaps symbols such as
-`✓` and `…` for ASCII.
+`✓` and `…` for ASCII. Line output uses a palette tuned for dark backgrounds
+unless `NIMBU_THEME=light` is set or `COLORFGBG` reports a light background;
+`NIMBU_THEME=dark` forces the dark palette.
 
 | Exit | Meaning |
 |------|---------|

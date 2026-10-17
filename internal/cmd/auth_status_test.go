@@ -71,6 +71,8 @@ func TestScopeLinesWrapsWhenVerbose(t *testing.T) {
 // stdout profile: no 24-bit sequences on a 256-color terminal.
 func TestStatusStylerFollowsStdoutProfile(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
+	t.Setenv("NIMBU_THEME", "")
+	t.Setenv("COLORFGBG", "")
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("COLORTERM", "")
 	glyphs := output.GlyphSet(output.ASCIIOnly())

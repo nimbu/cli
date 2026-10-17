@@ -179,6 +179,8 @@ func TestPaletteContrast(t *testing.T) {
 }
 
 func TestThemeForBackgroundUsesMatchingPalette(t *testing.T) {
+	t.Setenv(ThemeEnv, "")
+	t.Setenv("COLORFGBG", "")
 	light := NewThemeFor(termenv.TrueColor, false)
 	if light.Palette() != PaletteFor(false) {
 		t.Fatal("light theme does not use the light palette")
