@@ -34,19 +34,23 @@ func (c *RolesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var roles []api.Role
+	var meta listFooterMeta
 	if c.All {
 		roles, err = api.List[api.Role](ctx, client, "/roles", opts...)
 		if err != nil {
 			return fmt.Errorf("list roles: %w", err)
 		}
+		meta = allListFooterMeta(len(roles))
 	} else {
 		paged, err := api.ListPage[api.Role](ctx, client, "/roles", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list roles: %w", err)
 		}
 		roles = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(roles))
 	}
 
+	noteMoreResults(ctx, "roles", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, roles)
@@ -70,5 +74,8 @@ func (c *RolesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	fields, headers := listOutputColumns(&c.QueryFlags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, roles, fields, headers)
+	if err := output.WriteTable(ctx, roles, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "roles", meta)
 }

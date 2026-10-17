@@ -34,19 +34,23 @@ func (c *AppsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var apps []api.App
+	var meta listFooterMeta
 	if c.All {
 		apps, err = api.List[api.App](ctx, client, "/apps", opts...)
 		if err != nil {
 			return fmt.Errorf("list apps: %w", err)
 		}
+		meta = allListFooterMeta(len(apps))
 	} else {
 		paged, err := api.ListPage[api.App](ctx, client, "/apps", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list apps: %w", err)
 		}
 		apps = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(apps))
 	}
 
+	noteMoreResults(ctx, "apps", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, apps)
@@ -61,5 +65,8 @@ func (c *AppsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	fields, headers := listOutputColumns(&c.QueryFlags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, apps, fields, headers)
+	if err := output.WriteTable(ctx, apps, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "apps", meta)
 }

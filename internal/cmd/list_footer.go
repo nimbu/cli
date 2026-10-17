@@ -97,15 +97,23 @@ func (m listFooterMeta) nextPage() int {
 	return 0
 }
 
-// writeListFooter tells a human that a table is incomplete. It goes to stderr
-// so `nimbu sites list | wc -l` counts rows only, and stays silent when the
-// listing was complete. Machine modes get noteMoreResults instead.
+// writeListFooter tells a human that a table is incomplete or empty. It goes
+// to stderr so `nimbu sites list | wc -l` counts rows only, and stays silent
+// when a non-empty listing was complete. Machine modes get noteMoreResults
+// instead.
 func writeListFooter(ctx context.Context, resource string, meta listFooterMeta) error {
-	if !output.IsHuman(ctx) || !meta.moreAvailable() {
+	if !output.IsHuman(ctx) {
+		return nil
+	}
+	w := output.WriterFromContext(ctx)
+	if meta.Returned == 0 && !meta.moreAvailable() {
+		_, err := fmt.Fprintf(w.Err, "\n%s\n", w.ErrTheme().Muted(emptyListMessage(resource, meta)))
+		return err
+	}
+	if !meta.moreAvailable() {
 		return nil
 	}
 
-	w := output.WriterFromContext(ctx)
 	var msg string
 	if meta.TotalKnown {
 		msg = fmt.Sprintf("Showing %d of %d %s (page %d, per-page %d).",
@@ -125,6 +133,19 @@ func writeListFooter(ctx context.Context, resource string, meta listFooterMeta) 
 	}
 	_, err := fmt.Fprintf(w.Err, "\n%s\n", w.ErrTheme().Muted(msg))
 	return err
+}
+
+// emptyListMessage says a listing came back empty, and past the end of the
+// results points back at the last page instead of implying there is nothing.
+func emptyListMessage(resource string, meta listFooterMeta) string {
+	if meta.All || meta.Page <= 1 || (meta.TotalKnown && meta.Total == 0) {
+		return fmt.Sprintf("No %s found.", resource)
+	}
+	if meta.TotalKnown && meta.PerPage > 0 {
+		last := (meta.Total + meta.PerPage - 1) / meta.PerPage
+		return fmt.Sprintf("No %s on page %d; the last page is %d.", resource, meta.Page, last)
+	}
+	return fmt.Sprintf("No %s on page %d. Try --page 1 or --all.", resource, meta.Page)
 }
 
 // noteMoreResults writes a one-line stderr notice in --json/--plain mode when

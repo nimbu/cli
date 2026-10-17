@@ -34,19 +34,23 @@ func (c *RedirectsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var redirects []api.Redirect
+	var meta listFooterMeta
 	if c.All {
 		redirects, err = api.List[api.Redirect](ctx, client, "/redirects", opts...)
 		if err != nil {
 			return fmt.Errorf("list redirects: %w", err)
 		}
+		meta = allListFooterMeta(len(redirects))
 	} else {
 		paged, err := api.ListPage[api.Redirect](ctx, client, "/redirects", c.Page, c.PerPage, opts...)
 		if err != nil {
 			return fmt.Errorf("list redirects: %w", err)
 		}
 		redirects = paged.Data
+		meta = newListFooterMeta(c.Page, c.PerPage, paged.Pagination, paged.Links, len(redirects))
 	}
 
+	noteMoreResults(ctx, "redirects", meta)
 	mode := output.FromContext(ctx)
 	if mode.JSON {
 		return output.JSON(ctx, redirects)
@@ -61,5 +65,8 @@ func (c *RedirectsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	fields, headers := listOutputColumns(&c.QueryFlags, tableFields, tableHeaders)
-	return output.WriteTable(ctx, redirects, fields, headers)
+	if err := output.WriteTable(ctx, redirects, fields, headers); err != nil {
+		return err
+	}
+	return writeListFooter(ctx, "redirects", meta)
 }

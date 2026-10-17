@@ -91,6 +91,30 @@ func TestWriteListFooter(t *testing.T) {
 			resource: "sites",
 			meta:     allListFooterMeta(12),
 		},
+		{
+			name:     "empty first page",
+			resource: "uploads",
+			meta:     newListFooterMeta(1, 25, api.Pagination{}, api.Links{}, 0),
+			want:     "\nNo uploads found.\n",
+		},
+		{
+			name:     "empty --all",
+			resource: "redirects",
+			meta:     allListFooterMeta(0),
+			want:     "\nNo redirects found.\n",
+		},
+		{
+			name:     "past the end, total unknown",
+			resource: "pages",
+			meta:     newListFooterMeta(50, 25, api.Pagination{}, api.Links{}, 0),
+			want:     "\nNo pages on page 50. Try --page 1 or --all.\n",
+		},
+		{
+			name:     "past the end, total known",
+			resource: "pages",
+			meta:     newListFooterMeta(50, 25, api.Pagination{Total: 60, TotalKnown: true}, api.Links{}, 0),
+			want:     "\nNo pages on page 50; the last page is 3.\n",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
