@@ -185,3 +185,44 @@ func waitForPID(t *testing.T, path string) int {
 	t.Fatalf("pid file %s not written", path)
 	return 0
 }
+
+// Once the direct child exits, the wait goroutine still reaps what it left in
+// its group. Stop and Kill arriving then must wait for that reaping, or a
+// second Ctrl-C exits nimbu with a leftover still holding the port.
+func TestProcessStopAndKillWaitForLeftoverReaping(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		stop func(*Process) error
+	}{
+		{"stop", func(p *Process) error { return p.Stop(5 * time.Second) }},
+		{"kill", func(p *Process) error { return p.Kill(5 * time.Second) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pidPath := filepath.Join(t.TempDir(), "leftover.pid")
+			// The leftover ignores SIGTERM, so only the SIGKILL that follows
+			// leftoverGracePeriod ends it; the shell exits at once.
+			p := NewProcess(ChildConfig{
+				Command: "sh",
+				Args:    []string{"-c", `(trap "" TERM; exec sleep 60) & echo $! > "$0"`, pidPath},
+			})
+			if err := p.Start(); err != nil {
+				t.Fatalf("start: %v", err)
+			}
+			leftover := waitForPID(t, pidPath)
+			t.Cleanup(func() { _ = syscall.Kill(leftover, syscall.SIGKILL) })
+			time.Sleep(100 * time.Millisecond) // the shell has exited; reaping is under way
+
+			if err := tc.stop(p); err != nil {
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+			deadline := time.Now().Add(100 * time.Millisecond)
+			for time.Now().Before(deadline) {
+				if err := syscall.Kill(leftover, 0); errors.Is(err, syscall.ESRCH) {
+					return
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			t.Fatalf("%s returned while leftover %d was still running", tc.name, leftover)
+		})
+	}
+}

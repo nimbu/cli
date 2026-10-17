@@ -111,6 +111,12 @@ func releaseChildGroup(group *childGroup) {
 	group.job = 0
 }
 
+// killLeftovers force-kills what the exited child left in its job. Unlike
+// killChild it never falls back to taskkill: the child's PID may be reused.
+func killLeftovers(group *childGroup) {
+	_ = group.terminate()
+}
+
 // interruptChild asks the child's process group to stop with CTRL_BREAK, the
 // console equivalent of SIGINT that can target a single process group.
 func interruptChild(cmd *exec.Cmd, _ *childGroup) error {

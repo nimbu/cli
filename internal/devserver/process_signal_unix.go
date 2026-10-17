@@ -54,6 +54,13 @@ func releaseChildGroup(group *childGroup) {
 	_ = syscall.Kill(-group.pgid, syscall.SIGKILL)
 }
 
+// killLeftovers force-kills what the exited child left in its group.
+func killLeftovers(group *childGroup) {
+	if group != nil && group.pgid > 0 {
+		_ = syscall.Kill(-group.pgid, syscall.SIGKILL)
+	}
+}
+
 func interruptChild(cmd *exec.Cmd, _ *childGroup) error {
 	if cmd == nil || cmd.Process == nil {
 		return nil

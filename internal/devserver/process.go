@@ -34,6 +34,9 @@ type Process struct {
 	group   *childGroup
 	exitCh  chan error
 	running bool
+	// exited is set once the direct child is gone while the wait goroutine
+	// still reaps what it left in its group; running stays true until then.
+	exited bool
 }
 
 func NewProcess(config ChildConfig) *Process {
@@ -94,14 +97,18 @@ func (p *Process) Start() error {
 		waitErr := cmd.Wait()
 
 		p.mu.Lock()
-		p.running = false
-		p.cmd = nil
-		p.group = nil
+		p.exited = true
 		p.mu.Unlock()
 		releaseChildGroup(group)
 		// Reaping the group closed every other writer, so this is quick.
 		output.drain(outputDrainDelay)
 
+		p.mu.Lock()
+		p.running = false
+		p.exited = false
+		p.cmd = nil
+		p.group = nil
+		p.mu.Unlock()
 		exitCh <- waitErr
 		close(exitCh)
 	}()
@@ -188,9 +195,16 @@ func (p *Process) Stop(gracePeriod time.Duration) error {
 	group := p.group
 	exitCh := p.exitCh
 	running := p.running
+	exited := p.exited
 	p.mu.Unlock()
 
 	if !running || cmd == nil || cmd.Process == nil {
+		return nil
+	}
+	if exited {
+		// The child is gone; its leftovers are being reaped (bounded by
+		// leftoverGracePeriod), so returning now could leave one running.
+		<-exitCh
 		return nil
 	}
 	if gracePeriod <= 0 {
@@ -223,12 +237,17 @@ func (p *Process) Kill(timeout time.Duration) error {
 	group := p.group
 	exitCh := p.exitCh
 	running := p.running
+	exited := p.exited
 	p.mu.Unlock()
 
 	if !running || cmd == nil || cmd.Process == nil {
 		return nil
 	}
-	if err := killChild(cmd, group); err != nil {
+	if exited {
+		// Skip the leftovers' grace period; the child's PID may be reused,
+		// so only the group is targeted.
+		killLeftovers(group)
+	} else if err := killChild(cmd, group); err != nil {
 		return fmt.Errorf("kill child dev server: %w", err)
 	}
 	if timeout <= 0 {
