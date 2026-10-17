@@ -142,6 +142,10 @@ func (c *AuthLoginCmd) runPasswordLogin(ctx context.Context, flags *RootFlags, h
 		}
 	}
 
+	if err := ensureAuthStore(host); err != nil {
+		return err
+	}
+
 	client := api.New(flags.APIURL, "").WithVersion(version)
 
 	resp, err := loginWithCredentials(ctx, client, email, password, c.ExpiresIn, flags.NoInput, prompt)
@@ -223,6 +227,16 @@ func isTwoFactorRequired(err error) bool {
 
 func basicAuthHeader(email, password string) string {
 	return base64.StdEncoding.EncodeToString([]byte(email + ":" + password))
+}
+
+// ensureAuthStore fails a login before it creates a session when the
+// credential store is unusable (no default macOS keychain), instead of after
+// the user finished in the browser and the new session is lost.
+func ensureAuthStore(host string) error {
+	if _, err := openAuthStore(host); err != nil {
+		return fmt.Errorf("open keyring: %w", err)
+	}
+	return nil
 }
 
 func (c *AuthLoginCmd) storeToken(ctx context.Context, token, email, host string) error {

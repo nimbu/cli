@@ -27,6 +27,9 @@ var openBrowser = func(url string) error {
 // runOAuthLogin logs in through the browser (loopback + PKCE) or, with
 // --device or on a headless machine, with a one-time code.
 func (c *AuthLoginCmd) runOAuthLogin(ctx context.Context, flags *RootFlags, host string) error {
+	if err := ensureAuthStore(host); err != nil {
+		return err
+	}
 	stderr := output.WriterFromContext(ctx).Err
 	client := oauth.NewClient(flags.APIURL, &http.Client{Timeout: flags.Timeout})
 	scopes := splitScopes(c.Scopes)
