@@ -193,9 +193,7 @@ func (p *serverPresenter) PrintSummary(summary serverSummary) {
 		if child := compactChildInfo(summary, unusual); child != "" {
 			_, _ = fmt.Fprintln(p.out, p.summaryRow("Child", child))
 		}
-		if hint := summary.Shortcuts.Hint(); hint != "" {
-			_, _ = fmt.Fprintln(p.out, p.shortcutHint(hint))
-		}
+		p.printShortcutHints(summary.Shortcuts)
 		_, _ = fmt.Fprintln(p.out)
 		return
 	}
@@ -209,10 +207,14 @@ func (p *serverPresenter) PrintSummary(summary serverSummary) {
 	if child := compactChildInfo(summary, unusual); child != "" {
 		_, _ = fmt.Fprintln(p.out, p.summaryRow("Child", child))
 	}
-	if hint := summary.Shortcuts.Hint(); hint != "" {
-		_, _ = fmt.Fprintln(p.out, p.shortcutHint(hint))
-	}
+	p.printShortcutHints(summary.Shortcuts)
 	_, _ = fmt.Fprintln(p.out)
+}
+
+func (p *serverPresenter) printShortcutHints(links serverShortcutLinks) {
+	for _, line := range links.HintLines() {
+		_, _ = fmt.Fprintln(p.out, p.shortcutHint(line))
+	}
 }
 
 // PrintStopping acknowledges the first stop request; forceHint says how to

@@ -38,24 +38,57 @@ func serverShortcutLinksFromSummary(summary serverSummary) serverShortcutLinks {
 	}
 }
 
-// Hint is the one-line key summary printed under the startup summary. When
-// the listener runs, Enter, help and quit are always available.
-func (l serverShortcutLinks) Hint() string {
+// HintLines is the key summary printed under the startup summary: the open
+// shortcuts on one row, the session keys below, padded into shared columns.
+// When the listener runs, Enter, help and quit are always available.
+func (l serverShortcutLinks) HintLines() []string {
 	if !l.Active {
-		return ""
+		return nil
 	}
-	parts := make([]string, 0, 6)
+	open := make([]string, 0, 3)
 	if l.DevURL != "" {
-		parts = append(parts, "[o] open dev")
+		open = append(open, "[o] open dev")
 	}
 	if l.LiveURL != "" {
-		parts = append(parts, "[l] open live")
+		open = append(open, "[l] open live")
 	}
 	if l.AdminURL != "" {
-		parts = append(parts, "[b] open admin")
+		open = append(open, "[b] open admin")
 	}
-	parts = append(parts, "[enter] mark", "[?] help", "[q] quit")
-	return strings.Join(parts, "  ")
+	rows := [][]string{{"[enter] mark", "[?] help", "[q] quit"}}
+	if len(open) > 0 {
+		rows = append([][]string{open}, rows...)
+	}
+	return alignHintColumns(rows)
+}
+
+// alignHintColumns joins each row's cells with two spaces, padding every
+// column to its widest cell (the labels are ASCII, so bytes are cells).
+func alignHintColumns(rows [][]string) []string {
+	var widths []int
+	for _, row := range rows {
+		for i, cell := range row {
+			if i == len(widths) {
+				widths = append(widths, 0)
+			}
+			widths[i] = max(widths[i], len(cell))
+		}
+	}
+	lines := make([]string, 0, len(rows))
+	for _, row := range rows {
+		var b strings.Builder
+		for i, cell := range row {
+			if i > 0 {
+				b.WriteString("  ")
+			}
+			b.WriteString(cell)
+			if i < len(row)-1 {
+				b.WriteString(strings.Repeat(" ", widths[i]-len(cell)))
+			}
+		}
+		lines = append(lines, b.String())
+	}
+	return lines
 }
 
 // HelpRows lists every shortcut with a full description, for the '?' help.
