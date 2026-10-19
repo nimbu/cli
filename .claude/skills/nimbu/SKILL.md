@@ -392,7 +392,7 @@ A 409 `draft_base_changed` means the live page moved after the draft was based o
 
 8. **Copy commands use `--from`/`--to` refs**: Format is `site` for site-level ops, `site/channel` for channel-level ops.
 
-9. **Jobs are site-level**: `jobs run --wait` resolves the owning app from the server-side job registry; no `--app` or `nimbu.yml` needed.
+9. **Jobs are site-level**: `jobs run --wait` resolves the owning app from the server-side job registry; no `--app` or `nimbu.yml` needed. It exits when the run ends: 0 on success, 1 (`job.failed`) if the run logs an error; bound it with `--wait-timeout=10m`.
 
 10. **Fetched page `translations` are fallback-filled**: `pages get` resolves every locale with the default-locale values and does not mark fallbacks. Never write a fetched `translations` map (or `fullpath`/`public_url`/`depth`) back; `pages update` sends only what you assign. To set a localized slug: `echo '{"slug":"about-us"}' | nimbu pages update --page P --locale en --file -`.
 
@@ -536,6 +536,7 @@ A 422 `invalid editable` / `invalid slug` on `pages update`/`create` carries a h
 `auth.not_logged_in`, `auth.unauthorized`, `auth.forbidden`, `auth.scope_missing`,
 `auth.keyring_unavailable`, `resource.not_found`, `resource.conflict`, `request.invalid`, `request.validation`,
 `rate_limit.exceeded`, `network.timeout`, `network.failure`, `server.error`,
+`job.failed`, `job.wait_timeout`,
 `cli.usage.invalid_args`, `cli.usage.site_required`, `cli.confirmation_required`
 (pass the flag the hint names, usually `--force`), `cli.readonly` (exit 2), `cli.interrupted`.
 

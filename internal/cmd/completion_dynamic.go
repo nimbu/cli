@@ -494,6 +494,7 @@ var completionValueFlags = map[string]bool{
 	"upsert":              true,
 	"url":                 true,
 	"value":               true,
+	"wait-timeout":        true,
 	"watch-scan-interval": true,
 	"where":               true,
 	"session-duration":    true,

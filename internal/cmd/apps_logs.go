@@ -21,7 +21,17 @@ const appsLogsDefaultLimit = 100
 var (
 	appsLogsNow          = time.Now
 	appsLogsPollInterval = 2 * time.Second
+
+	// A tail rides out transient network and server errors with exponential
+	// backoff and gives up after this many failed fetches in a row.
+	appsLogsRetryBaseDelay       = 2 * time.Second
+	appsLogsRetryMaxDelay        = 30 * time.Second
+	appsLogsMaxConsecutiveErrors = 6
 )
+
+// appLogStop inspects each tailed log after it is printed; done ends the tail
+// and err becomes its result.
+type appLogStop func(api.AppLog) (done bool, err error)
 
 // AppsLogsCmd reads app cloud-code logs.
 type AppsLogsCmd struct {
@@ -62,7 +72,7 @@ func (c *AppsLogsCmd) Run(ctx context.Context, flags *RootFlags) error {
 		Limit: effectiveAppsLogsLimit(c.Limit),
 	}
 	if c.Tail {
-		return c.tail(ctx, client, appKey, opts)
+		return c.tail(ctx, client, appKey, opts, nil)
 	}
 
 	logs, err := api.ListAppLogs(ctx, client, appKey, opts)
@@ -72,12 +82,13 @@ func (c *AppsLogsCmd) Run(ctx context.Context, flags *RootFlags) error {
 	return writeAppLogs(ctx, logs)
 }
 
-func (c *AppsLogsCmd) tail(ctx context.Context, client *api.Client, appKey string, opts api.AppLogOptions) error {
-	// Ctrl-C ends the tail through ctx: the root handler cancels it on the
-	// first signal (exit 0 below) and force-exits on a second one.
-	logs, err := api.ListAppLogs(ctx, client, appKey, opts)
+// tail prints logs and polls for new ones until interrupted, or until stop
+// reports done. Ctrl-C ends the tail through ctx: the root handler cancels it
+// on the first signal (exit 0 below) and force-exits on a second one.
+func (c *AppsLogsCmd) tail(ctx context.Context, client *api.Client, appKey string, opts api.AppLogOptions, stop appLogStop) error {
+	logs, err := listAppLogsForTail(ctx, client, appKey, opts)
 	if err != nil {
-		if contextCanceled(ctx, err) {
+		if ctx.Err() != nil {
 			return nil
 		}
 		return fmt.Errorf("tail app logs: %w", err)
@@ -85,7 +96,7 @@ func (c *AppsLogsCmd) tail(ctx context.Context, client *api.Client, appKey strin
 	if opts.Since == "" {
 		reverseAppLogs(logs)
 	}
-	if err := writeAppLogs(ctx, logs); err != nil {
+	if done, err := writeTailedAppLogs(ctx, logs, stop); done {
 		return err
 	}
 
@@ -108,16 +119,16 @@ func (c *AppsLogsCmd) tail(ctx context.Context, client *api.Client, appKey strin
 		case <-ticker.C:
 			pollOpts := opts
 			pollOpts.Since = since
-			logs, err := api.ListAppLogs(ctx, client, appKey, pollOpts)
+			logs, err := listAppLogsForTail(ctx, client, appKey, pollOpts)
 			if err != nil {
-				if contextCanceled(ctx, err) {
+				if ctx.Err() != nil {
 					return nil
 				}
 				return fmt.Errorf("tail app logs: %w", err)
 			}
 			var printable []api.AppLog
 			printable, cursor, seenAtCursor = appLogsAfterTailCursor(logs, cursor, seenAtCursor)
-			if err := writeAppLogs(ctx, printable); err != nil {
+			if done, err := writeTailedAppLogs(ctx, printable, stop); done {
 				return err
 			}
 			if cursor > 0 {
@@ -125,6 +136,63 @@ func (c *AppsLogsCmd) tail(ctx context.Context, client *api.Client, appKey strin
 			}
 		}
 	}
+}
+
+// listAppLogsForTail fetches one page of logs, retrying transient failures
+// with backoff so a network blip does not end a long tail. The HTTP transport
+// already retries a few times within seconds; this covers longer outages.
+//
+// Only ctx itself ends the tail quietly: a request that hits the client
+// timeout also matches context.DeadlineExceeded, but it is a retryable
+// network failure, not an interrupt.
+func listAppLogsForTail(ctx context.Context, client *api.Client, appKey string, opts api.AppLogOptions) ([]api.AppLog, error) {
+	delay := appsLogsRetryBaseDelay
+	for attempt := 1; ; attempt++ {
+		logs, err := api.ListAppLogs(ctx, client, appKey, opts)
+		if err == nil || ctx.Err() != nil || !transientAppLogsError(err) {
+			return logs, err
+		}
+		if attempt >= appsLogsMaxConsecutiveErrors {
+			return nil, fmt.Errorf("giving up after %d consecutive failures: %w", attempt, err)
+		}
+		_, _ = fmt.Fprintf(output.WriterFromContext(ctx).Err, "warning: fetching logs failed (attempt %d of %d), retrying in %s: %v\n", attempt, appsLogsMaxConsecutiveErrors, delay, err)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay):
+		}
+		if delay *= 2; delay > appsLogsRetryMaxDelay {
+			delay = appsLogsRetryMaxDelay
+		}
+	}
+}
+
+// transientAppLogsError reports network failures, rate limits and 5xx
+// responses, the same errors the JSON error envelope marks retryable. The
+// client wraps transport failures in an api.Error without a status, which the
+// envelope classifier cannot place; judge those by their cause. Log reads are
+// always safe to repeat.
+func transientAppLogsError(err error) bool {
+	var apiErr *api.Error
+	if errors.As(err, &apiErr) && apiErr.StatusCode == 0 && apiErr.Err != nil {
+		err = apiErr.Err
+	}
+	return classifyError(err).Retryable
+}
+
+func writeTailedAppLogs(ctx context.Context, logs []api.AppLog, stop appLogStop) (bool, error) {
+	for _, log := range logs {
+		if err := writeAppLog(ctx, log); err != nil {
+			return true, err
+		}
+		if stop == nil {
+			continue
+		}
+		if done, err := stop(log); done {
+			return true, err
+		}
+	}
+	return false, nil
 }
 
 func rootFlagsFromContext(ctx context.Context, flags *RootFlags) *RootFlags {
@@ -325,8 +393,4 @@ func colorAppLogLevel(paddedLevel, level string, writer *output.Writer) string {
 	default:
 		return paddedLevel
 	}
-}
-
-func contextCanceled(ctx context.Context, err error) bool {
-	return ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }

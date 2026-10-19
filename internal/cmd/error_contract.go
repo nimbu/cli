@@ -38,6 +38,8 @@ const (
 	errorNetworkTimeout    canonicalErrorCode = "network.timeout"
 	errorNetworkFailure    canonicalErrorCode = "network.failure"
 	errorServerError       canonicalErrorCode = "server.error"
+	errorJobFailed         canonicalErrorCode = "job.failed"
+	errorJobWaitTimeout    canonicalErrorCode = "job.wait_timeout"
 	errorUnknown           canonicalErrorCode = "internal.unknown"
 
 	errorSiteRequired         canonicalErrorCode = "cli.usage.site_required"
