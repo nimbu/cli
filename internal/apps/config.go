@@ -58,10 +58,12 @@ func ResolveApp(candidates []AppConfig, requested string) (AppConfig, error) {
 // CollectFiles returns all files under dir matching glob, project-root relative.
 func CollectFiles(app AppConfig) ([]string, error) {
 	dir := filepath.Join(app.ProjectRoot, filepath.FromSlash(strings.TrimSpace(app.Dir)))
-	pattern := normalizePath(strings.TrimSpace(app.Glob))
+	// normalizePath turns "" into ".", so apply the default before normalizing.
+	pattern := strings.TrimSpace(app.Glob)
 	if pattern == "" {
 		pattern = "**/*.js"
 	}
+	pattern = normalizePath(pattern)
 	matcher, err := compileMatcher(pattern)
 	if err != nil {
 		return nil, err

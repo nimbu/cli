@@ -155,10 +155,22 @@ func BuildPushPlan(app AppConfig, localFiles []string, remoteFiles []api.AppCode
 
 // PlanPush computes a structured push result from local and remote files.
 func PlanPush(ctx context.Context, client *api.Client, app AppConfig, selected []string, sync bool) (Result, []string, error) {
-	remoteFiles, err := api.List[api.AppCodeFile](ctx, client, "/apps/"+url.PathEscape(app.ID)+"/code")
+	remoteFiles, err := ListRemoteFiles(ctx, client, app)
 	if err != nil {
 		return Result{}, nil, err
 	}
+	result, deletes := PlanPushFromRemote(app, selected, remoteFiles, sync)
+	return result, deletes, nil
+}
+
+// ListRemoteFiles returns the app's code files currently on the server.
+func ListRemoteFiles(ctx context.Context, client *api.Client, app AppConfig) ([]api.AppCodeFile, error) {
+	return api.List[api.AppCodeFile](ctx, client, "/apps/"+url.PathEscape(app.ID)+"/code")
+}
+
+// PlanPushFromRemote computes a structured push result against an already
+// fetched remote file list.
+func PlanPushFromRemote(app AppConfig, selected []string, remoteFiles []api.AppCodeFile, sync bool) (Result, []string) {
 	plan := BuildPushPlan(app, selected, remoteFiles, sync)
 	result := Result{
 		AppKey:    app.ID,
@@ -180,7 +192,7 @@ func PlanPush(ctx context.Context, client *api.Client, app AppConfig, selected [
 	for _, action := range plan.Deletes {
 		deletes = append(deletes, action.Name)
 	}
-	return result, deletes, nil
+	return result, deletes
 }
 
 // ExecutePush uploads/updates/deletes remote app files.

@@ -212,8 +212,12 @@ func releaseCode(ctx context.Context, client *api.Client, project projectContext
 		if err != nil {
 			return nil, err
 		}
-		ordered, err := apps.OrderFiles(app, files)
+		graph, err := apps.LoadGraph(app, files)
 		if err != nil {
+			return nil, err
+		}
+		ordered, cycles := graph.Order(files)
+		if err := apps.WarnCycles(ctx, cycles); err != nil {
 			return nil, err
 		}
 		result, _, err := apps.PlanPush(ctx, client, app, ordered, false)
