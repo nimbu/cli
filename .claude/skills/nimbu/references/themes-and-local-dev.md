@@ -216,7 +216,7 @@ Apps are filtered by active host and site -- only matching entries are visible.
 `nimbu apps push [--app <name>] [--only <file>[,<file>...]]...` -- uploads cloud code files.
 
 - Without `--app`, works if exactly one app is configured for the active host/site
-- Files are topologically sorted by `require()`/`import`/`export` dependencies before upload (dependencies first)
+- Files are uploaded dependencies-first, `main.js` last (see Dependency ordering)
 - `--sync` deletes remote files missing locally (cannot combine with explicit file list)
 - `--only` project-relative paths restrict the upload set; values can be comma-separated and the flag can be repeated
 
@@ -224,4 +224,11 @@ Example: `nimbu apps push --app storefront --only code/main.js,code/hooks.js --o
 
 ### Dependency ordering
 
-The CLI parses `require("./path")`, `import ... from "./path"`, and `export ... from "./path"` to build a dependency graph. Files are topologically sorted so dependencies are pushed before dependents. Circular dependencies cause an error.
+The server recompiles from `main.js` on every upload, so a file that requires a module that is not uploaded yet fails with `UnknownModule`. The CLI resolves `require()`, `import ... from` and `export ... from` the way the server does and uploads dependencies first:
+
+- `./x` and `../x` resolve against the requiring file; bare ids (`require('lib/x')`) resolve from the app root, except built-in modules such as `lodash` or `crypto`
+- extensionless ids try `.js`, `.coffee`, then `.ejs`; ids are lowercased
+- in `.js` files, requires inside comments, strings and regex literals are ignored; `.coffee` and `.ejs` files are scanned as plain text (CoffeeScript `require './x'` without parentheses counts too)
+- `main.js` is always uploaded last
+- require cycles are allowed (the runtime tolerates them); the CLI warns and breaks them starting from `main.js`
+- with `--only`, the push stops before uploading anything when a selected file requires a local file that is neither selected nor on the server yet

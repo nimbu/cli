@@ -64,10 +64,11 @@ func TestPlanPushAndExecutePushHandleCreateUpdateDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("collect files: %v", err)
 	}
-	ordered, err := OrderFiles(app, files)
+	graph, err := LoadGraph(app, files)
 	if err != nil {
-		t.Fatalf("order files: %v", err)
+		t.Fatalf("load graph: %v", err)
 	}
+	ordered, _ := graph.Order(files)
 	result, deletes, err := PlanPush(context.Background(), client, app, ordered, true)
 	if err != nil {
 		t.Fatalf("plan push: %v", err)
@@ -134,10 +135,11 @@ func TestExecutePushPreservesTopologicalUploadOrderAcrossCreateAndUpdate(t *test
 	if err != nil {
 		t.Fatalf("collect files: %v", err)
 	}
-	ordered, err := OrderFiles(app, files)
+	graph, err := LoadGraph(app, files)
 	if err != nil {
-		t.Fatalf("order files: %v", err)
+		t.Fatalf("load graph: %v", err)
 	}
+	ordered, _ := graph.Order(files)
 	result, _, err := PlanPush(context.Background(), client, app, ordered, false)
 	if err != nil {
 		t.Fatalf("plan push: %v", err)

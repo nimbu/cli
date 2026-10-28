@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/nimbu/cli/internal/apps"
 	"github.com/nimbu/cli/internal/output"
@@ -59,14 +60,24 @@ func (c *AppsPushCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	ordered, err := apps.OrderFiles(app, selected)
+	// The graph spans every local file so --only can spot requires of files
+	// that are left out of the push.
+	graph, err := apps.LoadGraph(app, discovered)
 	if err != nil {
-		return err
+		return fmt.Errorf("read app files: %w", err)
 	}
-	result, deletes, err := apps.PlanPush(ctx, client, app, ordered, c.Sync)
+	ordered, cycles := graph.Order(selected)
+	remoteFiles, err := apps.ListRemoteFiles(ctx, client, app)
 	if err != nil {
 		return fmt.Errorf("plan app push: %w", err)
 	}
+	if missing := graph.Missing(selected, remoteFiles); len(missing) > 0 {
+		return missingDependenciesError(missing)
+	}
+	if err := apps.WarnCycles(ctx, cycles); err != nil {
+		return err
+	}
+	result, deletes := apps.PlanPushFromRemote(app, ordered, remoteFiles, c.Sync)
 	if len(deletes) > 0 {
 		ok, err := confirmPrompt(flags, fmt.Sprintf("delete %d remote app files", len(deletes)))
 		if err != nil {
@@ -116,4 +127,12 @@ func (c *AppsPushCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	return nil
+}
+
+func missingDependenciesError(missing []apps.MissingDependency) error {
+	lines := make([]string, 0, len(missing))
+	for _, item := range missing {
+		lines = append(lines, fmt.Sprintf("  %s requires %s", item.Name, item.Requires))
+	}
+	return fmt.Errorf("pushing this selection would fail on the server: required files are neither in --only nor uploaded yet:\n%s\nadd them to --only, or push without --only", strings.Join(lines, "\n"))
 }

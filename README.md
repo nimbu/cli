@@ -1001,8 +1001,12 @@ nimbu mails pull --only welcome
 
 `nimbu apps config` writes a host/site-scoped app entry to `nimbu.yml`.
 
-`nimbu apps push` pushes local cloud code files for the selected configured app,
-preserving dependency order for `require()` and static ESM imports. `--sync` also
+`nimbu apps push` pushes local cloud code files for the selected configured app.
+Files are uploaded dependencies-first and `main.js` last, resolving `require()`
+the way the server does: `./x` relative to the requiring file, bare `lib/x` from
+the app root. Require cycles produce a warning, not an error. With `--only`, the
+push refuses to start when a selected file requires a local file that is neither
+selected nor on the server yet. `--sync` also
 deletes remote files that no longer exist locally. `--only` can be repeated and
 each value may be comma-separated.
 
