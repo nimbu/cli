@@ -227,7 +227,8 @@ Example: `nimbu apps push --app storefront --only code/main.js,code/hooks.js --o
 The server recompiles from `main.js` on every upload, so a file that requires a module that is not uploaded yet fails with `UnknownModule`. The CLI resolves `require()`, `import ... from` and `export ... from` the way the server does and uploads dependencies first:
 
 - `./x` and `../x` resolve against the requiring file; bare ids (`require('lib/x')`) resolve from the app root, except built-in modules such as `lodash` or `crypto`
-- extensionless ids try `.js`, `.coffee`, then `.ejs`; ids are lowercased; commented-out requires are ignored
+- extensionless ids try `.js`, `.coffee`, then `.ejs`; ids are lowercased
+- in `.js` files, requires inside comments, strings and regex literals are ignored; `.coffee` and `.ejs` files are scanned as plain text (CoffeeScript `require './x'` without parentheses counts too)
 - `main.js` is always uploaded last
 - require cycles are allowed (the runtime tolerates them); the CLI warns and breaks them starting from `main.js`
 - with `--only`, the push stops before uploading anything when a selected file requires a local file that is neither selected nor on the server yet

@@ -23,6 +23,8 @@ var (
 	requirePattern = regexp.MustCompile("\\brequire\\s*\\(\\s*(?:\"([^\"]+)\"|'([^']+)'|`([^`$]+)`)\\s*\\)")
 	importPattern  = regexp.MustCompile(`(?m)(?:^|[\n;])\s*import\s*(?:[\s\w{},*]+from\s*)?["']([^"']+)["']`)
 	exportPattern  = regexp.MustCompile(`(?m)(?:^|[\n;])\s*export[\s\w{},*]*from\s*["']([^"']+)["']`)
+	// CoffeeScript allows calls without parentheses: require './x'.
+	coffeeRequirePattern = regexp.MustCompile(`\brequire\s+["']([^"']+)["']`)
 
 	// Mirrors Nimbu::CloudCode::Loader on the server: bare requires of these
 	// names load a built-in module instead of a cloud code file.
@@ -205,9 +207,19 @@ func (g *Graph) selectNames(files []string) map[string]string {
 }
 
 func (g *Graph) dependencyNames(name, source string) ([]string, map[string][]string) {
-	source = codeSkeleton(source)
+	patterns := []*regexp.Regexp{requirePattern, importPattern, exportPattern}
+	switch path.Ext(name) {
+	case ".coffee":
+		// Scanned as raw text: the JavaScript scanner would misread
+		// CoffeeScript comments and #{...} interpolation.
+		patterns = append(patterns, coffeeRequirePattern)
+	case ".ejs":
+		// Scanned as raw text: requires live inside template markup.
+	default:
+		source = codeSkeleton(source)
+	}
 	found := map[string][]string{}
-	for _, pattern := range []*regexp.Regexp{requirePattern, importPattern, exportPattern} {
+	for _, pattern := range patterns {
 		for _, match := range pattern.FindAllStringSubmatch(source, -1) {
 			for _, spec := range match[1:] {
 				if spec == "" {

@@ -223,6 +223,23 @@ func TestDependencyScanSkipsRegexAndStringContents(t *testing.T) {
 	}
 }
 
+// Regression (codex review): .coffee and .ejs are not JavaScript, so they are
+// scanned as raw text instead of through codeSkeleton.
+func TestDependencyScanOfCoffeeAndEJS(t *testing.T) {
+	sources := map[string]string{
+		"code/model.coffee": "a = require './a'\nb = \"#{require('./b').name}\"",
+		"code/view.ejs":     `<a href="<%= require('./c').url %>">`,
+		"code/a.js":         ``, "code/b.js": ``, "code/c.js": ``,
+	}
+	graph := NewGraph(testApp(""), sources)
+	if got, want := graph.deps["model.coffee"], []string{"a.js", "b.js"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("coffee deps = %v, want %v", got, want)
+	}
+	if got, want := graph.deps["view.ejs"], []string{"c.js"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ejs deps = %v, want %v", got, want)
+	}
+}
+
 func TestCodeSkeletonHandlesUnterminatedInput(t *testing.T) {
 	for input, want := range map[string]string{
 		`a /* open`:         `a `,
